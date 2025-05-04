@@ -35,7 +35,23 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(genseq genseq.cpp )
+# Find all source files in the sequencer, commands, and UI directories
+file(GLOB SEQUENCER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/*")
+file(GLOB COMMANDS_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/commands/*")
+file(GLOB UI_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/ui/*")
+
+# Print the found source files for debugging
+message(STATUS "Sequencer sources: ${SEQUENCER_SOURCES}")
+message(STATUS "Commands sources: ${COMMANDS_SOURCES}")
+message(STATUS "UI sources: ${UI_SOURCES}")
+
+# Add source files for the sequencer, commands, and UI components
+add_executable(genseq 
+    genseq.cpp
+    ${SEQUENCER_SOURCES}
+    ${COMMANDS_SOURCES}
+    ${UI_SOURCES}
+)
 
 pico_set_program_name(genseq "genseq")
 pico_set_program_version(genseq "0.1")
@@ -46,7 +62,12 @@ pico_enable_stdio_usb(genseq 0)
 
 # Add the standard library to the build
 target_link_libraries(genseq
-        pico_stdlib)
+    pico_stdlib
+    pico_multicore
+    hardware_pio
+    hardware_uart
+    hardware_gpio
+)
 
 # Add the standard include files to the build
 target_include_directories(genseq PRIVATE

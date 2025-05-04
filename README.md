@@ -31,3 +31,15 @@ A generative hardware MIDI sequencer based on the Raspberry Pi Pico. (RP2040)
 - start/stop button: toggles sequencer playback (playing all patterns in parallel)
 - In the first iteration, Rhythm sets are generated based on euclidean circles
     - in later iterations manual step editing should be possible
+
+## Building
+- `cd ./build`
+- `cmake ..`
+- `ninja clean` - optionally
+- `ninja`
+- `picotool load genseq.elf`
+
+### TODO
+
+- [*] extract all parts of sequencer into own files
+- [ ] move logic to select next step into play_mode.cpp (out of sequencer.cpp)
