@@ -9,8 +9,8 @@
 // UI
 #define PIN_PLAY_STOP_BUTTON 20
 
-#define PIN_ENCODER_A 18
-#define PIN_ENCODER_B 19
+#define PIN_ENCODER_A 14
+#define PIN_ENCODER_B 15
 
 // DISPLAY
 #define DISPLAY_I2C i2c0
