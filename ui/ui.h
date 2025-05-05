@@ -40,8 +40,9 @@ private:
 
     // UI event handlers
     void onPlayStopButtonPressed();
+    void onPlayStopButtonReleased();
     void onEncoderValueChanged(int delta);
-    
+    void onPlayStopButtonHold();
     
     void updateDisplay();
 };

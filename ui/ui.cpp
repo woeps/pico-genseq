@@ -18,7 +18,7 @@ UI::UI(
     uint8_t displaySCLPin,
     uint8_t playLedPin
 ) : 
-    playStopButton(playStopButtonPin, [this]() { onPlayStopButtonPressed(); }),
+    playStopButton(playStopButtonPin, [this]() { onPlayStopButtonPressed(); }, [this]() { onPlayStopButtonReleased(); }, [this]() { onPlayStopButtonHold(); }, 1000),
     bpmEncoder(encoderPinA, encoderPinB, [this](int delta) { onEncoderValueChanged(delta); }),
     display(displayI2C, displayI2CAddr, displaySDAPin, displaySCLPin),
     playLed(playLedPin),
@@ -55,6 +55,7 @@ void UI::update() {
 }
 
 void UI::onPlayStopButtonPressed() {
+    printf("pressed\n");
     playing = !playing;
     
     if (playing) {
@@ -66,7 +67,16 @@ void UI::onPlayStopButtonPressed() {
     }
 }
 
+void UI::onPlayStopButtonReleased() {
+    printf("released\n");
+}
+
+void UI::onPlayStopButtonHold() {
+    printf("hold\n");
+}
+
 void UI::onEncoderValueChanged(int delta) {
+    printf("delta: %d\n", delta);
     // Update BPM based on encoder movement
     bpm = std::max(40, std::min(300, static_cast<int>(bpm) + delta));
     
