@@ -3,22 +3,23 @@
 namespace sequencer {
 
 // Pattern implementation
-Pattern::Pattern(const PitchSet& pitchSet, const VelocitySet& velocitySet, const RhythmSet& rhythmSet, PlayMode playMode)
-    : pitchSet(pitchSet), velocitySet(velocitySet), rhythmSet(rhythmSet), playMode(playMode), active(false) {}
+Pattern::Pattern(const PitchSet& pitchSet, const VelocitySet& velocitySet, const RhythmSet& rhythmSet, PlayMode playMode, int midiChannel)
+    : pitchSet(pitchSet), velocitySet(velocitySet), rhythmSet(rhythmSet), playMode(playMode), midiChannel(midiChannel), active(false) {}
 
 Pattern::Pattern(): pitchSet({
         60, // C4
-        62, // D4
-        64, // E4
-        65, // F4
-        67, // G4
-        69, // A4
-        71, // B4
-        72  // C5
+        // 62, // D4
+        // 64, // E4
+        // 65, // F4
+        // 67, // G4
+        // 69, // A4
+        // 71, // B4
+        // 72  // C5
     }),
     active(true),
-    velocitySet({100, 80, 100, 90, 110, 70, 90, 100}),
-    rhythmSet(RhythmSet::createEuclidean(8, 5, 0, PPQN)) {
+    velocitySet({100, 40}),
+    rhythmSet(RhythmSet::createEuclidean(4, 1, 0, PPQN)),
+    midiChannel(1) {
     // Create a C major scale
     // std::vector<uint8_t> cMajorScale = {
     //     60, // C4
@@ -76,6 +77,14 @@ PlayMode Pattern::getPlayMode() const {
 
 void Pattern::setPlayMode(PlayMode playMode) {
     this->playMode = playMode;
+}
+
+int Pattern::getMidiChannel() const {
+    return midiChannel;
+}
+
+void Pattern::setMidiChannel(int midiChannel) {
+    this->midiChannel = midiChannel;
 }
 
 bool Pattern::isActive() const {

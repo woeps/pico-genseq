@@ -112,7 +112,7 @@ void Sequencer::update() {
                     
                     uint8_t pitch = pitches[pitchIndex];
                     uint8_t velocity = velocities[velocityIndex];
-                    sendMidiNoteOn(0, pitch, velocity);
+                    sendMidiNoteOn(pattern.getMidiChannel(), pitch, velocity);
                 }
                 
                 // Note off
@@ -142,7 +142,7 @@ void Sequencer::update() {
                     
                     if (pattern.getPlayMode() != PlayMode::RANDOM) {
                         uint8_t pitch = pitches[pitchIndex];
-                        sendMidiNoteOff(0, pitch);
+                        sendMidiNoteOff(pattern.getMidiChannel(), pitch);
                     }
                 }
             }

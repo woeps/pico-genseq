@@ -10,7 +10,7 @@ namespace sequencer {
 // Class to represent a pattern (combination of pitch, velocity and rhythm)
 class Pattern {
 public:
-    Pattern(const PitchSet& pitchSet, const VelocitySet& velocitySet, const RhythmSet& rhythmSet, PlayMode playMode = PlayMode::FORWARD);
+    Pattern(const PitchSet& pitchSet, const VelocitySet& velocitySet, const RhythmSet& rhythmSet, PlayMode playMode = PlayMode::FORWARD, int midiChannel = 1);
     Pattern();
     
     const PitchSet& getPitchSet() const;
@@ -25,6 +25,9 @@ public:
     PlayMode getPlayMode() const;
     void setPlayMode(PlayMode playMode);
     
+    int getMidiChannel() const;
+    void setMidiChannel(int midiChannel);
+    
     bool isActive() const;
     void setActive(bool active);
     
@@ -33,6 +36,7 @@ private:
     VelocitySet velocitySet;
     RhythmSet rhythmSet;
     PlayMode playMode;
+    int midiChannel;
     bool active;
 };
 
