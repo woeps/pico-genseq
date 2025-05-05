@@ -14,10 +14,10 @@ namespace sequencer {
 static Sequencer* globalSequencer = nullptr;
 
 // Multicore FIFO for command passing
-static void sequencer_task();
+static void sequencer_task(uart_inst_t *uart);
 
 // Sequencer implementation
-Sequencer::Sequencer(uart_inst_t *uart) : 
+Sequencer::Sequencer(uart_inst_t *uart, uint txPin, uint rxPin) : 
     uart(uart),
     currentTick(0),
     bpm(120),
@@ -28,8 +28,8 @@ Sequencer::Sequencer(uart_inst_t *uart) :
     uart_init(uart, MIDI_BAUD_RATE);
     
     // Configure UART pins (assuming UART1 uses GPIO 4 and 5)
-    gpio_set_function(4, GPIO_FUNC_UART);
-    gpio_set_function(5, GPIO_FUNC_UART);
+    gpio_set_function(txPin, GPIO_FUNC_UART);
+    gpio_set_function(rxPin, GPIO_FUNC_UART);
     }
 
 void Sequencer::init() {
@@ -257,9 +257,9 @@ static void sequencer_task() {
     }
 }
 
-void createSequencerTask(uart_inst_t *uart) {
+void createSequencerTask(uart_inst_t *uart, uint txPin, uint rxPin) {
     // Create a global sequencer instance
-    static Sequencer sequencer(uart);
+    static Sequencer sequencer(uart, txPin, rxPin);
     globalSequencer = &sequencer;
     globalSequencer->init();
     

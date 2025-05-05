@@ -22,7 +22,7 @@ A generative hardware MIDI sequencer based on the Raspberry Pi Pico. (RP2040)
         - buttons
         - encoder
             - read with an PIO implementation using intterupts
-        - display (HD44780)
+        - display (HD44780 with FC113 controller)
         - leds
 - the main file (`genseq.cpp`) combines both into a single program
 - great care should be taken to keep the code easily extendable in the future
@@ -37,7 +37,13 @@ A generative hardware MIDI sequencer based on the Raspberry Pi Pico. (RP2040)
 - `cmake ..`
 - `ninja clean` - optionally
 - `ninja`
-- `picotool load genseq.elf`
+
+## Flashing
+- either: copy `genseq.uf2` to the device
+- or: use debugger (PicoProbe)
+
+## Debugging
+- in VSCode, press F5 / select `Pico Debug (Cortex-Debug)` in Run & Debug Toolbar
 
 ### TODO
 

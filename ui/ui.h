@@ -15,12 +15,16 @@ namespace ui {
 class UI {
 public:
     // Constructor with pin assignments
-    UI(uint8_t playStopButtonPin, 
-       uint8_t encoderPinA, uint8_t encoderPinB,
-       uint8_t displayRsPin, uint8_t displayEnablePin, 
-       uint8_t displayD4Pin, uint8_t displayD5Pin, 
-       uint8_t displayD6Pin, uint8_t displayD7Pin,
-       uint8_t playLedPin);
+    UI(
+       uint8_t playStopButtonPin, 
+       uint8_t encoderPinA,
+       uint8_t encoderPinB,
+       i2c_inst_t* displayI2C,
+       uint8_t eisplayI2CAddr,
+       uint8_t displaySDAPin,
+       uint8_t displaySCLPin,
+       uint8_t playLedPin
+    );
     void init();
     void update();
     
@@ -43,11 +47,15 @@ private:
 };
 
 // Function to create the UI task for the first core
-void createUITask(uint8_t playStopButtonPin, 
-       uint8_t encoderPinA, uint8_t encoderPinB,
-       uint8_t displayRsPin, uint8_t displayEnablePin, 
-       uint8_t displayD4Pin, uint8_t displayD5Pin, 
-       uint8_t displayD6Pin, uint8_t displayD7Pin,
-       uint8_t playLedPin);
+void createUITask(
+    uint8_t playStopButtonPin, 
+    uint8_t encoderPinA,
+    uint8_t encoderPinB,
+    i2c_inst_t* displayI2C,
+    uint8_t displayI2CAddr,
+    uint8_t displaySDAPin,
+    uint8_t displaySCLPin,
+    uint8_t playLedPin
+);
 
 } // namespace ui

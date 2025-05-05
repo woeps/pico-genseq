@@ -67,6 +67,7 @@ target_link_libraries(genseq
     hardware_pio
     hardware_uart
     hardware_gpio
+    hardware_i2c
 )
 
 # Add the standard include files to the build

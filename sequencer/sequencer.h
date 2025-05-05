@@ -20,7 +20,7 @@ namespace sequencer {
 // Main sequencer class
 class Sequencer {
 public:
-    Sequencer(uart_inst_t *uart);
+    Sequencer(uart_inst_t *uart, uint tx, uint rx);
 
     void init();
     void update();
@@ -50,6 +50,6 @@ private:
 };
 
 // Function to create the sequencer task for the second core
-void createSequencerTask(uart_inst_t *uart);
+void createSequencerTask(uart_inst_t *uart, uint txPin, uint rxPin);
 
 } // namespace sequencer

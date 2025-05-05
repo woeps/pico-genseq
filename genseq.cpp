@@ -4,36 +4,41 @@
 #include "sequencer/sequencer.h"
 #include "ui/ui.h"
 
-// PIN ASSIGNMENTS
+// PIN ASSIGNMENTS & CONFIG
 
 // UI
 #define PIN_PLAY_STOP_BUTTON 20
+
 #define PIN_ENCODER_A 18
 #define PIN_ENCODER_B 19
-#define PIN_DISPLAY_RS 6
-#define PIN_DISPLAY_ENABLE 7
-#define PIN_DISPLAY_D4 8
-#define PIN_DISPLAY_D5 9
-#define PIN_DISPLAY_D6 10
-#define PIN_DISPLAY_D7 11
+
+// DISPLAY
+#define DISPLAY_I2C i2c0
+#define PIN_DISPLAY_SDA 4
+#define PIN_DISPLAY_SCL 5
+#define DISPLAY_I2C_ADDR 0x27
+
 #define PIN_PLAY_LED 25
 
-// MIDI
+// UART MIDI
 #define MIDI_UART uart1  // Using UART1 for MIDI
+#define PIN_MIDI_UART_TX 8 // MIDI_UART_TX
+#define PIN_MIDI_UART_RX 9 // MIDI_UART_RX
 
 
 
 int main() {
-    printf("GenSeq MIDI Sequencer starting...\n");
-
     // Initialize stdio for debugging
     stdio_init_all();
+
+    printf("GenSeq MIDI Sequencer starting...\n");
     
     // Initialize the sequencer on core 1
     multicore_reset_core1();
     
     // Start the sequencer task on core 1
-    sequencer::createSequencerTask(MIDI_UART);
+    sequencer::createSequencerTask(MIDI_UART, PIN_MIDI_UART_TX, PIN_MIDI_UART_RX);
+    printf("Sequencer task started on core0.\n");
     
     // Wait for core 1 to start
     sleep_ms(100);
@@ -43,12 +48,10 @@ int main() {
         PIN_PLAY_STOP_BUTTON,
         PIN_ENCODER_A,
         PIN_ENCODER_B,
-        PIN_DISPLAY_RS,
-        PIN_DISPLAY_ENABLE,
-        PIN_DISPLAY_D4,
-        PIN_DISPLAY_D5,
-        PIN_DISPLAY_D6,
-        PIN_DISPLAY_D7,
+        DISPLAY_I2C,
+        DISPLAY_I2C_ADDR,
+        PIN_DISPLAY_SDA,
+        PIN_DISPLAY_SCL,
         PIN_PLAY_LED
     );
     

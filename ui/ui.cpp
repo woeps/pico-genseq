@@ -1,34 +1,45 @@
 #include "ui.h"
 #include "hardware/gpio.h"
 #include "hardware/clocks.h"
+#include "hardware/i2c.h"
 #include <cstring>
 #include <cstdio>
 
 namespace ui {
 
 // UI implementation
-UI::UI(uint8_t playStopButtonPin, 
-       uint8_t encoderPinA, uint8_t encoderPinB,
-       uint8_t displayRsPin, uint8_t displayEnablePin, 
-       uint8_t displayD4Pin, uint8_t displayD5Pin, 
-       uint8_t displayD6Pin, uint8_t displayD7Pin,
-       uint8_t playLedPin)
-    : playStopButton(playStopButtonPin, [this]() { onPlayStopButtonPressed(); }),
-      bpmEncoder(encoderPinA, encoderPinB, [this](int delta) { onEncoderValueChanged(delta); }),
-      display(displayRsPin, displayEnablePin, displayD4Pin, displayD5Pin, displayD6Pin, displayD7Pin),
-      playLed(playLedPin),
-      playing(false),
-      bpm(120),
-      lastDisplayUpdate(0) {}
+UI::UI(
+    uint8_t playStopButtonPin, 
+    uint8_t encoderPinA,
+    uint8_t encoderPinB,
+    i2c_inst_t* displayI2C,
+    uint8_t displayI2CAddr,
+    uint8_t displaySDAPin,
+    uint8_t displaySCLPin,
+    uint8_t playLedPin
+) : 
+    playStopButton(playStopButtonPin, [this]() { onPlayStopButtonPressed(); }),
+    bpmEncoder(encoderPinA, encoderPinB, [this](int delta) { onEncoderValueChanged(delta); }),
+    display(displayI2C, displayI2CAddr, displaySDAPin, displaySCLPin),
+    playLed(playLedPin),
+    playing(false),
+    bpm(120),
+    lastDisplayUpdate(0)
+{ }
 
 void UI::init() {
     playStopButton.init();
     bpmEncoder.init();
-    display.init();
     playLed.init();
     
     // Initialize display with default values
     updateDisplay();
+
+    printf("test led start\n");
+    playLed.on();
+    sleep_ms(200);
+    playLed.off();
+    printf("test led end\n");
 }
 
 void UI::update() {
@@ -67,31 +78,32 @@ void UI::onEncoderValueChanged(int delta) {
 }
 
 void UI::updateDisplay() {
-    display.clear();
-    display.setCursor(0, 0);
-    display.print("GenSeq");
-    
-    display.setCursor(0, 1);
-    display.print("BPM: ");
-    display.print(bpm);
-    
-    display.setCursor(12, 1);
-    display.print(playing ? "PLAY" : "STOP");
+    // TODO
 }
 
-void createUITask(uint8_t playStopButtonPin, 
-       uint8_t encoderPinA, uint8_t encoderPinB,
-       uint8_t displayRsPin, uint8_t displayEnablePin, 
-       uint8_t displayD4Pin, uint8_t displayD5Pin, 
-       uint8_t displayD6Pin, uint8_t displayD7Pin,
-       uint8_t playLedPin) {
+void createUITask(
+    uint8_t playStopButtonPin, 
+    uint8_t encoderPinA,
+    uint8_t encoderPinB,
+    i2c_inst_t* displayI2C,
+    uint8_t displayI2CAddr,
+    uint8_t displaySDAPin,
+    uint8_t displaySCLPin,
+    uint8_t playLedPin
+) {
+    printf("constructing UI\n");
     // Create and initialize UI with pin assignments
-    UI ui(playStopButtonPin, 
-          encoderPinA, encoderPinB,
-          displayRsPin, displayEnablePin, 
-          displayD4Pin, displayD5Pin, 
-          displayD6Pin, displayD7Pin,
-          playLedPin);
+    UI ui(
+            playStopButtonPin, 
+            encoderPinA,
+            encoderPinB,
+            displayI2C,
+            displayI2CAddr,
+            displaySDAPin,
+            displaySCLPin,
+            playLedPin
+        );
+    printf("initializing UI\n");
     ui.init();
     
     // Main UI loop
