@@ -49,3 +49,5 @@ A generative hardware MIDI sequencer based on the Raspberry Pi Pico. (RP2040)
 
 - [*] extract all parts of sequencer into own files
 - [ ] move logic to select next step into play_mode.cpp (out of sequencer.cpp)
+- [ ] decouple midi from sequencer
+- [ ] send midi clock
