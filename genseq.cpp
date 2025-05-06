@@ -10,7 +10,7 @@
 #define BUTTON_E_PIN 20
 #define BUTTON_A_PIN 21
 
-//ENCODER
+// ENCODER
 #define ENCODER_PIN_A 14
 #define ENCODER_PIN_B 15
 #define ENCODER_PIO pio0
@@ -25,28 +25,27 @@
 #define LED_PIN 25
 
 // UART MIDI
-#define MIDI_UART uart1  // Using UART1 for MIDI
+#define MIDI_UART uart1    // Using UART1 for MIDI
 #define MIDI_UART_PIN_TX 8 // MIDI_UART_TX
 #define MIDI_UART_PIN_RX 9 // MIDI_UART_RX
 
-
-
-int main() {
+int main()
+{
     // Initialize stdio for debugging
     stdio_init_all();
 
     printf("GenSeq MIDI Sequencer starting...\n");
-    
+
     // Initialize the sequencer on core 1
     multicore_reset_core1();
-    
+
     // Start the sequencer task on core 1
     sequencer::createSequencerTask(MIDI_UART, MIDI_UART_PIN_TX, MIDI_UART_PIN_RX);
     printf("Sequencer task started on core0.\n");
-    
+
     // Wait for core 1 to start
     sleep_ms(100);
-    
+
     // Start the UI task on core 0
     ui::createUITask(
         BUTTON_E_PIN,
@@ -59,9 +58,8 @@ int main() {
         DISPLAY_I2C_ADDR,
         DISPLAY_PIN_SDA,
         DISPLAY_PIN_SCL,
-        LED_PIN
-    );
-    
+        LED_PIN);
+
     // This should never be reached
     printf("GenSeq MIDI Sequencer ended.\n");
     return 0;

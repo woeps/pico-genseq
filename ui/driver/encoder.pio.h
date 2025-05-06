@@ -34,7 +34,7 @@ static const uint16_t quadrature_encoder_program_instructions[] = {
     0x000f, // 12: jmp    15
     0x0015, // 13: jmp    21
     0x008f, // 14: jmp    y--, 15
-            //     .wrap_target
+    //     .wrap_target
     0xa0c2, // 15: mov    isr, y
     0x8000, // 16: push   noblock
     0x60c2, // 17: out    isr, 2
@@ -44,7 +44,7 @@ static const uint16_t quadrature_encoder_program_instructions[] = {
     0xa04a, // 21: mov    y, ~y
     0x0097, // 22: jmp    y--, 23
     0xa04a, // 23: mov    y, ~y
-            //     .wrap
+    //     .wrap
     0x80a0, // 24: pull   block
     0xa047, // 25: mov    y, osr
     0x000f, // 26: jmp    15
@@ -89,7 +89,8 @@ static inline void quadrature_encoder_program_init(PIO pio, uint sm, uint pin, i
     // passing "0" as the sample frequency,
     if (max_step_rate == 0) {
         sm_config_set_clkdiv(&c, 1.0);
-    } else {
+    }
+    else {
         // one state machine loop takes at most 10 cycles
         float div = (float)clock_get_hz(clk_sys) / (10 * max_step_rate);
         sm_config_set_clkdiv(&c, div);
