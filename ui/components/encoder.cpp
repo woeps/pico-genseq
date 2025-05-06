@@ -30,6 +30,12 @@ void Encoder::setCallback(Callback callback) {
     this->callback = callback;
 }
 
+void Encoder::setValue(int value) {
+    this->newValue = value;
+    this->oldValue = value;
+    quadrature_encoder_set_count(this->pio, this->sm, value);
+}
+
 // FIXME: the reported values are incorrect!
 void Encoder::update() {
     // note: thanks to two's complement arithmetic delta will always
@@ -40,7 +46,7 @@ void Encoder::update() {
 
         if (this->newValue != this->lastValue || this->delta != this->lastDelta ) {
             printf("position %8d, delta %6d\n", this->newValue, this->delta);
-            this->callback(this->newValue); // TODO: debounce to run callback less often
+            //this->callback(this->newValue); // TODO: debounce to run callback less often
             this->lastValue = this->newValue;
             this->lastDelta = this->delta;
         }

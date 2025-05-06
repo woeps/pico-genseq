@@ -30,6 +30,8 @@ public:
     /// \param callback Optional callback to be called when the encoder value changes
     void setCallback(Callback callback = nullptr);
 
+    void setValue(int value);
+
     /// Update the encoder state. This should be called periodically, e.g. in the main loop.
     ///
     /// This function will check if the encoder has changed and if so, call the callback

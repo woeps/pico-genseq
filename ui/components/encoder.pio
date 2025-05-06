@@ -8,6 +8,9 @@
 
 .program quadrature_encoder
 
+; Add a public entry point for setting the counter value
+.define public set_count_entry 24
+
 ; the code must be loaded at address 0, because it uses computed jumps
 .origin 0
 
@@ -86,6 +89,13 @@ increment_cont:
     MOV Y, ~Y
 .wrap    ; the .wrap here avoids one jump instruction and saves a cycle too
 
+; Add a new section for setting the counter value
+; This will be at address 24 (set_count_entry)
+set_counter:
+    PULL block     ; Wait for a value to be written to TX FIFO
+    MOV Y, OSR     ; Set Y register to the value from TX FIFO
+    JMP update     ; Jump back to the main loop
+
 
 
 % c-sdk {
@@ -141,6 +151,24 @@ static inline int32_t quadrature_encoder_get_count(PIO pio, uint sm)
         n--;
     }
     return ret;
+}
+
+// Function to set the encoder count
+static inline void quadrature_encoder_set_count(PIO pio, uint sm, int32_t count) {
+    // Temporarily disable the state machine
+    pio_sm_set_enabled(pio, sm, false);
+    
+    // Clear the FIFOs
+    pio_sm_clear_fifos(pio, sm);
+    
+    // Set the program counter to the set_counter entry point
+    pio_sm_exec(pio, sm, pio_encode_jmp(quadrature_encoder_set_count_entry));
+    
+    // Enable the state machine again
+    pio_sm_set_enabled(pio, sm, true);
+    
+    // Send the count value to the state machine
+    pio_sm_put_blocking(pio, sm, count);
 }
 
 %}

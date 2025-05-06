@@ -16,6 +16,8 @@
 #define quadrature_encoder_wrap 23
 #define quadrature_encoder_pio_version 0
 
+#define quadrature_encoder_set_count_entry 24
+
 static const uint16_t quadrature_encoder_program_instructions[] = {
     0x000f, //  0: jmp    15
     0x000e, //  1: jmp    14
@@ -43,12 +45,15 @@ static const uint16_t quadrature_encoder_program_instructions[] = {
     0x0097, // 22: jmp    y--, 23
     0xa04a, // 23: mov    y, ~y
             //     .wrap
+    0x80a0, // 24: pull   block
+    0xa047, // 25: mov    y, osr
+    0x000f, // 26: jmp    15
 };
 
 #if !PICO_NO_HARDWARE
 static const struct pio_program quadrature_encoder_program = {
     .instructions = quadrature_encoder_program_instructions,
-    .length = 24,
+    .length = 27,
     .origin = 0,
     .pio_version = quadrature_encoder_pio_version,
 #if PICO_PIO_VERSION > 0
@@ -104,6 +109,19 @@ static inline int32_t quadrature_encoder_get_count(PIO pio, uint sm)
         n--;
     }
     return ret;
+}
+// Function to set the encoder count
+static inline void quadrature_encoder_set_count(PIO pio, uint sm, int32_t count) {
+    // Temporarily disable the state machine
+    pio_sm_set_enabled(pio, sm, false);
+    // Clear the FIFOs
+    pio_sm_clear_fifos(pio, sm);
+    // Set the program counter to the set_counter entry point
+    pio_sm_exec(pio, sm, pio_encode_jmp(quadrature_encoder_set_count_entry));
+    // Enable the state machine again
+    pio_sm_set_enabled(pio, sm, true);
+    // Send the count value to the state machine
+    pio_sm_put_blocking(pio, sm, count);
 }
 
 #endif
