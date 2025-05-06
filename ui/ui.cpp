@@ -9,7 +9,8 @@ namespace ui {
 
 // UI implementation
 UI::UI(
-    uint8_t playStopButtonPin, 
+    uint8_t buttonEncoderPin, 
+    uint8_t buttonAPin, 
     uint8_t encoderPinA,
     uint8_t encoderPinB,
     PIO encoderPio,
@@ -18,12 +19,13 @@ UI::UI(
     uint8_t displayI2CAddr,
     uint8_t displaySDAPin,
     uint8_t displaySCLPin,
-    uint8_t playLedPin
+    uint8_t ledPin
 ) : 
-    playStopButton(playStopButtonPin, [this]() { onPlayStopButtonPressed(); }, [this]() { onPlayStopButtonReleased(); }, [this]() { onPlayStopButtonHold(); }, 1000),
-    bpmEncoder(encoderPinA, encoderPinB, encoderPio, encoderSm, [this](int delta) { onEncoderValueChanged(delta); }),
+    buttonEncoder(buttonEncoderPin, [this]() { onButtonEncoderPressed(); }, [this]() { onButtonEncoderReleased(); }, [this]() { onButtonEncoderHold(); }, 1000),
+    buttonA(buttonAPin, [this]() { onButtonAPressed(); }, [this]() { onButtonAReleased(); }, [this]() { onButtonAHold(); }, 1000),
+    encoder(encoderPinA, encoderPinB, encoderPio, encoderSm, [this](int delta) { onEncoderValueChanged(delta); }),
     display(displayI2C, displayI2CAddr, displaySDAPin, displaySCLPin),
-    playLed(playLedPin),
+    led(ledPin),
     playing(false),
     bpm(120),
     lastDisplayUpdate(0)
@@ -33,16 +35,17 @@ void UI::init() {
     updateDisplay();
 
     printf("test led start\n");
-    playLed.on();
+    led.on();
     sleep_ms(200);
-    playLed.off();
+    led.off();
     printf("test led end\n");
 }
 
 void UI::update() {
-    playStopButton.update();
-    playLed.update();
-    bpmEncoder.update();
+    buttonEncoder.update();
+    buttonA.update();
+    led.update();
+    encoder.update();
 
     // Update display periodically
     uint32_t currentTime = to_ms_since_boot(get_absolute_time());
@@ -52,25 +55,38 @@ void UI::update() {
     }
 }
 
-void UI::onPlayStopButtonPressed() {
-    printf("pressed\n");
+void UI::onButtonEncoderPressed() {
+    printf("pressed encoder button\n");
     playing = !playing;
     
     if (playing) {
         commands::sendCommand(commands::Command::PLAY);
-        playLed.blink(100, 900); // Blink at rate proportional to BPM
+        led.blink(100, 900); // Blink at rate proportional to BPM
     } else {
         commands::sendCommand(commands::Command::STOP);
-        playLed.off();
+        led.off();
     }
 }
 
-void UI::onPlayStopButtonReleased() {
-    printf("released\n");
+void UI::onButtonEncoderReleased() {
+    printf("released encoder button\n");
 }
 
-void UI::onPlayStopButtonHold() {
-    printf("hold\n");
+void UI::onButtonEncoderHold() {
+    printf("hold encoder button: set value to 0\n");
+    encoder.setValue(0);
+}
+
+void UI::onButtonAPressed() {
+    printf("pressed A button\n");
+}
+
+void UI::onButtonAReleased() {
+    printf("released A button\n");
+}
+
+void UI::onButtonAHold() {
+    printf("hold A button\n");
 }
 
 void UI::onEncoderValueChanged(int delta) {
@@ -90,7 +106,8 @@ void UI::updateDisplay() {
 }
 
 void createUITask(
-    uint8_t playStopButtonPin, 
+    uint8_t buttonEncoderPin, 
+    uint8_t buttonAPin,
     uint8_t encoderPinA,
     uint8_t encoderPinB,
     PIO encoderPio,
@@ -99,12 +116,13 @@ void createUITask(
     uint8_t displayI2CAddr,
     uint8_t displaySDAPin,
     uint8_t displaySCLPin,
-    uint8_t playLedPin
+    uint8_t ledPin
 ) {
     printf("constructing UI\n");
     // Create and initialize UI with pin assignments
     UI ui(
-            playStopButtonPin, 
+            buttonEncoderPin, 
+            buttonAPin,
             encoderPinA,
             encoderPinB,
             encoderPio,
@@ -113,7 +131,7 @@ void createUITask(
             displayI2CAddr,
             displaySDAPin,
             displaySCLPin,
-            playLedPin
+            ledPin
         );
     printf("initializing UI\n");
     ui.init();

@@ -7,7 +7,8 @@
 // PIN ASSIGNMENTS & CONFIG
 
 // BUTTON
-#define BUTTON_PIN 20
+#define BUTTON_E_PIN 20
+#define BUTTON_A_PIN 21
 
 //ENCODER
 #define ENCODER_PIN_A 14
@@ -48,7 +49,8 @@ int main() {
     
     // Start the UI task on core 0
     ui::createUITask(
-        BUTTON_PIN,
+        BUTTON_E_PIN,
+        BUTTON_A_PIN,
         ENCODER_PIN_A,
         ENCODER_PIN_B,
         ENCODER_PIO,
