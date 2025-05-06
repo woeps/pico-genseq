@@ -12,6 +12,8 @@ UI::UI(
     uint8_t playStopButtonPin, 
     uint8_t encoderPinA,
     uint8_t encoderPinB,
+    PIO encoderPio,
+    uint encoderSm,
     i2c_inst_t* displayI2C,
     uint8_t displayI2CAddr,
     uint8_t displaySDAPin,
@@ -19,7 +21,7 @@ UI::UI(
     uint8_t playLedPin
 ) : 
     playStopButton(playStopButtonPin, [this]() { onPlayStopButtonPressed(); }, [this]() { onPlayStopButtonReleased(); }, [this]() { onPlayStopButtonHold(); }, 1000),
-    bpmEncoder(encoderPinA, encoderPinB, [this](int delta) { onEncoderValueChanged(delta); }),
+    bpmEncoder(encoderPinA, encoderPinB, encoderPio, encoderSm, [this](int delta) { onEncoderValueChanged(delta); }),
     display(displayI2C, displayI2CAddr, displaySDAPin, displaySCLPin),
     playLed(playLedPin),
     playing(false),
@@ -28,11 +30,6 @@ UI::UI(
 { }
 
 void UI::init() {
-    playStopButton.init();
-    bpmEncoder.init();
-    playLed.init();
-    
-    // Initialize display with default values
     updateDisplay();
 
     printf("test led start\n");
@@ -45,6 +42,7 @@ void UI::init() {
 void UI::update() {
     playStopButton.update();
     playLed.update();
+    bpmEncoder.update();
 
     // Update display periodically
     uint32_t currentTime = to_ms_since_boot(get_absolute_time());
@@ -95,6 +93,8 @@ void createUITask(
     uint8_t playStopButtonPin, 
     uint8_t encoderPinA,
     uint8_t encoderPinB,
+    PIO encoderPio,
+    uint encoderSm,
     i2c_inst_t* displayI2C,
     uint8_t displayI2CAddr,
     uint8_t displaySDAPin,
@@ -107,6 +107,8 @@ void createUITask(
             playStopButtonPin, 
             encoderPinA,
             encoderPinB,
+            encoderPio,
+            encoderSm,
             displayI2C,
             displayI2CAddr,
             displaySDAPin,

@@ -4,10 +4,14 @@
 
 namespace ui {
 
-Led::Led(uint8_t pin)
-    : pin(pin), state(false), blinking(false), onTime(0), offTime(0), lastToggleTime(0) {}
-
-void Led::init() {
+Led::Led(uint8_t pin) :
+    pin(pin),
+    state(false),
+    blinking(false),
+    onTime(0),
+    offTime(0),
+    lastToggleTime(0)
+{
     gpio_init(pin);
     gpio_set_dir(pin, GPIO_OUT);
     off();

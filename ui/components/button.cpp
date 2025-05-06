@@ -4,12 +4,18 @@
 
 namespace ui {
 
-Button::Button(uint8_t pin, Callback pressCallback, Callback releaseCallback, Callback holdCallback, uint32_t holdTimeMs)
-    : pin(pin), pressed(false), pressCallback(pressCallback), releaseCallback(releaseCallback),
-      holdCallback(holdCallback), holdTimeMs(holdTimeMs), pressStartTime(0), holdTriggered(false),
-      lastDebounceTime(0), lastState(false) {}
-
-void Button::init() {
+Button::Button(uint8_t pin, Callback pressCallback, Callback releaseCallback, Callback holdCallback, uint32_t holdTimeMs) :
+    pin(pin),
+    pressed(false),
+    pressCallback(pressCallback),
+    releaseCallback(releaseCallback),
+    holdCallback(holdCallback),
+    holdTimeMs(holdTimeMs),
+    pressStartTime(0),
+    holdTriggered(false),
+    lastDebounceTime(0),
+    lastState(false)
+{
     gpio_init(pin);
     gpio_set_dir(pin, GPIO_IN);
     gpio_pull_up(pin);
@@ -55,10 +61,6 @@ void Button::update() {
     }
     
     lastState = reading;
-}
-
-bool Button::isPressed() const {
-    return pressed;
 }
 
 } // namespace ui

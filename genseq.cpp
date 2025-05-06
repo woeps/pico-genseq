@@ -6,24 +6,27 @@
 
 // PIN ASSIGNMENTS & CONFIG
 
-// UI
-#define PIN_PLAY_STOP_BUTTON 20
+// BUTTON
+#define BUTTON_PIN 20
 
-#define PIN_ENCODER_A 14
-#define PIN_ENCODER_B 15
+//ENCODER
+#define ENCODER_PIN_A 14
+#define ENCODER_PIN_B 15
+#define ENCODER_PIO pio0
+#define ENCODER_SM 0
 
 // DISPLAY
 #define DISPLAY_I2C i2c0
-#define PIN_DISPLAY_SDA 4
-#define PIN_DISPLAY_SCL 5
+#define DISPLAY_PIN_SDA 4
+#define DISPLAY_PIN_SCL 5
 #define DISPLAY_I2C_ADDR 0x27
 
-#define PIN_PLAY_LED 25
+#define LED_PIN 25
 
 // UART MIDI
 #define MIDI_UART uart1  // Using UART1 for MIDI
-#define PIN_MIDI_UART_TX 8 // MIDI_UART_TX
-#define PIN_MIDI_UART_RX 9 // MIDI_UART_RX
+#define MIDI_UART_PIN_TX 8 // MIDI_UART_TX
+#define MIDI_UART_PIN_RX 9 // MIDI_UART_RX
 
 
 
@@ -37,7 +40,7 @@ int main() {
     multicore_reset_core1();
     
     // Start the sequencer task on core 1
-    sequencer::createSequencerTask(MIDI_UART, PIN_MIDI_UART_TX, PIN_MIDI_UART_RX);
+    sequencer::createSequencerTask(MIDI_UART, MIDI_UART_PIN_TX, MIDI_UART_PIN_RX);
     printf("Sequencer task started on core0.\n");
     
     // Wait for core 1 to start
@@ -45,14 +48,16 @@ int main() {
     
     // Start the UI task on core 0
     ui::createUITask(
-        PIN_PLAY_STOP_BUTTON,
-        PIN_ENCODER_A,
-        PIN_ENCODER_B,
+        BUTTON_PIN,
+        ENCODER_PIN_A,
+        ENCODER_PIN_B,
+        ENCODER_PIO,
+        ENCODER_SM,
         DISPLAY_I2C,
         DISPLAY_I2C_ADDR,
-        PIN_DISPLAY_SDA,
-        PIN_DISPLAY_SCL,
-        PIN_PLAY_LED
+        DISPLAY_PIN_SDA,
+        DISPLAY_PIN_SCL,
+        LED_PIN
     );
     
     // This should never be reached

@@ -9,7 +9,6 @@ namespace ui {
 class Led {
 public:
     Led(uint8_t pin);
-    void init();
     void on();
     void off();
     void toggle();

@@ -36,9 +36,9 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 
 # Find all source files in the sequencer, commands, and UI directories
-file(GLOB SEQUENCER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/*")
-file(GLOB COMMANDS_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/commands/*")
-file(GLOB UI_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/ui/*")
+file(GLOB_RECURSE SEQUENCER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/*")
+file(GLOB_RECURSE COMMANDS_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/commands/*")
+file(GLOB_RECURSE UI_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/ui/*")
 
 # Print the found source files for debugging
 message(STATUS "Sequencer sources: ${SEQUENCER_SOURCES}")

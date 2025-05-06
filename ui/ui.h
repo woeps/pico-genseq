@@ -4,10 +4,10 @@
 #include <functional>
 #include "pico/stdlib.h"
 #include "../commands/command.h"
-#include "button.h"
-#include "encoder.h"
-#include "display.h"
-#include "led.h"
+#include "components/button.h"
+#include "components/encoder.h"
+#include "components/display.h"
+#include "components/led.h"
 
 namespace ui {
 
@@ -19,6 +19,8 @@ public:
        uint8_t playStopButtonPin, 
        uint8_t encoderPinA,
        uint8_t encoderPinB,
+       PIO encoderPio,
+       uint encoderSm,
        i2c_inst_t* displayI2C,
        uint8_t eisplayI2CAddr,
        uint8_t displaySDAPin,
@@ -52,6 +54,8 @@ void createUITask(
     uint8_t playStopButtonPin, 
     uint8_t encoderPinA,
     uint8_t encoderPinB,
+    PIO encoderPio,
+    uint encoderSm,
     i2c_inst_t* displayI2C,
     uint8_t displayI2CAddr,
     uint8_t displaySDAPin,
