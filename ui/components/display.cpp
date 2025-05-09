@@ -36,6 +36,16 @@ namespace ui {
 
         // Write text
         lcd->writeString("GenSeq");
+        lcd->writeChar(0b11111111);
+    }
+
+    // PlaySymbol(>): lcd->writeChar(0b00111110);
+    // PauseSymbol(-): lcd->writeChar(0b00101101);
+
+    void Display::showSetting(char* label, uint8_t* value) {
+        lcd->clear();
+        std::string text = std::string(label) + ": " + std::to_string(*value);
+        lcd->writeString(text.c_str());
     }
 
 } // namespace ui

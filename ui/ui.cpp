@@ -28,8 +28,8 @@ namespace ui
                 { onButtonAPressed(); }, [this]()
                 { onButtonAReleased(); }, [this]()
                 { onButtonAHold(); }, 1000),
-        encoder(encoderPinA, encoderPinB, encoderPio, encoderSm, [this](int delta)
-                { onEncoderValueChanged(delta); }),
+        encoder(encoderPinA, encoderPinB, encoderPio, encoderSm, [this](int value)
+                { onEncoderValueChanged(value); }),
         display(displayI2C, displayI2CAddr, displaySDAPin, displaySCLPin), led(ledPin), playing(false), bpm(120), lastDisplayUpdate(0)
     {
     }
@@ -37,6 +37,7 @@ namespace ui
     void UI::init()
     {
         updateDisplay();
+        encoder.setValue(120);
 
         printf("test led start\n");
         led.on();
@@ -104,15 +105,16 @@ namespace ui
         printf("hold A button\n");
     }
 
-    void UI::onEncoderValueChanged(int delta)
+    void UI::onEncoderValueChanged(int value)
     {
-        printf("delta: %d\n", delta);
+        printf("value: %d\n", value);
         // Update BPM based on encoder movement
-        bpm = std::max(40, std::min(300, static_cast<int>(bpm) + delta));
+        bpm = std::max(40, std::min(255, value));
 
         // Send BPM update to sequencer
-        commands::sendCommand(commands::Command::SET_BPM, bpm);
+        commands::sendCommand(commands::Command::BPM_SET, bpm);
 
+        display.showSetting("BPM", &bpm);
         // Update display
         updateDisplay();
     }

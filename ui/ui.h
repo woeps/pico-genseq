@@ -40,7 +40,7 @@ namespace ui
         Led led;
 
         bool playing;
-        uint16_t bpm;
+        uint8_t bpm;
         uint32_t lastDisplayUpdate;
 
         // UI event handlers

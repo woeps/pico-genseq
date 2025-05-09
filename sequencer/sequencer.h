@@ -26,7 +26,7 @@ namespace sequencer {
 
         void init();
         void update();
-        void receiveCommand();
+        void processCommand(commands::CommandMessage msg);
 
     private:
         uart_inst_t* uart;
@@ -51,6 +51,7 @@ namespace sequencer {
         void addPattern(const Pattern& pattern);
         void activatePattern(size_t index);
         void deactivatePattern(size_t index);
+        void patternSetEuclideanLength(size_t patternIndex, size_t length);
 
         void sendMidiNoteOn(uint8_t channel, uint8_t note, uint8_t velocity);
         void sendMidiNoteOff(uint8_t channel, uint8_t note);

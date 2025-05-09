@@ -48,111 +48,33 @@ namespace sequencer {
             lastTickTime = currentTime;
 
             // Process all active patterns
-            for (const auto& pattern : patterns) {
+            for (auto& pattern : patterns) {
                 if (!pattern.isActive()) continue;
 
-                const auto& rhythmSteps = pattern.getRhythmSet().getSteps();
-                const auto& pitches = pattern.getPitchSet().getPitches();
-                const auto& velocities = pattern.getVelocitySet().getVelocities();
+                // Get non-const references to the pattern components
+                GateSet& gateSet = const_cast<GateSet&>(pattern.getGateSet());
+                PitchSet& pitchSet = const_cast<PitchSet&>(pattern.getPitchSet());
+                VelocitySet& velocitySet = const_cast<VelocitySet&>(pattern.getVelocitySet());
 
-                if (pitches.empty() || velocities.empty() || rhythmSteps.empty()) continue;
+                if (pitchSet.getPitches().empty() || velocitySet.getVelocities().empty() || gateSet.getGates().empty()) continue;
 
-                // Calculate pattern length in ticks
-                uint32_t patternLength = 0;
-                for (const auto& step : rhythmSteps) {
-                    patternLength = std::max(patternLength, step.tick + step.duration);
+                Flank flank = gateSet.getFlank();
+
+                if (flank == RISING) {
+                    sendMidiNoteOn(pattern.getMidiChannel(), pitchSet.getPitch(), velocitySet.getVelocity());
                 }
-
-                if (patternLength == 0) continue;
-
-                // Calculate current position within the pattern
-                uint32_t patternPosition = currentTick % patternLength;
-
-                // Check if any notes should be triggered at this tick
-                for (size_t i = 0; i < rhythmSteps.size(); i++) {
-                    const auto& step = rhythmSteps[i];
-
-                    // Note on
-                    if (patternPosition == step.tick) {
-                        // Determine which pitch and velocity to play based on the play mode
-                        size_t pitchIndex = 0;
-                        size_t velocityIndex = 0;
-
-                        switch (pattern.getPlayMode()) {
-                        case PlayMode::FORWARD:
-                            pitchIndex = i % pitches.size();
-                            velocityIndex = i % velocities.size();
-                            break;
-                        case PlayMode::BACKWARD:
-                            pitchIndex = (pitches.size() - 1 - (i % pitches.size())) % pitches.size();
-                            velocityIndex = (velocities.size() - 1 - (i % velocities.size())) % velocities.size();
-                            break;
-                        case PlayMode::PENDULUM: {
-                            size_t pitchCycle = pitches.size() * 2 - 2;
-                            if (pitchCycle == 0) pitchCycle = 1; // Handle single pitch case
-                            size_t pitchPos = i % pitchCycle;
-                            pitchIndex = pitchPos < pitches.size() ? pitchPos : (pitchCycle - pitchPos);
-
-                            size_t velocityCycle = velocities.size() * 2 - 2;
-                            if (velocityCycle == 0) velocityCycle = 1; // Handle single velocity case
-                            size_t velocityPos = i % velocityCycle;
-                            velocityIndex = velocityPos < velocities.size() ? velocityPos : (velocityCycle - velocityPos);
-                            break;
-                        }
-                        case PlayMode::RANDOM: {
-                            static std::random_device rd;
-                            static std::mt19937 gen(rd());
-                            std::uniform_int_distribution<> pitchDistrib(0, pitches.size() - 1);
-                            std::uniform_int_distribution<> velocityDistrib(0, velocities.size() - 1);
-                            pitchIndex = pitchDistrib(gen);
-                            velocityIndex = velocityDistrib(gen);
-                            break;
-                        }
-                        }
-
-                        uint8_t pitch = pitches[pitchIndex];
-                        uint8_t velocity = velocities[velocityIndex];
-                        sendMidiNoteOn(0, pitch, velocity);
-                    }
-
-                    // Note off
-                    if (patternPosition == (step.tick + step.duration) % patternLength) {
-                        // Find the pitch that was turned on at step.tick
-                        size_t pitchIndex = 0;
-                        switch (pattern.getPlayMode()) {
-                        case PlayMode::FORWARD:
-                            pitchIndex = i % pitches.size();
-                            break;
-                        case PlayMode::BACKWARD:
-                            pitchIndex = (pitches.size() - 1 - (i % pitches.size())) % pitches.size();
-                            break;
-                        case PlayMode::PENDULUM: {
-                            size_t cycle = pitches.size() * 2 - 2;
-                            if (cycle == 0) cycle = 1; // Handle single pitch case
-                            size_t pos = i % cycle;
-                            pitchIndex = pos < pitches.size() ? pos : (cycle - pos);
-                            break;
-                        }
-                        case PlayMode::RANDOM: {
-                            // For random mode, we don't know which note was played
-                            // So we'll just turn off all notes (handled in the stop() method)
-                            break;
-                        }
-                        }
-
-                        if (pattern.getPlayMode() != PlayMode::RANDOM) {
-                            uint8_t pitch = pitches[pitchIndex];
-                            sendMidiNoteOff(0, pitch);
-                        }
-                    }
+                else if (flank == FALLING) {
+                    sendMidiNoteOff(pattern.getMidiChannel(), pitchSet.getPitch());
+                    pitchSet.setPosition(pitchSet.getPosition() + 1);
+                    velocitySet.setPosition(velocitySet.getPosition() + 1);
                 }
+                int nextGatePosition = gateSet.getPosition() + 1;
+                gateSet.setPosition(nextGatePosition);
             }
-
-            currentTick++;
         }
     }
 
-    void Sequencer::processCommand(const commands::CommandMessage& msg) {
+    void Sequencer::processCommand(commands::CommandMessage msg) {
         switch (msg.cmd) {
         case commands::Command::PLAY:
             play();
@@ -278,13 +200,11 @@ namespace sequencer {
         if (globalSequencer) {
             while (true) {
                 // Check for commands from the UI core
-                globalSequencer->receiveCommand();
+                commands::CommandMessage msg = commands::receiveCommand();
+                globalSequencer->processCommand(msg);
 
                 // Update the sequencer
                 globalSequencer->update();
-
-                // Small delay to prevent tight looping
-                sleep_us(100);
             }
         }
     }

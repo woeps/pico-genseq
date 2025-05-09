@@ -14,7 +14,7 @@ namespace ui {
         ///
         /// \param delta The change in value of the encoder. This will always increase or
         /// decrease by one for each clockwise or anti-clockwise "step" of the encoder.
-        using Callback = std::function<void(int delta)>;
+        using Callback = std::function<void(int value)>;
 
         /// Create an encoder object for handling rotary encoder inputs
         ///
