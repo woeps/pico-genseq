@@ -45,9 +45,16 @@ A generative hardware MIDI sequencer based on the Raspberry Pi Pico. (RP2040)
 ## Debugging
 - in VSCode, press F5 / select `Pico Debug (Cortex-Debug)` in Run & Debug Toolbar
 
-### TODO
+## Resources
+
+- Midi Clock (tempo) analyzer: https://disasterarea.io/midiclock
+
+## TODO
 
 - [*] extract all parts of sequencer into own files
 - [ ] move logic to select next step into play_mode.cpp (out of sequencer.cpp)
 - [ ] decouple midi from sequencer
-- [ ] send midi clock
+- [x] send midi clock
+- [x] debug: why are midi notes continous, while gates should be 50% low
+- [ ] make settings & proerpties configurable via the ui (e.g. euclidean pulses, length, ...)
+

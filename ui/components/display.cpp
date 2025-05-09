@@ -2,6 +2,7 @@
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
 #include <cstdio>
+#include <string>
 #include "../driver/LCD_I2C.hpp"
 
 namespace ui {

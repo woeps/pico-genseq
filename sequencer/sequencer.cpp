@@ -5,7 +5,7 @@
 #include <random>
 #include "pitch_set.h"
 #include "velocity_set.h"
-#include "rhythm_set.h"
+#include "gate_set.h"
 #include "pattern.h"
 
 namespace sequencer {
@@ -19,10 +19,10 @@ namespace sequencer {
     // Sequencer implementation
     Sequencer::Sequencer(uart_inst_t* uart, uint txPin, uint rxPin) :
         uart(uart),
-        currentTick(0),
         bpm(120),
         playing(false),
         lastTickTime(get_absolute_time()),
+        midiClockEnabled(true),
         patterns({ Pattern() }) {
         // Initialize UART for MIDI
         uart_init(uart, MIDI_BAUD_RATE);
@@ -160,45 +160,52 @@ namespace sequencer {
         case commands::Command::STOP:
             stop();
             break;
-        case commands::Command::SET_BPM:
+        case commands::Command::BPM_SET:
             setBPM(msg.param1);
             break;
-        case commands::Command::ACTIVATE_PATTERN:
+        case commands::Command::PATTERN_ACTIVATE:
             activatePattern(msg.param1);
             break;
-        case commands::Command::DEACTIVATE_PATTERN:
+        case commands::Command::PATTERN_DEACTIVATE:
             deactivatePattern(msg.param1);
             break;
             // Add more command handlers as needed
-        }
-    }
-
-    void Sequencer::receiveCommand() {
-        if (multicore_fifo_rvalid()) {
-            uint32_t raw_cmd = multicore_fifo_pop_blocking();
-            commands::CommandMessage msg;
-            msg.cmd = static_cast<commands::Command>(raw_cmd & 0xFF);
-            msg.param1 = (raw_cmd >> 8) & 0xFFFF;
-            msg.param2 = (raw_cmd >> 24) & 0xFF;
-
-            processCommand(msg);
+        case commands::Command::PATTERN_EUCLIDEAN_SET_LENGTH:
+            patternSetEuclideanLength(msg.param1, msg.param2);
         }
     }
 
     void Sequencer::play() {
-        currentTick = 0;
+        // Send MIDI Start message if MIDI clock is enabled
+        if (midiClockEnabled) {
+            sendMidiByte(midi::SystemRealTimeMessage::START);
+        }
+        
+        // Set playing state and initialize timing
         playing = true;
         lastTickTime = get_absolute_time();
+        
+        // Clear pattern notes tracking to start fresh
+        patternNotes.clear();
     }
 
     void Sequencer::stop() {
         playing = false;
 
-        // Send note off for all MIDI channels and notes
+        // Send note off only for active notes
         for (uint8_t channel = 0; channel < 16; channel++) {
             for (uint8_t note = 0; note < 128; note++) {
-                sendMidiNoteOff(channel, note);
+                if (activeNotes[channel][note]) {
+                    sendMidiNoteOff(channel, note);
+                }
             }
+        }
+
+        // set all sets in all paterns to position 0
+        for (auto& pattern : patterns) {
+            pattern.getGateSet().reset();
+            pattern.getPitchSet().reset();
+            pattern.getVelocitySet().reset();
         }
     }
 
@@ -222,16 +229,41 @@ namespace sequencer {
         }
     }
 
+    void Sequencer::patternSetEuclideanLength(size_t patternIndex, size_t length) {
+        printf("TODO: patternSetEuclideanLength: %d, %d\n", patternIndex, length);
+        // if (patternIndex < patterns.size()) {
+        //     patterns[patternIndex].setEuclideanLength(length);
+        // }
+    }
+
     void Sequencer::sendMidiNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) {
-        // MIDI Note On: 0x9n (n = channel), note, velocity
-        sendMidiByte(0x90 | (channel & 0x0F));
+        // Ensure channel and note are within valid ranges
+        channel = channel & 0x0F;  // Limit to 0-15
+        note = note & 0x7F;       // Limit to 0-127
+        
+        // Track this note as active
+        activeNotes[channel][note] = true;
+        
+        // MIDI Note On: status byte + channel, note, velocity
+        // MIDI channels are 1-based in the API but 0-based in the protocol
+        uint8_t channelIndex = (channel > 0) ? (channel - 1) : 0;
+        sendMidiByte(midi::ChannelVoiceMessage::NOTE_ON | (channelIndex & 0x0F));
         sendMidiByte(note & 0x7F);
         sendMidiByte(velocity & 0x7F);
     }
 
     void Sequencer::sendMidiNoteOff(uint8_t channel, uint8_t note) {
-        // MIDI Note Off: 0x8n (n = channel), note, velocity (0)
-        sendMidiByte(0x80 | (channel & 0x0F));
+        // Ensure channel and note are within valid ranges
+        channel = channel & 0x0F;  // Limit to 0-15
+        note = note & 0x7F;       // Limit to 0-127
+        
+        // Mark this note as inactive
+        activeNotes[channel][note] = false;
+        
+        // MIDI Note Off: status byte + channel, note, velocity (0)
+        // MIDI channels are 1-based in the API but 0-based in the protocol
+        uint8_t channelIndex = (channel > 0) ? (channel - 1) : 0;
+        sendMidiByte(midi::ChannelVoiceMessage::NOTE_OFF | (channelIndex & 0x0F));
         sendMidiByte(note & 0x7F);
         sendMidiByte(0); // velocity 0
     }

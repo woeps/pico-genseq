@@ -1,13 +1,13 @@
 #include "pattern.h"
+#include "sequencer.h"
 
 namespace sequencer {
 
     // Pattern implementation
-    Pattern::Pattern(const PitchSet& pitchSet, const VelocitySet& velocitySet, const RhythmSet& rhythmSet, PlayMode playMode, int midiChannel) :
+    Pattern::Pattern(const PitchSet& pitchSet, const VelocitySet& velocitySet, const GateSet& gateSet, int midiChannel) :
         pitchSet(pitchSet),
         velocitySet(velocitySet),
-        rhythmSet(rhythmSet),
-        playMode(playMode),
+        gateSet(gateSet),
         midiChannel(midiChannel),
         active(false)
     {
@@ -19,14 +19,18 @@ namespace sequencer {
             // 62, // D4
             // 64, // E4
             // 65, // F4
-            // 67, // G4
-            // 69, // A4
+            67, // G4
+            69, // A4
             // 71, // B4
-            // 72  // C5
+            72  // C5
             }),
             active(true),
-            velocitySet({ 100, 40 }),
-            rhythmSet(RhythmSet::createEuclidean(4, 1, 0, PPQN)),
+            velocitySet({ 100, 20 }),
+            gateSet(GateSet::createEuclidean(12, 2, 0, PPQN)),
+            // gateSet(GateSet({ true, false, false, false, false, false, false, false,
+            //                   false, false, false, false, false, false, false, false,
+            //                   false, false, false, false, false, false, false, false
+            //                 })),
             midiChannel(1) {
         // Create a C major scale
         // std::vector<uint8_t> cMajorScale = {
@@ -46,16 +50,16 @@ namespace sequencer {
         // VelocitySet velocitySet(velocities);
 
         // Create a simple euclidean rhythm (8 steps, 5 pulses)
-        // RhythmSet rhythmSet = RhythmSet::createEuclidean(8, 5, 0, PPQN);
+        // GateSet gateSet = GateSet::createEuclidean(8, 5, 0, PPQN * 4);
 
         // Create a pattern with the pitch set, velocity set, and rhythm set
-        //Pattern pattern(pitchSet, velocitySet, rhythmSet, PlayMode::FORWARD);
+        //Pattern pattern(pitchSet, velocitySet, rhythmSet);
         //pattern.setActive(true);
 
         //return pattern;
     }
 
-    const PitchSet& Pattern::getPitchSet() const {
+    PitchSet& Pattern::getPitchSet() {
         return pitchSet;
     }
 
@@ -63,7 +67,7 @@ namespace sequencer {
         this->pitchSet = pitchSet;
     }
 
-    const VelocitySet& Pattern::getVelocitySet() const {
+    VelocitySet& Pattern::getVelocitySet() {
         return velocitySet;
     }
 
@@ -71,21 +75,15 @@ namespace sequencer {
         this->velocitySet = velocitySet;
     }
 
-    const RhythmSet& Pattern::getRhythmSet() const {
-        return rhythmSet;
+    GateSet& Pattern::getGateSet() {
+        return gateSet;
     }
 
-    void Pattern::setRhythmSet(const RhythmSet& rhythmSet) {
-        this->rhythmSet = rhythmSet;
+    void Pattern::setGateSet(const GateSet& gateSet) {
+        this->gateSet = gateSet;
     }
 
-    PlayMode Pattern::getPlayMode() const {
-        return playMode;
-    }
 
-    void Pattern::setPlayMode(PlayMode playMode) {
-        this->playMode = playMode;
-    }
 
     int Pattern::getMidiChannel() const {
         return midiChannel;

@@ -46,7 +46,7 @@ namespace ui {
 
         if (this->newValue != this->lastValue || this->delta != this->lastDelta) {
             printf("position %8d, delta %6d\n", this->newValue, this->delta);
-            //this->callback(this->newValue); // TODO: debounce to run callback less often
+            this->callback(this->newValue);
             this->lastValue = this->newValue;
             this->lastDelta = this->delta;
         }
