@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include "pico/stdlib.h"
 #include "hardware/i2c.h"
 
 // Forward declaration of LCD_I2C class
@@ -15,7 +14,7 @@ namespace ui {
         Display(i2c_inst_t* i2c, uint8_t i2cAddr, uint8_t sdaPin, uint8_t sclPin);
 
         void init();
-        void showSetting(char* label, uint8_t* value);
+        void showSetting(const char* label, uint8_t* value);
     private:
         // Use LCD_I2C for all communication
         LCD_I2C* lcd;

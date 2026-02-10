@@ -1,6 +1,6 @@
 #include "ui.h"
-#include "hardware/gpio.h"
-#include "hardware/clocks.h"
+
+#include "../commands/command.h"
 #include "hardware/i2c.h"
 #include <cstring>
 #include <cstdio>

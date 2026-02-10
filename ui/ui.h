@@ -1,9 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
-#include "pico/stdlib.h"
-#include "../commands/command.h"
 #include "components/button.h"
 #include "components/encoder.h"
 #include "components/display.h"

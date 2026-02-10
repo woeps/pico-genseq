@@ -1,5 +1,4 @@
 #include "display.h"
-#include "hardware/gpio.h"
 #include "hardware/i2c.h"
 #include <cstdio>
 #include <string>
@@ -42,7 +41,7 @@ namespace ui {
     // PlaySymbol(>): lcd->writeChar(0b00111110);
     // PauseSymbol(-): lcd->writeChar(0b00101101);
 
-    void Display::showSetting(char* label, uint8_t* value) {
+    void Display::showSetting(const char* label, uint8_t* value) {
         lcd->clear();
         std::string text = std::string(label) + ": " + std::to_string(*value);
         lcd->writeString(text.c_str());
