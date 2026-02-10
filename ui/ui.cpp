@@ -1,14 +1,9 @@
 #include "ui.h"
-
-#include "../commands/command.h"
-#include "hardware/i2c.h"
-#include <cstring>
 #include <cstdio>
 
 namespace ui
 {
-
-    // UI implementation
+    // UI facade implementation
     UI::UI(
         uint8_t buttonEncoderPin,
         uint8_t buttonAPin,
@@ -20,108 +15,34 @@ namespace ui
         uint8_t displayI2CAddr,
         uint8_t displaySDAPin,
         uint8_t displaySCLPin,
-        uint8_t ledPin) : buttonEncoder(buttonEncoderPin, [this]()
-                                        { onButtonEncoderPressed(); }, [this]()
-                                        { onButtonEncoderReleased(); }, [this]()
-                                        { onButtonEncoderHold(); }, 1000),
-        buttonA(buttonAPin, [this]()
-                { onButtonAPressed(); }, [this]()
-                { onButtonAReleased(); }, [this]()
-                { onButtonAHold(); }, 1000),
-        encoder(encoderPinA, encoderPinB, encoderPio, encoderSm, [this](int value)
-                { onEncoderValueChanged(value); }),
-        display(displayI2C, displayI2CAddr, displaySDAPin, displaySCLPin), led(ledPin), playing(false), bpm(120), lastDisplayUpdate(0)
+        uint8_t ledPin) :
+        config{
+            buttonEncoderPin,
+            buttonAPin,
+            encoderPinA,
+            encoderPinB,
+            encoderPio,
+            encoderSm,
+            displayI2C,
+            displayI2CAddr,
+            displaySDAPin,
+            displaySCLPin,
+            ledPin
+        }
     {
+        controller = std::make_unique<UIController>(config);
     }
 
     void UI::init()
     {
-        updateDisplay();
-        encoder.setValue(120);
-
-        printf("test led start\n");
-        led.on();
-        sleep_ms(200);
-        led.off();
-        printf("test led end\n");
+        printf("Initializing UI facade...\n");
+        controller->initialize();
+        printf("UI facade initialized\n");
     }
 
     void UI::update()
     {
-        buttonEncoder.update();
-        buttonA.update();
-        led.update();
-        encoder.update();
-
-        // Update display periodically
-        uint32_t currentTime = to_ms_since_boot(get_absolute_time());
-        if (currentTime - lastDisplayUpdate > 100)
-        { // Update display every 100ms
-            updateDisplay();
-            lastDisplayUpdate = currentTime;
-        }
-    }
-
-    void UI::onButtonEncoderPressed()
-    {
-        printf("pressed encoder button\n");
-        playing = !playing;
-
-        if (playing)
-        {
-            commands::sendCommand(commands::Command::PLAY);
-            led.blink(100, 900); // Blink at rate proportional to BPM
-        }
-        else
-        {
-            commands::sendCommand(commands::Command::STOP);
-            led.off();
-        }
-    }
-
-    void UI::onButtonEncoderReleased()
-    {
-        printf("released encoder button\n");
-    }
-
-    void UI::onButtonEncoderHold()
-    {
-        printf("hold encoder button: set value to 0\n");
-        encoder.setValue(0);
-    }
-
-    void UI::onButtonAPressed()
-    {
-        printf("pressed A button\n");
-    }
-
-    void UI::onButtonAReleased()
-    {
-        printf("released A button\n");
-    }
-
-    void UI::onButtonAHold()
-    {
-        printf("hold A button\n");
-    }
-
-    void UI::onEncoderValueChanged(int value)
-    {
-        printf("value: %d\n", value);
-        // Update BPM based on encoder movement
-        bpm = std::max(40, std::min(255, value));
-
-        // Send BPM update to sequencer
-        commands::sendCommand(commands::Command::BPM_SET, bpm);
-
-        display.showSetting("BPM", &bpm);
-        // Update display
-        updateDisplay();
-    }
-
-    void UI::updateDisplay()
-    {
-        // TODO
+        controller->update();
     }
 
     void createUITask(
@@ -137,7 +58,7 @@ namespace ui
         uint8_t displaySCLPin,
         uint8_t ledPin)
     {
-        printf("constructing UI\n");
+        printf("constructing UI facade\n");
         // Create and initialize UI with pin assignments
         UI ui(
             buttonEncoderPin,
@@ -151,7 +72,7 @@ namespace ui
             displaySDAPin,
             displaySCLPin,
             ledPin);
-        printf("initializing UI\n");
+        printf("initializing UI facade\n");
         ui.init();
 
         // Main UI loop

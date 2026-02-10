@@ -1,15 +1,13 @@
 #pragma once
 
 #include <cstdint>
-#include "components/button.h"
-#include "components/encoder.h"
-#include "components/display.h"
-#include "components/led.h"
+#include <memory>
+#include "controllers/HardwareConfig.h"
+#include "controllers/UIController.h"
 
 namespace ui
 {
-
-    // Main UI class
+    // Main UI facade class - provides simplified interface to the new UI architecture
     class UI
     {
     public:
@@ -22,36 +20,17 @@ namespace ui
             PIO encoderPio,
             uint encoderSm,
             i2c_inst_t* displayI2C,
-            uint8_t eisplayI2CAddr,
+            uint8_t displayI2CAddr,
             uint8_t displaySDAPin,
             uint8_t displaySCLPin,
             uint8_t ledPin);
+        
         void init();
         void update();
 
     private:
-        Button buttonEncoder;
-        Button buttonA;
-        Encoder encoder;
-        Display display;
-        Led led;
-
-        bool playing;
-        uint8_t bpm;
-        uint32_t lastDisplayUpdate;
-
-        // UI event handlers
-        void onButtonEncoderPressed();
-        void onButtonEncoderReleased();
-        void onButtonEncoderHold();
-
-        void onButtonAPressed();
-        void onButtonAReleased();
-        void onButtonAHold();
-
-        void onEncoderValueChanged(int delta);
-
-        void updateDisplay();
+        HardwareConfig config;
+        std::unique_ptr<UIController> controller;
     };
 
     // Function to create the UI task for the first core
