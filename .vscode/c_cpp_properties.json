@@ -4,7 +4,9 @@
             "name": "Pico",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${userHome}/.pico-sdk/sdk/2.1.1/**"
+                "${userHome}/.pico-sdk/toolchain/14_2_Rel1/arm-none-eabi/include",
+                "${userHome}/.pico-sdk/toolchain/14_2_Rel1/arm-none-eabi/include/c++/14.2.1",
+                "${userHome}/.pico-sdk/toolchain/14_2_Rel1/arm-none-eabi/include/c++/14.2.1/arm-none-eabi"
             ],
             "forcedInclude": [
                 "${userHome}/.pico-sdk/sdk/2.1.1/src/common/pico_base_headers/include/pico.h",
@@ -16,8 +18,8 @@
                 "${workspaceFolder}/build/compile_commands.json"
             ],
             "cStandard": "c17",
-            "cppStandard": "c++14",
-            "intelliSenseMode": "linux-gcc-arm",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-arm",
             "configurationProvider": "ms-vscode.cmake-tools"
         }
     ],
