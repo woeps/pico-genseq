@@ -53,8 +53,14 @@ add_executable(genseq
     ${UI_SOURCES}
 )
 
-pico_set_program_name(genseq "genseq")
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/generated)
+pico_generate_pio_header(genseq ${CMAKE_CURRENT_LIST_DIR}/ui/driver/ws2812.pio OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR}/generated)
+
+# binary info (readabl by picotool)
+pico_set_program_name(genseq "GenSeq")
 pico_set_program_version(genseq "0.1")
+pico_set_program_description(genseq "Generative MIDI Sequence")
+pico_set_program_url(genseq "https://github.com/woeps/pico-genseq")
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(genseq 1)
@@ -68,12 +74,14 @@ target_link_libraries(genseq
     hardware_uart
     hardware_gpio
     hardware_i2c
+    hardware_dma
 )
 
 # Add the standard include files to the build
 target_include_directories(genseq PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
+        ${CMAKE_CURRENT_LIST_DIR}/generated
 )
 
-pico_add_extra_outputs(genseq)
 
+pico_add_extra_outputs(genseq)
