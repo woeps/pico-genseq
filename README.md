@@ -2,6 +2,8 @@
 
 A generative hardware MIDI sequencer based on the Raspberry Pi Pico (RP2040).
 
+:warning: This project is still in development. It may take some (more) time to get to a stable state. :warning:
+
 ## Goal
 
 GenSeq is a hardware MIDI sequencer that creates generative musical patterns based on separate sequences of pitches and rhythms. It provides real-time MIDI output with precise timing, an intuitive user interface, and extensible architecture for future enhancements.
