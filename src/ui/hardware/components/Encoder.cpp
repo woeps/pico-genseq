@@ -1,6 +1,4 @@
 #include "Encoder.h"
-#include "hardware/gpio.h"
-#include "pico/time.h"
 #include "../driver/encoder.pio.h"
 #include <cstdio>
 
