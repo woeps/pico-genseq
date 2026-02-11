@@ -1,46 +1,38 @@
 # GenSeq
-A generative hardware MIDI sequencer based on the Raspberry Pi Pico. (RP2040)
 
-## Project Architecture
-- both cores are used to separate
-    - user interface (e.g. encoder, switches, buttons, displays)
-    - sequencer logic
-- the ui core sends command messages to the sequencer core, which then adapts it's sequencing behaviour accordingly (e.g. play, stop, change bpm, etc.)
-- the sequencer logic is implemented in the `sequencer` directory
-    - sequencer data uses ticks
-    - there are 2 different data types, which are stored and processed separated from each other:
-        - pitch set (note height, velocity)
-        - rhythm set (thiming, gate on/off & length)
-    - actual note on/off messages are derived from above data, as well as playmode (defining the order) - this combination of data should be refered to as a pattern
-    - different patterns can use the same pitch/rhythm set
-    - patterns can be played in parallel
-    - patterns can be active or inactive
-    - only active patterns are played
-    - midi messages are sent over the 2nd UART port
-- the user interface is implemented in the `ui` directory
-    - main components of the UI are:
-        - buttons
-        - encoder
-            - read with an PIO implementation using intterupts
-        - display (HD44780 with FC113 controller)
-        - leds
-- the main file (`genseq.cpp`) combines both into a single program
-- great care should be taken to keep the code easily extendable in the future
+A generative hardware MIDI sequencer based on the Raspberry Pi Pico (RP2040).
 
-## Features
-- start/stop button: toggles sequencer playback (playing all patterns in parallel)
-- In the first iteration, Rhythm sets are generated based on euclidean circles
-    - in later iterations manual step editing should be possible
+## Goal
+
+GenSeq is a hardware MIDI sequencer that creates generative musical patterns based on separate sequences of pitches and rhythms. It provides real-time MIDI output with precise timing, an intuitive user interface, and extensible architecture for future enhancements.
+
+## Key Features
+
+- **Dual-core architecture** - Separates UI and sequencer logic for responsive performance
+- **Generative sequencing** - Creates patterns using Euclidean rhythm algorithms
+- **Real-time MIDI output** - Precise timing with MIDI clock support
+- **Interactive UI** - LCD display, rotary encoder, and button matrix
+- **Pattern management** - Multiple patterns with shared pitch/rhythm sets
+- **Extensible design** - Clean architecture for easy feature additions
+
+## Documentation
+
+For comprehensive documentation, see the [docs/](docs/) directory:
+- [Architecture Deep Dive](docs/architecture/architecture-deep-dive.md) - Technical details
+- [Build & Flash Guide](docs/technical/build-flash.md) - Detailed instructions
+- [Dependencies & Setup](docs/reference/dependencies.md) - Development environment
+- [Troubleshooting](docs/reference/troubleshooting.md) - Common issues
 
 ## Building
+- `mkdir build`
 - `cd ./build`
-- `cmake ..`
+- `cmake .. -G Ninja`
 - `ninja clean` - optionally
 - `ninja`
 
 ## Flashing
-- either: copy `genseq.uf2` to the device
-- or: use debugger (PicoProbe)
+- either: copy `build/genseq.uf2` to the device
+- or: use debugger ([PicoProbe](docs/technical/build-flash.md#method-2-picoprobe-flashing-advanced))
 
 ## Debugging
 - in VSCode, press F5 / select `Pico Debug (Cortex-Debug)` in Run & Debug Toolbar
@@ -51,10 +43,11 @@ A generative hardware MIDI sequencer based on the Raspberry Pi Pico. (RP2040)
 
 ## TODO
 
-- [*] extract all parts of sequencer into own files
-- [ ] move logic to select next step into play_mode.cpp (out of sequencer.cpp)
-- [ ] decouple midi from sequencer
-- [x] send midi clock
-- [x] debug: why are midi notes continous, while gates should be 50% low
-- [ ] make settings & proerpties configurable via the ui (e.g. euclidean pulses, length, ...)
+See [TODO.md](TODO.md) for detailed task list and implementation notes.
+
+Key upcoming features:
+- [ ] Manual step editing for rhythm sets
+- [ ] UI configuration for settings (Euclidean pulses, length, etc.)
+- [ ] Decouple MIDI from sequencer core
+- [ ] Move step selection logic to play_mode.cpp
 
