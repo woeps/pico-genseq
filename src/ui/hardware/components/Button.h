@@ -2,11 +2,11 @@
 
 #include <cstdint>
 #include <functional>
-#include "../interfaces/ISensor.h"
+#include "../interfaces/IInput.h"
 
 namespace hardware {
 
-class Button : public ISensor {
+class Button : public IInput {
 public:
     Button(uint8_t pin);
 

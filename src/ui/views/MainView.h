@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../views/IView.h"
-#include "../hardware/interfaces/IActuator.h"
+#include "../hardware/interfaces/IOutput.h"
 #include <cstdint>
 
 namespace ui {
@@ -9,7 +9,7 @@ namespace ui {
 // Main view for the sequencer UI
 class MainView : public IView {
 public:
-    MainView(hardware::IActuator& display, hardware::IActuator& led);
+    MainView(hardware::IOutput& display, hardware::IOutput& led);
 
     void onEnter() override;
     void onExit() override;
@@ -20,8 +20,8 @@ public:
     void render() override;
 
 private:
-    hardware::IActuator& display;
-    hardware::IActuator& led;
+    hardware::IOutput& display;
+    hardware::IOutput& led;
 
     // View state
     uint8_t bpm;

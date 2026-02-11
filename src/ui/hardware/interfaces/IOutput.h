@@ -2,9 +2,9 @@
 
 namespace hardware {
 
-class IActuator {
+class IOutput {
 public:
-    virtual ~IActuator() = default;
+    virtual ~IOutput() = default;
     virtual void update() = 0;
     virtual void setValue(int value) = 0;
 };

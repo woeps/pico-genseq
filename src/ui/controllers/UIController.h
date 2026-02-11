@@ -3,8 +3,8 @@
 #include <memory>
 #include <array>
 #include "HardwareConfig.h"
-#include "../hardware/interfaces/ISensor.h"
-#include "../hardware/interfaces/IActuator.h"
+#include "../hardware/interfaces/IInput.h"
+#include "../hardware/interfaces/IOutput.h"
 #include "../navigation/ViewManager.h"
 
 namespace ui {
@@ -29,12 +29,12 @@ private:
     std::unique_ptr<ViewManager> viewManager;
 
     // Sensors (input devices)
-    std::array<std::unique_ptr<hardware::ISensor>, 2> buttons;
-    std::unique_ptr<hardware::ISensor> encoder;
+    std::array<std::unique_ptr<hardware::IInput>, 2> buttons;
+    std::unique_ptr<hardware::IInput> encoder;
 
     // Actuators (output devices)
-    std::unique_ptr<hardware::IActuator> display;
-    std::unique_ptr<hardware::IActuator> led;
+    std::unique_ptr<hardware::IOutput> display;
+    std::unique_ptr<hardware::IOutput> led;
 
     // Hardware initialization
     void setupSensors();

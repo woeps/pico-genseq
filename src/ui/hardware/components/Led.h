@@ -1,11 +1,11 @@
 #pragma once
 
 #include <cstdint>
-#include "../interfaces/IActuator.h"
+#include "../interfaces/IOutput.h"
 
 namespace hardware {
 
-class Led : public IActuator {
+class Led : public IOutput {
 public:
     Led(uint8_t pin);
 

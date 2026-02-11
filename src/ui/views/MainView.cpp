@@ -1,12 +1,12 @@
 #include "MainView.h"
 #include "../../commands/command.h"
-#include "pico/stdlib.h"
+#include "pico/time.h"
 #include <cstdio>
-#include <string>
+#include <algorithm>
 
 namespace ui {
 
-MainView::MainView(hardware::IActuator& display, hardware::IActuator& led) :
+MainView::MainView(hardware::IOutput& display, hardware::IOutput& led) :
     display(display),
     led(led),
     bpm(120),

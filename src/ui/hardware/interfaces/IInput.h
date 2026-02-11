@@ -4,9 +4,9 @@
 
 namespace hardware {
 
-class ISensor {
+class IInput {
 public:
-    virtual ~ISensor() = default;
+    virtual ~IInput() = default;
     virtual void update() = 0;
     virtual void setValueChangeCallback(std::function<void(int)> callback) = 0;
 };

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include "../interfaces/IActuator.h"
+#include "../interfaces/IOutput.h"
 
 struct i2c_inst;
 typedef struct i2c_inst i2c_inst_t;
@@ -9,7 +9,7 @@ class LCD_I2C;
 
 namespace hardware {
 
-class Display : public IActuator {
+class Display : public IOutput {
 public:
     Display(i2c_inst_t* i2c, uint8_t i2cAddr, uint8_t sdaPin, uint8_t sclPin);
 

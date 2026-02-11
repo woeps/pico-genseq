@@ -3,11 +3,11 @@
 #include <cstdint>
 #include <functional>
 #include <hardware/pio.h>
-#include "../interfaces/ISensor.h"
+#include "../interfaces/IInput.h"
 
 namespace hardware {
 
-class Encoder : public ISensor {
+class Encoder : public IInput {
 public:
     Encoder(uint8_t pinA, uint8_t pinB, PIO pio, uint sm);
 
