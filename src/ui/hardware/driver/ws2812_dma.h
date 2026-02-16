@@ -6,6 +6,10 @@
 
 #define NUM_PIXELS 256
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Helper to create 32-bit GRB color
 static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b) {
     return
@@ -74,5 +78,9 @@ bool ws2812_dma_ready(void);
  * Checks if the DMA is ready and triggers a new transfer if so.
  */
 void ws2812_dma_handle(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // WS2812_DMA_H

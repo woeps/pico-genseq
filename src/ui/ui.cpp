@@ -1,33 +1,21 @@
 #include "ui.h"
 #include <cstdio>
+#include "pico/time.h"
 
 namespace ui
 {
     // UI facade implementation
     UI::UI(
-        uint8_t buttonEncoderPin,
-        uint8_t buttonAPin,
-        uint8_t encoderPinA,
-        uint8_t encoderPinB,
-        PIO encoderPio,
-        uint encoderSm,
-        i2c_inst_t* displayI2C,
-        uint8_t displayI2CAddr,
-        uint8_t displaySDAPin,
-        uint8_t displaySCLPin,
-        uint8_t ledPin) :
+        const uint8_t (&buttonPins)[6],
+        uint8_t ledPin,
+        uint8_t ledMatrixPin,
+        uint8_t potPin) :
         config{
-            buttonEncoderPin,
-            buttonAPin,
-            encoderPinA,
-            encoderPinB,
-            encoderPio,
-            encoderSm,
-            displayI2C,
-            displayI2CAddr,
-            displaySDAPin,
-            displaySCLPin,
-            ledPin
+            {buttonPins[0], buttonPins[1], buttonPins[2],
+             buttonPins[3], buttonPins[4], buttonPins[5]},
+            ledPin,
+            ledMatrixPin,
+            potPin
         }
     {
         controller = std::make_unique<UIController>(config);
@@ -46,32 +34,18 @@ namespace ui
     }
 
     void createUITask(
-        uint8_t buttonEncoderPin,
-        uint8_t buttonAPin,
-        uint8_t encoderPinA,
-        uint8_t encoderPinB,
-        PIO encoderPio,
-        uint encoderSm,
-        i2c_inst_t* displayI2C,
-        uint8_t displayI2CAddr,
-        uint8_t displaySDAPin,
-        uint8_t displaySCLPin,
-        uint8_t ledPin)
+        const uint8_t (&buttonPins)[6],
+        uint8_t ledPin,
+        uint8_t ledMatrixPin,
+        uint8_t potPin)
     {
         printf("constructing UI facade\n");
         // Create and initialize UI with pin assignments
         UI ui(
-            buttonEncoderPin,
-            buttonAPin,
-            encoderPinA,
-            encoderPinB,
-            encoderPio,
-            encoderSm,
-            displayI2C,
-            displayI2CAddr,
-            displaySDAPin,
-            displaySCLPin,
-            ledPin);
+            buttonPins,
+            ledPin,
+            ledMatrixPin,
+            potPin);
         printf("initializing UI facade\n");
         ui.init();
 

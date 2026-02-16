@@ -339,7 +339,7 @@ static const bool font[26][5][4] = {
 static inline void get_label_pattern(const char (*text)[4], uint32_t (*buffer)[256], uint32_t *color) {
     for (int pos = 0; pos < 4; pos++) {
         char c = (*text)[pos];
-        if (c == '\0') c = 'a'; // Fallback if string is short
+        if (c == '\0') c = ' '; // Fallback if string is short
         
         if (c >= 'A' && c <= 'Z') c = c - 'A' + 'a';
         // if (c < 'a' || c > 'z') c = 'a';

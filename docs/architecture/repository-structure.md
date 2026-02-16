@@ -10,6 +10,7 @@ genseq/
 │   ├── sequencer/         # Core sequencing logic (runs on core 1)
 │   ├── ui/                # User interface components (runs on core 0)
 │   ├── commands/          # Inter-core communication
+│   ├── config/            # Pin assignments & hardware config
 │   ├── generated/         # Auto-generated PIO headers
 │   └── genseq.cpp         # Main entry point
 ├── docs/                  # Documentation
@@ -75,20 +76,30 @@ User interface subsystem:
 
 ```
 ui/
-├── controllers/         # UI control logic
-├── hardware/            # Hardware abstraction
-│   ├── components/      # Individual hardware drivers
-│   ├── driver/          # Low-level drivers
-│   └── interfaces/      # Hardware interfaces
-├── navigation/          # View management
-└── views/               # UI screens
+├── state/               # State management
+│   ├── UIState.h        # State structure
+│   ├── Reducer.h/cpp    # Pure reducer + state-setter functions
+│   └── StateManager.h/cpp # Holds state, dispatches to reducer, notifies listeners
+├── views/               # View system
+│   ├── IView.h          # Render-only view interface
+│   └── MainView.h/cpp   # Main view implementation
+├── hardware/            # Hardware components
+│   ├── driver/          # Low-level drivers (LCD, PIO, WS2812)
+│   ├── HardwareConfig.h # Pin/peripheral configuration struct
+│   ├── Button.h/cpp     # Button with debounce + hold detection
+│   ├── Encoder.h/cpp    # Rotary encoder via PIO
+│   ├── Led.h/cpp        # LED with blink support
+│   └── LedMatrix.h/cpp  # 16x16 WS2812 LED matrix via DMA
+├── ui.h/cpp             # UI facade and main loop
+├── UIController.h/cpp   # Orchestrator: creates hardware + views
+├── Event.h              # Union-based event definitions
+└── Types.h              # Shared enums (ButtonId)
 ```
 
-- `ui.h/cpp` - Main UI controller
-- `controllers/` - High-level UI logic
-- `hardware/` - Hardware abstraction layer (HAL)
-- `navigation/` - View management system
-- `views/` - Individual UI screens
+- `ui.h/cpp` - UI facade (entry point from main)
+- `state/` - State management: reducer, state-setter functions, state manager
+- `views/` - Render-only views driven by state changes
+- `hardware/` - Concrete hardware components (no abstract interfaces)
 
 ### `/src/commands/`
 
@@ -121,11 +132,13 @@ Musical data is separated into:
 - **Rhythm Sets**: Timing and gate information
 - **Patterns**: Combinations of pitch and rhythm sets
 
-### 3. Hardware Abstraction
+### 3. Event-Driven Reducer Pattern
 
-UI hardware is abstracted through interfaces:
-- `IInput` - Input devices (encoders, buttons)
-- `IOutput` - Output devices (LEDs, display)
+UI uses a unidirectional data flow:
+- Hardware emits `Event` structs to `StateManager`
+- `StateManager` calls the pure `reduce()` function
+- State changes notify views via listener callback
+- Views only render — they never mutate state
 
 ## Development Considerations
 

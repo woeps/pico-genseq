@@ -9,11 +9,15 @@ The GenSeq hardware configuration defines all pin assignments, supported compone
 ### Current Pin Configuration
 
 ```cpp
-// From src/genseq.cpp
+// From src/config/pins.h
 
-// BUTTONS
-#define BUTTON_E_PIN 20  // Encoder button
-#define BUTTON_A_PIN 21  // Additional button
+// BUTTONS (A-F)
+#define BUTTON_A_PIN 20
+#define BUTTON_B_PIN 21
+#define BUTTON_C_PIN 0  // TODO: assign actual pin
+#define BUTTON_D_PIN 0  // TODO: assign actual pin
+#define BUTTON_E_PIN 0  // TODO: assign actual pin
+#define BUTTON_F_PIN 0  // TODO: assign actual pin
 
 // ENCODER
 #define ENCODER_PIN_A 14  // Encoder phase A
@@ -21,16 +25,13 @@ The GenSeq hardware configuration defines all pin assignments, supported compone
 #define ENCODER_PIO pio0  // PIO block 0
 #define ENCODER_SM 0      // State machine 0
 
-// DISPLAY (I2C)
-#define DISPLAY_I2C i2c0      // I2C block 0
-#define DISPLAY_PIN_SDA 4     // I2C data line
-#define DISPLAY_PIN_SCL 5     // I2C clock line
-#define DISPLAY_I2C_ADDR 0x27 // Display I2C address
-
 // MIDI UART
 #define MIDI_UART uart1       // UART block 1
 #define MIDI_UART_PIN_TX 8    // MIDI transmit pin
 #define MIDI_UART_PIN_RX 9    // MIDI receive pin
+
+// POTENTIOMETER (ADC)
+#define POT_PIN 26            // 10kΩ linear pot on ADC0
 
 // STATUS LED
 #define LED_PIN 25            // Onboard LED
@@ -120,7 +121,34 @@ Cols: GPIO18, GPIO17, GPIO16, GPIO15
 
 **Scanning**: Row-by-row scanning with debouncing
 
-### 5. LED Matrix
+### 5. Potentiometer
+
+**Specification**: 10kΩ linear potentiometer
+
+**Connection**:
+```
+Pico      →  Potentiometer
+GPIO26    →  Wiper (middle pin) via RC low-pass filter
+3V3       →  One outer pin
+GND       →  Other outer pin
+```
+
+**RC Low-Pass Filter**:
+```
+POT_WIPER ─── 1kΩ ─── GPIO26 (ADC0)
+                  │
+                100nF
+                  │
+                 GND
+```
+- **R**: 1kΩ, **C**: 100nF (cutoff ≈ 1.6 kHz)
+- Filters high-frequency noise while preserving responsiveness for manual control
+
+**ADC**: 12-bit (0–4095), read via `hardware_adc`
+
+**Noise Filtering**: RC low-pass filter on input + EMA software smoothing (α=1/4) + threshold-based change detection (±4 LSBs)
+
+### 6. LED Matrix
 
 **Specification**: 16x2 WS2812B LED strip
 
@@ -167,7 +195,7 @@ GND         → LED GND
 
 ### 1. Define Pins
 
-Add to `src/genseq.cpp`:
+Add to `src/config/pins.h`:
 ```cpp
 // New hardware pins
 #define NEW_DEVICE_PIN 26
@@ -320,6 +348,12 @@ struct HardwareConfig {
 - 3.3V logic levels
 - Input protection: Series resistors for external signals
 - Output current: Max 16mA per pin
+
+### ADC Considerations
+
+- RC low-pass filter (1kΩ + 100nF) on potentiometer input to reduce high-frequency noise
+- Cutoff frequency: ~1.6 kHz
+- Source impedance kept below RP2040 recommended maximum (~100kΩ)
 
 ## Troubleshooting Hardware
 

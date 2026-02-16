@@ -138,10 +138,11 @@ PicoProbe allows debugging and flashing without BOOTSEL mode.
    ~/.pico-sdk/openocd/0.12.0+dev/openocd
    ```
 
-2. **Configure VSCode**:
+2. **Configure IDE**:
    - Debug configuration is in `.vscode/launch.json`
    - Uses Cortex-Debug extension
-   - Automatically detects PicoProbe
+   - Paths to ELF, GDB, OpenOCD, and target config are hardcoded for the RP2040 board
+   - **Note**: Windsurf IDE does not support `${command:raspberry-pi-pico.*}` variables from the Pico VS Code extension — all paths must be explicit
 
 #### Flashing with PicoProbe:
 

@@ -2,22 +2,15 @@
 
 #include <vector>
 #include <cstdint>
-#include <functional>
 #include <map>
-#include "pico/stdlib.h"
 #include "hardware/uart.h"
 #include "../commands/command.h"
-#include "pitch_set.h"
-#include "velocity_set.h"
-#include "gate_set.h"
-#include "pattern.h"
-#include "midi_messages.h"
+#include "../common/pattern.h"
 
 namespace sequencer {
 
     // Constants
 #define MIDI_BAUD_RATE 31250  // Standard MIDI baud rate
-#define PPQN 24
 
 // Main sequencer class
     class Sequencer {
@@ -30,7 +23,7 @@ namespace sequencer {
 
     private:
         uart_inst_t* uart;
-        std::vector<Pattern> patterns;
+        std::vector<common::Pattern> patterns;
         uint16_t bpm;
         bool playing;
         absolute_time_t lastTickTime;
@@ -48,7 +41,7 @@ namespace sequencer {
         void setBPM(uint16_t bpm);
         void sendMidiClock();
 
-        void addPattern(const Pattern& pattern);
+        void addPattern(const common::Pattern& pattern);
         void activatePattern(size_t index);
         void deactivatePattern(size_t index);
         void patternSetEuclideanLength(size_t patternIndex, size_t length);

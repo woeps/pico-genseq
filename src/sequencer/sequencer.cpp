@@ -1,12 +1,13 @@
 #include "sequencer.h"
+#include "midi_messages.h"
 #include "pico/multicore.h"
 #include "hardware/gpio.h"
-#include <algorithm>
-#include <random>
-#include "pitch_set.h"
-#include "velocity_set.h"
-#include "gate_set.h"
-#include "pattern.h"
+#include "../common/pitch_set.h"
+#include "../common/velocity_set.h"
+#include "../common/gate_set.h"
+#include "../common/const.h"
+#include "../common/pattern.h"
+#include <cstdio>
 
 namespace sequencer {
 
@@ -23,7 +24,7 @@ namespace sequencer {
         playing(false),
         lastTickTime(get_absolute_time()),
         midiClockEnabled(true),
-        patterns({ Pattern() }) {
+        patterns({ common::Pattern() }) {
         // Initialize UART for MIDI
         uart_init(uart, MIDI_BAUD_RATE);
 
@@ -52,18 +53,18 @@ namespace sequencer {
                 if (!pattern.isActive()) continue;
 
                 // Get non-const references to the pattern components
-                GateSet& gateSet = const_cast<GateSet&>(pattern.getGateSet());
-                PitchSet& pitchSet = const_cast<PitchSet&>(pattern.getPitchSet());
-                VelocitySet& velocitySet = const_cast<VelocitySet&>(pattern.getVelocitySet());
+                common::GateSet& gateSet = const_cast<common::GateSet&>(pattern.getGateSet());
+                common::PitchSet& pitchSet = const_cast<common::PitchSet&>(pattern.getPitchSet());
+                common::VelocitySet& velocitySet = const_cast<common::VelocitySet&>(pattern.getVelocitySet());
 
                 if (pitchSet.getPitches().empty() || velocitySet.getVelocities().empty() || gateSet.getGates().empty()) continue;
 
-                Flank flank = gateSet.getFlank();
+                common::Flank flank = gateSet.getFlank();
 
-                if (flank == RISING) {
+                if (flank == common::RISING) {
                     sendMidiNoteOn(pattern.getMidiChannel(), pitchSet.getPitch(), velocitySet.getVelocity());
                 }
-                else if (flank == FALLING) {
+                else if (flank == common::FALLING) {
                     sendMidiNoteOff(pattern.getMidiChannel(), pitchSet.getPitch());
                     pitchSet.setPosition(pitchSet.getPosition() + 1);
                     velocitySet.setPosition(velocitySet.getPosition() + 1);
@@ -135,7 +136,7 @@ namespace sequencer {
         this->bpm = bpm;
     }
 
-    void Sequencer::addPattern(const Pattern& pattern) {
+    void Sequencer::addPattern(const common::Pattern& pattern) {
         patterns.push_back(pattern);
     }
 

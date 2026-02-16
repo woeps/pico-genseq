@@ -197,53 +197,64 @@ void sendMIDIClock() {
 
 ```
 UIController
-├── ViewManager
-│   ├── MainView
-│   ├── PatternView
-│   └── SettingsView
-├── Hardware Layer
-│   ├── Button Matrix
+├── hardware/                (concrete types, no interfaces)
+│   ├── HardwareConfig
+│   ├── Button (×6, A-F)
 │   ├── Encoder
-│   ├── Display
-│   └── LED Matrix
-└── Command Generator
+│   ├── Led
+│   └── LedMatrix
+├── state/                   (state management)
+│   ├── StateManager (singleton)
+│   ├── Reducer (pure function + state-setters)
+│   └── UIState
+└── views/                   (render-only)
+    └── MainView
 ```
 
-### Hardware Abstraction
+### Data Flow
 
-The UI uses a clean hardware abstraction:
-
-```cpp
-// Interface for input devices
-class IInput {
-public:
-    virtual void update() = 0;
-    virtual bool hasChanged() = 0;
-    virtual int getValue() = 0;
-};
-
-// Interface for output devices
-class IOutput {
-public:
-    virtual void update() = 0;
-    virtual void setValue(int value) = 0;
-};
+```
+Button/Encoder → Event → StateManager → reduce(state, event) → new state → listener → View::render()
+                                                                    ↓
+                                                              commands::sendCommand() → Core 1
 ```
 
-### View Management
+### Reducer Pattern
 
-The view system manages different UI screens:
+State transitions are handled by a pure reducer function. State-setter functions abstract away
+mutating state fields and sending the corresponding commands:
 
 ```cpp
-class ViewManager {
-private:
-    IView* currentView;
-    std::vector<IView> views;
-    
+// State-setter functions: mutate state and send the corresponding command
+void setBpm(UIState& state, int bpm);
+void setPlaying(UIState& state, bool playing);
+
+// All state logic in one place
+UIState reduce(const UIState& state, const Event& event) {
+    UIState newState = state;
+    switch (event.type) {
+        case EventType::ENCODER_CHANGED:
+            setBpm(newState, state.bpm + event.data.encoder.delta);
+            break;
+        case EventType::BUTTON_PRESSED:
+            setPlaying(newState, !state.playing);
+            break;
+    }
+    return newState;
+}
+```
+
+### View System
+
+Views are render-only — they never mutate state:
+
+```cpp
+class IView {
 public:
-    void navigateTo(ViewID id);
-    void handleInput(InputEvent event);
-    void render();
+    virtual ~IView() = default;
+    virtual void onEnter() {}
+    virtual void onExit() {}
+    virtual void render(const UIState& state) = 0;
 };
 ```
 

@@ -1,0 +1,25 @@
+#ifndef GENSEQ_PINS_H
+#define GENSEQ_PINS_H
+
+// PIN ASSIGNMENTS & CONFIG
+
+// BUTTONS (A-F)
+#define BUTTON_A_PIN 10
+#define BUTTON_B_PIN 11
+#define BUTTON_C_PIN 12
+#define BUTTON_D_PIN 13
+#define BUTTON_E_PIN 14
+#define BUTTON_F_PIN 15
+
+#define LED_PIN 25
+#define LED_MATRIX_PIN 16
+
+// POTENTIOMETER (ADC0)
+#define POT_PIN 27
+
+// UART MIDI
+#define MIDI_UART uart1    // Using UART1 for MIDI
+#define MIDI_UART_PIN_TX 8 // MIDI_UART_TX
+#define MIDI_UART_PIN_RX 9 // MIDI_UART_RX
+
+#endif // GENSEQ_PINS_H

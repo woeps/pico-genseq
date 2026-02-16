@@ -37,11 +37,13 @@ pico_sdk_init()
 
 # Find all source files in the sequencer, commands, and UI directories
 file(GLOB_RECURSE SEQUENCER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/sequencer/*.cpp")
+file(GLOB_RECURSE COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/common/*.cpp")
 file(GLOB_RECURSE COMMANDS_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/commands/*.cpp")
 file(GLOB_RECURSE UI_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.c")
 
 # Print the found source files for debugging
 message(STATUS "Sequencer sources: ${SEQUENCER_SOURCES}")
+message(STATUS "Common sources: ${COMMON_SOURCES}")
 message(STATUS "Commands sources: ${COMMANDS_SOURCES}")
 message(STATUS "UI sources: ${UI_SOURCES}")
 
@@ -49,6 +51,7 @@ message(STATUS "UI sources: ${UI_SOURCES}")
 add_executable(genseq 
     src/genseq.cpp
     ${SEQUENCER_SOURCES}
+    ${COMMON_SOURCES}
     ${COMMANDS_SOURCES}
     ${UI_SOURCES}
 )
@@ -72,6 +75,7 @@ target_link_libraries(genseq
     pico_multicore
     hardware_pio
     hardware_uart
+    hardware_adc
     hardware_gpio
     hardware_i2c
     hardware_dma

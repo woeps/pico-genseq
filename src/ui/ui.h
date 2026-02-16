@@ -2,8 +2,7 @@
 
 #include <cstdint>
 #include <memory>
-#include "controllers/HardwareConfig.h"
-#include "controllers/UIController.h"
+#include "UIController.h"
 
 namespace ui
 {
@@ -13,17 +12,10 @@ namespace ui
     public:
         // Constructor with pin assignments
         UI(
-            uint8_t buttonEncoderPin,
-            uint8_t buttonAPin,
-            uint8_t encoderPinA,
-            uint8_t encoderPinB,
-            PIO encoderPio,
-            uint encoderSm,
-            i2c_inst_t* displayI2C,
-            uint8_t displayI2CAddr,
-            uint8_t displaySDAPin,
-            uint8_t displaySCLPin,
-            uint8_t ledPin);
+            const uint8_t (&buttonPins)[6],
+            uint8_t ledPin,
+            uint8_t ledMatrixPin,
+            uint8_t potPin);
         
         void init();
         void update();
@@ -35,16 +27,9 @@ namespace ui
 
     // Function to create the UI task for the first core
     void createUITask(
-        uint8_t buttonEncoderPin,
-        uint8_t buttonAPin,
-        uint8_t encoderPinA,
-        uint8_t encoderPinB,
-        PIO encoderPio,
-        uint encoderSm,
-        i2c_inst_t* displayI2C,
-        uint8_t displayI2CAddr,
-        uint8_t displaySDAPin,
-        uint8_t displaySCLPin,
-        uint8_t ledPin);
+        const uint8_t (&buttonPins)[6],
+        uint8_t ledPin,
+        uint8_t ledMatrixPin,
+        uint8_t potPin);
 
 } // namespace ui

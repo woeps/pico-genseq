@@ -45,8 +45,8 @@
         "map": "cpp"
     },
     "clangd.arguments": [
-        "--query-driver=${env:HOME}/.pico-sdk/toolchain/14_2_Rel1/bin/arm-none-eabi-*",
-        "--compile-commands-dir=${workspaceFolder}/build",
+        "--query-driver=/home/chris/.pico-sdk/toolchain/14_2_Rel1/bin/arm-none-eabi-*",
+        "--compile-commands-dir=/home/chris/Projects/c/pico/genseq/build",
         "--header-insertion=never"
     ],
     "clangd.checkUpdates": false,
