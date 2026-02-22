@@ -30,6 +30,9 @@ void UIController::initialize()
     views[static_cast<size_t>(state::ViewId::INIT)] = initView.get();
     views[static_cast<size_t>(state::ViewId::SETTINGS)] = settingsView.get();
 
+    // Register views with StateManager so it can look up active view during dispatch
+    state::getStateManager().setViews(views);
+
     // Set initial view
     const state::UIState& initialState = state::getStateManager().getState();
     onStateChanged(initialState);
