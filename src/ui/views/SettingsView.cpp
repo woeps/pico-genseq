@@ -12,6 +12,12 @@ void SettingsView::onEnter()
     ledMatrix.clear();
 }
 
+state::UIState SettingsView::handleEvent(const state::UIState& state, const events::Event& event)
+{
+    // TODO: Implement settings event handling
+    return state;
+}
+
 void SettingsView::render(const state::UIState& state)
 {
     // TODO: Implement settings view rendering
