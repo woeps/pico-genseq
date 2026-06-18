@@ -19,7 +19,7 @@ private:
     ui::PotId potId;
     uint16_t currentValue;
     uint32_t smoothedValue;
-    static constexpr uint16_t CHANGE_THRESHOLD = 4;
+    static constexpr uint16_t CHANGE_THRESHOLD = 32;
     static constexpr uint8_t SMOOTHING_SHIFT = 2;
 };
 

@@ -92,6 +92,8 @@ ui::events::Event event = ui::events::Event::buttonPressed(buttonId);
 ui::state::getStateManager().dispatch(event);
 ```
 
+`BUTTON_HELD` is emitted instead of `BUTTON_PRESSED` when the hold threshold is reached while the button remains down. The hardware layer suppresses the pending press so that only one of the two events is dispatched for a single interaction. A corresponding `BUTTON_RELEASED` event is still generated when the button is lifted.
+
 ## Reducer Pattern
 
 ### Pure Reducer Function

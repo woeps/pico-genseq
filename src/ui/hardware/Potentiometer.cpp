@@ -11,7 +11,7 @@ Potentiometer::Potentiometer(uint8_t pin, ui::PotId potId) :
     adcInput(pin - 26),
     potId(potId),
     currentValue(0),
-    smoothedValue(0)
+    smoothedValue(1)
 {
     adc_init();
     adc_gpio_init(pin);
@@ -29,8 +29,6 @@ void Potentiometer::update()
         smoothedValue += reading - (smoothedValue >> SMOOTHING_SHIFT);
     }
     uint16_t filtered = static_cast<uint16_t>(smoothedValue >> SMOOTHING_SHIFT);
-
-    printf("raw=%d filtered=%d\n", reading, filtered);
 
     int16_t diff = static_cast<int16_t>(filtered) - static_cast<int16_t>(currentValue);
     if (diff < 0) diff = -diff;
