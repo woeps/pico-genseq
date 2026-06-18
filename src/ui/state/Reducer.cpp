@@ -27,6 +27,7 @@ void setCurrentView(UIState& state, ViewId viewId) {
     state.currentView = viewId;
 }
 
+// TODO: split up reducer per view!
 UIState reduce(const UIState& state, const events::Event& event) {
     UIState newState = state;
 
@@ -66,7 +67,6 @@ UIState reduce(const UIState& state, const events::Event& event) {
 
                 case events::EventType::POT_CHANGED: {
                     int v = (event.data.pot.value * 99) / 4095;
-                    // printf("POT dispatch: value=%d\n", v);
                     setValue(newState, v);
                     break;
                 }
@@ -77,6 +77,16 @@ UIState reduce(const UIState& state, const events::Event& event) {
             }
             break;
         case ViewId::SETTINGS:
+            switch (event.type) {
+                case events::EventType::BUTTON_PRESSED:
+                    if (event.data.button.id == ButtonId::BUTTON_F) {
+                        setCurrentView(newState, ViewId::INIT);
+                    }
+                    break;
+
+                default:
+                    break;
+            }
             break;
     }
 
