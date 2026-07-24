@@ -1,5 +1,6 @@
 #include "InitView.h"
 #include "../../commands/command.h"
+#include "../state/Reducer.h"
 #include <cstdio>
 
 namespace ui {
