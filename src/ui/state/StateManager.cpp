@@ -3,10 +3,11 @@
 
 namespace ui::state {
 
-StateManager::StateManager() {}
+StateManager::StateManager() : views({nullptr, nullptr}) {}
 
 void StateManager::dispatch(const events::Event& event) {
-    UIState newState = reduce(currentState, event);
+    IView* activeView = views[static_cast<size_t>(currentState.currentView)];
+    UIState newState = reduce(currentState, event, activeView);
     currentState = newState;
     if (listener_) {
         listener_(currentState);
