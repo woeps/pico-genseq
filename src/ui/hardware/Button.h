@@ -16,6 +16,7 @@ private:
     ui::ButtonId buttonId;
     bool pressed;
     bool holdTriggered;
+    bool pressPending;
     uint32_t pressStartTime;
     uint32_t lastDebounceTime;
     bool lastState;

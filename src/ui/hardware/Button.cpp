@@ -11,6 +11,7 @@ Button::Button(uint8_t pin, ui::ButtonId buttonId) :
     buttonId(buttonId),
     pressed(false),
     holdTriggered(false),
+    pressPending(false),
     pressStartTime(0),
     lastDebounceTime(0),
     lastState(false),
@@ -41,22 +42,30 @@ void Button::update()
             {
                 pressStartTime = currentTime;
                 holdTriggered = false;
-                ui::events::Event event = ui::events::Event::buttonPressed(buttonId);
-                ui::state::getStateManager().dispatch(event);
+                pressPending = true;
             }
             else
             {
+                if (pressPending)
+                {
+                    ui::events::Event pressEvent = ui::events::Event::buttonPressed(buttonId);
+                    ui::state::getStateManager().dispatch(pressEvent);
+                }
+
                 ui::events::Event event = ui::events::Event::buttonReleased(buttonId);
                 ui::state::getStateManager().dispatch(event);
+                pressPending = false;
             }
         }
+    }
 
-        if (pressed && !holdTriggered && (currentTime - pressStartTime) >= holdTimeMs)
-        {
-            holdTriggered = true;
-            ui::events::Event event = ui::events::Event::buttonHeld(buttonId);
-            ui::state::getStateManager().dispatch(event);
-        }
+    // Hold detection runs after debounce but independent of state changes
+    if (pressed && !holdTriggered && (currentTime - pressStartTime) >= holdTimeMs)
+    {
+        holdTriggered = true;
+        pressPending = false;
+        ui::events::Event event = ui::events::Event::buttonHeld(buttonId);
+        ui::state::getStateManager().dispatch(event);
     }
 
     lastState = reading;
