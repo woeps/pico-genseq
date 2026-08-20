@@ -16,7 +16,7 @@ public:
     const UIState& getState() const { return currentState; }
     
     // Set the view registry for looking up active view
-    void setViews(std::array<IView*, 2> views) { this->views = views; }
+    void setViews(std::array<IView*, VIEW_COUNT> views) { this->views = views; }
     
     // Dispatch event - looks up active view from registry based on currentState.currentView
     void dispatch(const events::Event& event);
@@ -27,7 +27,7 @@ public:
 private:
     UIState currentState;
     StateChangeListener listener_;
-    std::array<IView*, 2> views;
+    std::array<IView*, VIEW_COUNT> views;
 };
 
 extern StateManager& getStateManager();

@@ -3,7 +3,7 @@
 
 namespace ui::state {
 
-StateManager::StateManager() : views({nullptr, nullptr}) {}
+StateManager::StateManager() { views.fill(nullptr); }
 
 void StateManager::dispatch(const events::Event& event) {
     IView* activeView = views[static_cast<size_t>(currentState.currentView)];

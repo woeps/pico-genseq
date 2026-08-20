@@ -1,13 +1,17 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace ui::state {
 
 enum class ViewId : uint8_t {
     INIT,
-    SETTINGS
+    SETTINGS,
+    COUNT       // sentinel - keep last
 };
+
+constexpr size_t VIEW_COUNT = static_cast<size_t>(ViewId::COUNT);
 
 struct UIState {
     ViewId currentView;

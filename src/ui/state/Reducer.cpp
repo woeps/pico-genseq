@@ -20,7 +20,7 @@ void setPlaying(UIState& state, bool playing) {
 }
 
 void setValue(UIState& state, int value) {
-    state.value = value;
+    state.value = std::max(0, std::min(99, value));
 }
 
 void setCurrentView(UIState& state, ViewId viewId) {

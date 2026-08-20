@@ -14,11 +14,6 @@ void UIController::initialize()
     printf("Initializing UI Controller...\n");
 
     // Create hardware
-    for (int i = 0; i < BUTTON_COUNT; i++) {
-        buttons[i] = std::make_unique<hardware::Button>(
-            config.buttonPins[i], static_cast<ButtonId>(i));
-    }
-    pot = std::make_unique<hardware::Potentiometer>(config.potPin, PotId::POT_A);
     led = std::make_unique<hardware::Led>(config.ledPin);
     ledMatrix = std::make_unique<hardware::LedMatrix>(config.ledMatrixPin);
 
@@ -62,10 +57,6 @@ void UIController::onStateChanged(const state::UIState& newState)
 
 void UIController::update()
 {
-    for (auto& button : buttons) {
-        button->update();
-    }
-    pot->update();
     led->update();
     ledMatrix->update();
 }

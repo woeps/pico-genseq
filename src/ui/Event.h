@@ -6,55 +6,46 @@
 namespace ui::events {
 
 enum class EventType : uint8_t {
-    BUTTON_PRESSED,
-    BUTTON_RELEASED,
-    BUTTON_HELD,
-    POT_CHANGED
+    KEY_PRESSED,
+    KEY_RELEASED,
+    KEY_HELD      // auto-repeat while the key stays down
 };
 
 struct Event {
     EventType type;
     uint32_t timestamp;
-    
+
     union {
         struct {
-            ButtonId id;
-        } button;
-        
-        struct {
-            PotId id;
-            uint16_t value;
-        } pot;
+            KeyId id;
+            uint8_t mods;   // folded modifier bitmask, see ui::mod
+        } key;
     } data;
-    
-    Event() : type(EventType::BUTTON_PRESSED), timestamp(0) {}
-    
-    static Event buttonPressed(ButtonId id) {
-        Event e;
-        e.type = EventType::BUTTON_PRESSED;
-        e.data.button.id = id;
-        return e;
+
+    Event() : type(EventType::KEY_PRESSED), timestamp(0) {
+        data.key.id = KeyId::NONE;
+        data.key.mods = mod::NONE;
     }
-    
-    static Event buttonReleased(ButtonId id) {
-        Event e;
-        e.type = EventType::BUTTON_RELEASED;
-        e.data.button.id = id;
-        return e;
+
+    static Event keyPressed(KeyId id, uint8_t mods, uint32_t timestamp) {
+        return make(EventType::KEY_PRESSED, id, mods, timestamp);
     }
-    
-    static Event buttonHeld(ButtonId id) {
-        Event e;
-        e.type = EventType::BUTTON_HELD;
-        e.data.button.id = id;
-        return e;
+
+    static Event keyReleased(KeyId id, uint8_t mods, uint32_t timestamp) {
+        return make(EventType::KEY_RELEASED, id, mods, timestamp);
     }
-    
-    static Event potChanged(PotId id, uint16_t value) {
+
+    static Event keyHeld(KeyId id, uint8_t mods, uint32_t timestamp) {
+        return make(EventType::KEY_HELD, id, mods, timestamp);
+    }
+
+private:
+    static Event make(EventType type, KeyId id, uint8_t mods, uint32_t timestamp) {
         Event e;
-        e.type = EventType::POT_CHANGED;
-        e.data.pot.id = id;
-        e.data.pot.value = value;
+        e.type = type;
+        e.timestamp = timestamp;
+        e.data.key.id = id;
+        e.data.key.mods = mods;
         return e;
     }
 };

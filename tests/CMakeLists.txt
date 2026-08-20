@@ -9,7 +9,12 @@ set(SRC ${CMAKE_CURRENT_LIST_DIR}/../src)
 add_executable(genseq_tests
     main.cpp
     test_types.cpp
+    test_initview.cpp
+    stubs/command_stub.cpp
+    stubs/hardware_stub.cpp
     ${SRC}/ui/KeyNames.cpp
+    ${SRC}/ui/state/Reducer.cpp
+    ${SRC}/ui/views/InitView.cpp
 )
 
 target_include_directories(genseq_tests PRIVATE

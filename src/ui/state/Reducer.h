@@ -13,5 +13,6 @@ UIState reduce(const UIState& state, const events::Event& event, ui::IView* acti
 void setBpm(UIState& state, int bpm);
 void setPlaying(UIState& state, bool playing);
 void setCurrentView(UIState& state, ViewId viewId);
+void setValue(UIState& state, int value);
 
 } // namespace ui::state
