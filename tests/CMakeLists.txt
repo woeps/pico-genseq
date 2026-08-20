@@ -10,6 +10,7 @@ add_executable(genseq_tests
     main.cpp
     test_types.cpp
     test_initview.cpp
+    test_reducer.cpp
     stubs/command_stub.cpp
     stubs/hardware_stub.cpp
     ${SRC}/ui/KeyNames.cpp
