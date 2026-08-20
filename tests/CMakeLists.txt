@@ -11,11 +11,13 @@ add_executable(genseq_tests
     test_types.cpp
     test_initview.cpp
     test_reducer.cpp
+    test_decoder.cpp
     stubs/command_stub.cpp
     stubs/hardware_stub.cpp
     ${SRC}/ui/KeyNames.cpp
     ${SRC}/ui/state/Reducer.cpp
     ${SRC}/ui/views/InitView.cpp
+    ${SRC}/ui/hardware/KeyboardDecoder.cpp
 )
 
 target_include_directories(genseq_tests PRIVATE
