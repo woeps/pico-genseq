@@ -18,7 +18,7 @@ are referenced by nothing today and stay exactly as they are.
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| USB host transport | Native USB port via `tinyusb_host` | `pico_enable_stdio_usb` is already `0` (tracing runs on UART1), so the port is free. No new dependency, no PIO state machine, no GPIO cost. |
+| USB host transport | Native USB port via `tinyusb_host` | `pico_enable_stdio_usb` is already `0` (tracing runs on uart0, GPIO 0, 115200 baud), so the port is free. No new dependency, no PIO state machine, no GPIO cost. |
 | Key representation | `enum class KeyId : uint8_t` whose values are HID usage codes, plus a `combo(KeyId, mods)` packing helper | Compiler-checked `switch` labels; combos become distinct `case` labels that cannot collide. |
 | Event vocabulary | `KEY_PRESSED`, `KEY_RELEASED`, `KEY_HELD` | Keeps the existing naming; `KEY_HELD` carries auto-repeat semantics, which is what replaces the potentiometer as a continuous control. |
 | Global bindings | Handled in `reduce()` before delegating to the active view | `F1`–`F12` and `space` mean the same thing everywhere; one owner avoids reimplementing them per view. |
@@ -307,7 +307,8 @@ joins `target_include_directories`:
 `CMakeLists.txt`: add `tinyusb_host` and `tinyusb_board` to
 `target_link_libraries`, drop `hardware_adc` (`Potentiometer.cpp` was its only
 user), add the `src/config` include path. `pico_enable_stdio_usb` stays `0` —
-tracing continues over UART1 and the native USB port belongs to the host stack.
+tracing continues over uart0 (GPIO 0, 115200 baud) and the native USB port
+belongs to the host stack.
 The existing `file(GLOB_RECURSE UI_SOURCES ...)` picks up the new sources with no
 edit.
 

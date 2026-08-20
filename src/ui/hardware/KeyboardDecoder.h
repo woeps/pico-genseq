@@ -21,6 +21,9 @@ public:
     static constexpr uint8_t MAX_KEYS = 6;
     static constexpr uint8_t ERROR_ROLL_OVER = 0x01;
 
+    static_assert(sizeof(KeyReport::keys) == MAX_KEYS,
+                  "KeyReport::keys and MAX_KEYS must stay in sync");
+
     using EventSink = std::function<void(const ui::events::Event&)>;
 
     explicit KeyboardDecoder(EventSink sink);

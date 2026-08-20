@@ -3,6 +3,7 @@
 #include "tusb.h"
 #include "pico/time.h"
 #include "../state/StateManager.h"
+#include "../KeyNames.h"
 #include <cstdio>
 
 namespace hardware {
@@ -16,6 +17,13 @@ uint32_t nowMs() { return to_ms_since_boot(get_absolute_time()); }
 
 UsbKeyboard::UsbKeyboard()
     : decoder([](const ui::events::Event& event) {
+          if (event.type == ui::events::EventType::KEY_PRESSED ||
+              event.type == ui::events::EventType::KEY_RELEASED) {
+              printf("%s %s (mods 0x%02x)\n",
+                     event.type == ui::events::EventType::KEY_PRESSED ? "pressed" : "released",
+                     ui::toName(event.data.key.id),
+                     static_cast<unsigned>(event.data.key.mods));
+          }
           ui::state::getStateManager().dispatch(event);
       })
 {
@@ -28,7 +36,10 @@ void UsbKeyboard::initialize()
 {
     // Boot protocol gives a fixed 8-byte report, so no descriptor parsing.
     tuh_hid_set_default_protocol(HID_PROTOCOL_BOOT);
-    tuh_init(0);
+    if (!tuh_init(0)) {
+        printf("Failed to initialize USB host\n");
+        return;
+    }
     printf("USB host initialized - waiting for a keyboard\n");
 }
 
@@ -73,7 +84,10 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t idx,
 
     printf("Keyboard mounted (addr %u idx %u)\n",
            static_cast<unsigned>(dev_addr), static_cast<unsigned>(idx));
-    tuh_hid_receive_report(dev_addr, idx);
+    if (!tuh_hid_receive_report(dev_addr, idx)) {
+        printf("Failed to arm HID report (addr %u idx %u)\n",
+               static_cast<unsigned>(dev_addr), static_cast<unsigned>(idx));
+    }
 }
 
 void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t idx)
@@ -95,7 +109,10 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t idx,
     }
 
     // Re-arm: without this no further reports arrive.
-    tuh_hid_receive_report(dev_addr, idx);
+    if (!tuh_hid_receive_report(dev_addr, idx)) {
+        printf("Failed to re-arm HID report (addr %u idx %u)\n",
+               static_cast<unsigned>(dev_addr), static_cast<unsigned>(idx));
+    }
 }
 
 } // extern "C"
