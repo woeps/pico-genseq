@@ -30,7 +30,7 @@ private:
     // Views (heap-allocated but fixed at initialization, no dynamic allocation after)
     std::unique_ptr<InitView> initView;
     std::unique_ptr<SettingsView> settingsView;
-    std::array<IView*, state::VIEW_COUNT> views;
+    std::array<IView*, state::VIEW_COUNT> views{};
     IView* activeView;
 
     void onStateChanged(const state::UIState& newState);
