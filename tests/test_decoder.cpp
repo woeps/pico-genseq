@@ -198,6 +198,9 @@ TEST(decoder_moves_repeat_to_the_most_recently_pressed_key) {
     d.onReport(report(0, {UP_USAGE, DOWN_USAGE}), 1100);
     rec.clear();
 
+    d.tick(1450);                  // would already have fired if the delay had not restarted
+    CHECK_EQ(rec.size(), 0);
+
     d.tick(1100 + KeyboardDecoder::REPEAT_DELAY_MS);
 
     CHECK_EQ(rec.size(), 1);
@@ -239,6 +242,9 @@ TEST(decoder_repeat_survives_the_millisecond_rollover) {
     const uint32_t nearMax = 0xFFFFFF00;
     d.onReport(report(0, {UP_USAGE}), nearMax);
     rec.clear();
+
+    d.tick(0xFFFFFF50);            // 80ms into the hold, before the counter wraps
+    CHECK_EQ(rec.size(), 0);       // fails loudly under a naive `nowMs >= nextRepeatMs`
 
     // nearMax + 400 wraps past 0xFFFFFFFF
     d.tick(static_cast<uint32_t>(nearMax + KeyboardDecoder::REPEAT_DELAY_MS));
