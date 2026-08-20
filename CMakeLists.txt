@@ -75,15 +75,17 @@ target_link_libraries(genseq
     pico_multicore
     hardware_pio
     hardware_uart
-    hardware_adc
     hardware_gpio
     hardware_i2c
     hardware_dma
+    tinyusb_host
+    tinyusb_board
 )
 
 # Add the standard include files to the build
 target_include_directories(genseq PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/src
+        ${CMAKE_CURRENT_LIST_DIR}/src/config
         ${CMAKE_CURRENT_LIST_DIR}/src/generated
 )
 

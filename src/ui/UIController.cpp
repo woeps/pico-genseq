@@ -37,6 +37,10 @@ void UIController::initialize()
         onStateChanged(newState);
     });
 
+    // Input last: events must not arrive before the views are registered.
+    keyboard = std::make_unique<hardware::UsbKeyboard>();
+    keyboard->initialize();
+
     printf("UI Controller initialized\n");
 }
 
@@ -57,6 +61,7 @@ void UIController::onStateChanged(const state::UIState& newState)
 
 void UIController::update()
 {
+    keyboard->update();
     led->update();
     ledMatrix->update();
 }

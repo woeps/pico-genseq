@@ -5,6 +5,7 @@
 #include "hardware/HardwareConfig.h"
 #include "hardware/Led.h"
 #include "hardware/LedMatrix.h"
+#include "hardware/UsbKeyboard.h"
 #include "views/IView.h"
 #include "views/InitView.h"
 #include "views/SettingsView.h"
@@ -26,6 +27,7 @@ private:
     // Hardware
     std::unique_ptr<hardware::Led> led;
     std::unique_ptr<hardware::LedMatrix> ledMatrix;
+    std::unique_ptr<hardware::UsbKeyboard> keyboard;
 
     // Views (heap-allocated but fixed at initialization, no dynamic allocation after)
     std::unique_ptr<InitView> initView;
