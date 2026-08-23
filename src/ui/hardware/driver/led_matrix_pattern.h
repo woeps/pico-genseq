@@ -1,124 +1,112 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// 6x5 digit bitmaps
-static const bool digits[10][5][6] = {
+// 4x5 digit bitmaps
+static const bool digits[10][5][4] = {
     // 0
     {
-        {1,1,1,1,1,1},
-        {1,1,0,0,1,1},
-        {1,1,0,0,1,1},
-        {1,1,0,0,1,1},
-        {1,1,1,1,1,1}
+        {1,1,1,0},
+        {1,0,1,0},
+        {1,0,1,0},
+        {1,0,1,0},
+        {1,1,1,0}
     },
     // 1
     {
-        {0,0,1,1,0,0},
-        {0,0,1,1,0,0},
-        {0,0,1,1,0,0},
-        {0,0,1,1,0,0},
-        {0,0,1,1,0,0}
+        {0,1,0,0},
+        {0,1,0,0},
+        {0,1,0,0},
+        {0,1,0,0},
+        {0,1,0,0}
     },
     // 2
     {
-        {1,1,1,1,1,1},
-        {0,0,0,0,1,1},
-        {0,0,1,1,0,0},
-        {1,1,0,0,0,0},
-        {1,1,1,1,1,1}
+        {1,1,1,0},
+        {0,0,1,0},
+        {1,1,1,0},
+        {1,0,0,0},
+        {1,1,1,0}
     },
     // 3
     {
-        {1,1,1,1,1,1},
-        {0,0,0,0,1,1},
-        {1,1,1,1,1,1},
-        {0,0,0,0,1,1},
-        {1,1,1,1,1,1}
+        {1,1,1,0},
+        {0,0,1,0},
+        {1,1,1,0},
+        {0,0,1,0},
+        {1,1,1,0}
     },
     // 4
     {
-        {1,1,0,0,1,1},
-        {1,1,0,0,1,1},
-        {1,1,1,1,1,1},
-        {0,0,0,0,1,1},
-        {0,0,0,0,1,1}
+        {1,0,1,0},
+        {1,0,1,0},
+        {1,1,1,0},
+        {0,0,1,0},
+        {0,0,1,0}
     },
     // 5
     {
-        {1,1,1,1,1,1},
-        {1,1,0,0,0,0},
-        {1,1,1,1,1,1},
-        {0,0,0,0,1,1},
-        {1,1,1,1,1,1}
+        {1,1,1,0},
+        {1,0,0,0},
+        {1,1,1,0},
+        {0,0,1,0},
+        {1,1,1,0}
     },
     // 6
     {
-        {1,1,1,1,1,1},
-        {1,1,0,0,0,0},
-        {1,1,1,1,1,1},
-        {1,1,0,0,1,1},
-        {1,1,1,1,1,1}
+        {1,1,1,0},
+        {1,0,0,0},
+        {1,1,1,0},
+        {1,0,1,0},
+        {1,1,1,0}
     },
     // 7
     {
-        {1,1,1,1,1,1},
-        {0,0,0,0,1,1},
-        {0,0,0,0,1,1},
-        {0,0,0,0,1,1},
-        {0,0,0,0,1,1}
+        {1,1,1,0},
+        {0,0,1,0},
+        {0,0,1,0},
+        {0,0,1,0},
+        {0,0,1,0}
     },
     // 8
     {
-        {1,1,1,1,1,1},
-        {1,1,0,0,1,1},
-        {1,1,1,1,1,1},
-        {1,1,0,0,1,1},
-        {1,1,1,1,1,1}
+        {1,1,1,0},
+        {1,0,1,0},
+        {1,1,1,0},
+        {1,0,1,0},
+        {1,1,1,0}
     },
     // 9
     {
-        {1,1,1,1,1,1},
-        {1,1,0,0,1,1},
-        {1,1,1,1,1,1},
-        {0,0,0,0,1,1},
-        {1,1,1,1,1,1}
+        {1,1,1,0},
+        {1,0,1,0},
+        {1,1,1,0},
+        {0,0,1,0},
+        {1,1,1,0}
     }
 };
 
 static inline void get_number_pattern(int *number, uint32_t (*buffer)[256], uint32_t *color) {
-    // memset(buffer, 0, 256 * sizeof(uint32_t));
-    
     if (*number < 0) *number = 0;
-    if (*number > 99) *number = 99;
+    if (*number > 999) *number = 999;
     
-    int left_digit = *number / 10;
-    int right_digit = *number % 10;
+    int d[3];
+    d[0] = *number / 100;
+    d[1] = (*number / 10) % 10;
+    d[2] = *number % 10;
     
-    // Pattern layout:
-    // Rows 0-2: Empty
-    // Rows 3-12: Digits (10 rows)
-    // Rows 13-15: Empty
-    // Cols: 0 (pad), 1-6 (left), 7-8 (pad), 9-14 (right), 15 (pad)
+    // Pattern layout (16 cols wide):
+    // Col 0 (pad), 1-4 (d1), 5 (gap), 6-9 (d2), 10 (gap), 11-14 (d3), 15 (pad)
+    // Rows 6-10: digits (5 font rows, 1:1 vertical)
+    int col_starts[3] = {1, 6, 11};
     
     for (int row = 0; row < 5; row++) {
-        // Each row in font is mapped to 2 rows in buffer (vertical scaling)
-        int buf_row_a = 6 + row * 2;
-        int buf_row_b = 6 + row * 2 + 1;
-        int row_offset_a = buf_row_a * 16;
-        int row_offset_b = buf_row_b * 16;
+        int row_offset = (6 + row) * 16;
         
-        // Left Digit
-        for (int col = 0; col < 6; col++) {
-            uint32_t val = digits[left_digit][row][col] ? *color : 0;
-            (*buffer)[row_offset_a + 1 + col] = val;
-            (*buffer)[row_offset_b + 1 + col] = val;
-        }
-        
-        // Right Digit
-        for (int col = 0; col < 6; col++) {
-            uint32_t val = digits[right_digit][row][col] ? *color : 0;
-            (*buffer)[row_offset_a + 9 + col] = val;
-            (*buffer)[row_offset_b + 9 + col] = val;
+        for (int digit = 0; digit < 3; digit++) {
+            for (int col = 0; col < 4; col++) {
+                uint32_t val = digits[d[digit]][row][col] ? *color : 0;
+                (*buffer)[row_offset + col_starts[digit] + col] = val;
+            }
         }
     }
 }
@@ -359,53 +347,37 @@ static inline void get_note_pattern(const char (*note_str)[3], uint32_t (*buffer
     // memset(&(*buffer)[6 * 16], 0, 10 * 16 * sizeof(uint32_t));
     
     // Layout strategy:
-    // Rows 6-15 (10 rows height).
+    // Rows 6-10 (5 rows height, 1:1 vertical).
     // Col 0: Flat Dot.
-    // Cols 1-8: Note (A-G), scaled 2x vertical, 2x horizontal.
-    // Cols 9-14: Octave (0-9), using full 10x6 digits font.
+    // Cols 1-4: Note (A-G), 1:1 scaling.
+    // Cols 9-12: Octave (0-9), 1:1 scaling.
     // Col 15: Sharp Dot.
 
     int start_row = 6; 
 
-    // 1. Note (A-G) -> Cols 1-8
+    // 1. Note (A-G) -> Cols 1-4
     char note = (*note_str)[0];
     if (note >= 'A' && note <= 'Z') note = note - 'A' + 'a';
     if (note >= 'a' && note <= 'z') {
          int idx = note - 'a';
          for (int row = 0; row < 5; row++) {
-             // Scale 5-row font to 10 rows (2x vertical)
-             int buf_row_a = start_row + row * 2;
-             int buf_row_b = start_row + row * 2 + 1;
-             
+             int buf_row = start_row + row;
              for (int col = 0; col < 4; col++) {
-                 // Scale 4-col font to 8 cols (2x horizontal)
-                 // Start at Col 1
-                 int buf_col_a = 1 + col * 2;
-                 int buf_col_b = 1 + col * 2 + 1;
-                 
                  uint32_t val = font[idx][row][col] ? *color : 0;
-                 
-                 // Fill 2x2 block
-                 (*buffer)[buf_row_a * 16 + buf_col_a] = val;
-                 (*buffer)[buf_row_a * 16 + buf_col_b] = val;
-                 (*buffer)[buf_row_b * 16 + buf_col_a] = val;
-                 (*buffer)[buf_row_b * 16 + buf_col_b] = val;
+                 (*buffer)[buf_row * 16 + 1 + col] = val;
              }
          }
     }
 
-    // 2. Octave (0-9) -> Cols 9-14
+    // 2. Octave (0-9) -> Cols 9-12
     char octave = (*note_str)[1];
     if (octave >= '0' && octave <= '9') {
         int idx = octave - '0';
         for (int row = 0; row < 5; row++) {
-             int buf_row_a = start_row + row * 2;
-             int buf_row_b = start_row + row * 2 + 1;
-            for (int col = 0; col < 6; col++) {
-                // Right digit starts at col 9
+             int buf_row = start_row + row;
+            for (int col = 0; col < 4; col++) {
                 uint32_t val = digits[idx][row][col] ? *color : 0;
-                (*buffer)[buf_row_a * 16 + 9 + col] = val;
-                (*buffer)[buf_row_b * 16 + 9 + col] = val;
+                (*buffer)[buf_row * 16 + 9 + col] = val;
             }
         }
     }
@@ -416,16 +388,13 @@ static inline void get_note_pattern(const char (*note_str)[3], uint32_t (*buffer
     bool is_flat = (mod == 'b' || mod == 'f' || mod == 'F');
     
     if (is_sharp) {
-        // Sharp: Outer Right (Col 15), Top (rows 6-7)
+        // Sharp: Outer Right (Col 15), Top (row 6)
         int col = 15;
         (*buffer)[(start_row + 0) * 16 + col] = *color;
-        (*buffer)[(start_row + 1) * 16 + col] = 0;
-        // Make it a bit taller/substantial? 2 pixels high is fine for a dot.
     } else if (is_flat) {
-        // Flat: Outer Left (Col 0), Bottom (rows 14-15)
+        // Flat: Outer Left (Col 0), Bottom (row 10)
         int col = 0;
-        (*buffer)[(start_row + 8) * 16 + col] = 0;
-        (*buffer)[(start_row + 9) * 16 + col] = *color;
+        (*buffer)[(start_row + 4) * 16 + col] = *color;
     }
 }
 
