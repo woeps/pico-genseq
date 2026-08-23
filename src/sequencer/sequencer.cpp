@@ -66,10 +66,10 @@ namespace sequencer {
                 }
                 else if (flank == common::FALLING) {
                     sendMidiNoteOff(pattern.getMidiChannel(), pitchSet.getPitch());
-                    pitchSet.setPosition(pitchSet.getPosition() + 1);
-                    velocitySet.setPosition(velocitySet.getPosition() + 1);
+                    pitchSet.setPosition((pitchSet.getPosition() + 1) % pitchSet.getPitches().size());
+                    velocitySet.setPosition((velocitySet.getPosition() + 1) % velocitySet.getVelocities().size());
                 }
-                int nextGatePosition = gateSet.getPosition() + 1;
+                int nextGatePosition = (gateSet.getPosition() + 1) % gateSet.getGates().size();
                 gateSet.setPosition(nextGatePosition);
             }
         }
