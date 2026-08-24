@@ -26,7 +26,7 @@ namespace common {
             }),
             active(true),
             velocitySet({ 100, 20 }),
-            gateSet(GateSet::createEuclidean(12, 2, 0, PPQN)),
+            gateSet(),
             // gateSet(GateSet({ true, false, false, false, false, false, false, false,
             //                   false, false, false, false, false, false, false, false,
             //                   false, false, false, false, false, false, false, false
@@ -50,7 +50,7 @@ namespace common {
         // VelocitySet velocitySet(velocities);
 
         // Create a simple euclidean rhythm (8 steps, 5 pulses)
-        // GateSet gateSet = GateSet::createEuclidean(8, 5, 0, PPQN * 4);
+        // GateSet gateSet = GateSet::createEuclidean(8, 5, 0, PPQN / 4, 50);
 
         // Create a pattern with the pitch set, velocity set, and rhythm set
         //Pattern pattern(pitchSet, velocitySet, rhythmSet);

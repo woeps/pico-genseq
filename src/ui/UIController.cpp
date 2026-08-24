@@ -1,4 +1,5 @@
 #include "UIController.h"
+#include "state/Reducer.h"
 #include "state/StateManager.h"
 #include <cstdio>
 
@@ -38,6 +39,7 @@ void UIController::initialize()
 
     // Set initial view
     const state::UIState& initialState = state::getStateManager().getState();
+    state::syncGateSet(initialState, 0);
     onStateChanged(initialState);
 
     // Subscribe to state changes for view switching

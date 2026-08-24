@@ -45,7 +45,7 @@ namespace sequencer {
         void removePattern(size_t index);
         void activatePattern(size_t index);
         void deactivatePattern(size_t index);
-        void patternSetEuclideanLength(size_t patternIndex, size_t length);
+        void setPatternGateSet(size_t patternIndex, const std::vector<bool>& gates);
 
         void sendMidiNoteOn(uint8_t channel, uint8_t note, uint8_t velocity);
         void sendMidiNoteOff(uint8_t channel, uint8_t note);

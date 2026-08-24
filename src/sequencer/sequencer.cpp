@@ -69,7 +69,8 @@ namespace sequencer {
                     pitchSet.setPosition((pitchSet.getPosition() + 1) % pitchSet.getPitches().size());
                     velocitySet.setPosition((velocitySet.getPosition() + 1) % velocitySet.getVelocities().size());
                 }
-                int nextGatePosition = (gateSet.getPosition() + 1) % gateSet.getGates().size();
+                const uint32_t nextGatePosition = static_cast<uint32_t>(
+                    (gateSet.getPosition() + 1) % gateSet.getGates().size());
                 gateSet.setPosition(nextGatePosition);
             }
         }
@@ -93,8 +94,8 @@ namespace sequencer {
             deactivatePattern(msg.param1);
             break;
             // Add more command handlers as needed
-        case commands::Command::PATTERN_EUCLIDEAN_SET_LENGTH:
-            patternSetEuclideanLength(msg.param1, msg.param2);
+        case commands::Command::PATTERN_GATE_SET:
+            setPatternGateSet(msg.param1, msg.gates);
             break;
         case commands::Command::PATTERN_ADD:
             addPattern(common::Pattern());
@@ -165,11 +166,10 @@ namespace sequencer {
         }
     }
 
-    void Sequencer::patternSetEuclideanLength(size_t patternIndex, size_t length) {
-        printf("TODO: patternSetEuclideanLength: %d, %d\n", patternIndex, length);
-        // if (patternIndex < patterns.size()) {
-        //     patterns[patternIndex].setEuclideanLength(length);
-        // }
+    void Sequencer::setPatternGateSet(size_t patternIndex, const std::vector<bool>& gates) {
+        if (patternIndex < patterns.size()) {
+            patterns[patternIndex].setGateSet(common::GateSet(gates));
+        }
     }
 
     void Sequencer::sendMidiNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) {

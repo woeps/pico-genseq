@@ -68,7 +68,14 @@ TEST(patternsview_enter_routes_selected_set_to_its_detail_view) {
     state::UIState s;
 
     s.selectedPatternSet = state::PatternSet::GATE;
-    CHECK(f.view.handleEvent(s, press(KeyId::ENTER)).currentView == state::ViewId::GATE_SET);
+    s.gateSetConfigs[0].steps = 23;
+    s.gateSetDraft.steps = 7;
+    s.gateSetDirty = true;
+    const auto gate = f.view.handleEvent(s, press(KeyId::ENTER));
+    CHECK(gate.currentView == state::ViewId::GATE_SET);
+    CHECK_EQ(gate.gateSetDraft.steps, 23);
+    CHECK(gate.selectedGateSetProperty == state::GateSetProperty::ALGORITHM);
+    CHECK(!gate.gateSetDirty);
     s.selectedPatternSet = state::PatternSet::PITCH;
     CHECK(f.view.handleEvent(s, press(KeyId::ENTER)).currentView == state::ViewId::PITCH_SET);
     s.selectedPatternSet = state::PatternSet::VELOCITY;

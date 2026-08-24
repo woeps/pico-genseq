@@ -78,6 +78,7 @@ state::UIState PatternsView::handleEvent(const state::UIState& state, const even
             if (!isPattern) {
                 state::addPattern(newState);
             } else if (state.selectedPatternSet == state::PatternSet::GATE) {
+                state::beginGateSetEdit(newState);
                 state::setCurrentView(newState, state::ViewId::GATE_SET);
             } else if (state.selectedPatternSet == state::PatternSet::PITCH) {
                 state::setCurrentView(newState, state::ViewId::PITCH_SET);

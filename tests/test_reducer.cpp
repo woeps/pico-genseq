@@ -179,3 +179,68 @@ TEST(remove_pattern_shifts_a_later_selection_with_compacted_indices) {
     CHECK_EQ(s.patternCount, 4);
     CHECK_EQ(s.selectedPattern, 3);
 }
+
+TEST(add_pattern_initializes_and_sends_default_gate_set) {
+    commands::testing::reset();
+    state::UIState s;
+    s.patternCount = 2;
+    s.gateSetConfigs[2].steps = 7;
+
+    state::addPattern(s);
+
+    CHECK_EQ(s.gateSetConfigs[2].steps, 16);
+    CHECK_EQ(commands::testing::sentCommands().size(), 2);
+    if (commands::testing::sentCommands().size() >= 2) {
+        CHECK(commands::testing::sentCommands()[0].cmd == commands::Command::PATTERN_ADD);
+        CHECK(commands::testing::sentCommands()[1].cmd == commands::Command::PATTERN_GATE_SET);
+        CHECK_EQ(commands::testing::sentCommands()[1].param1, 2);
+        CHECK_EQ(commands::testing::sentCommands()[1].gateCount, 96);
+    }
+}
+
+TEST(remove_pattern_compacts_gate_set_configs) {
+    state::UIState s;
+    s.patternCount = 3;
+    s.gateSetConfigs[0].steps = 8;
+    s.gateSetConfigs[1].steps = 12;
+    s.gateSetConfigs[2].steps = 24;
+
+    state::removePattern(s, 1);
+
+    CHECK_EQ(s.gateSetConfigs[0].steps, 8);
+    CHECK_EQ(s.gateSetConfigs[1].steps, 24);
+    CHECK_EQ(s.gateSetConfigs[2].steps, 16);
+}
+
+TEST(sync_gate_set_supports_long_musical_cycles) {
+    commands::testing::reset();
+    state::UIState s;
+    s.gateSetConfigs[0].steps = 64;
+    s.gateSetConfigs[0].noteLength = state::NoteLength::WHOLE;
+
+    state::syncGateSet(s, 0);
+
+    CHECK_EQ(commands::testing::sentCommands().size(), 1);
+    if (!commands::testing::sentCommands().empty()) {
+        CHECK_EQ(commands::testing::sentCommands()[0].gateCount, 6144);
+        CHECK_EQ(commands::testing::sentCommands()[0].gates.size(), 6144);
+    }
+}
+
+TEST(leaving_dirty_gate_set_view_restores_committed_preview) {
+    commands::testing::reset();
+    state::UIState s;
+    s.currentView = state::ViewId::GATE_SET;
+    s.gateSetDraft.steps = 20;
+    s.gateSetDirty = true;
+
+    const auto next = state::reduce(s, press(KeyId::F1), nullptr);
+
+    CHECK(next.currentView == state::ViewId::INIT);
+    CHECK(!next.gateSetDirty);
+    CHECK_EQ(next.gateSetDraft.steps, 16);
+    CHECK_EQ(commands::testing::sentCommands().size(), 1);
+    if (!commands::testing::sentCommands().empty()) {
+        CHECK(commands::testing::sentCommands()[0].cmd == commands::Command::PATTERN_GATE_SET);
+    }
+}

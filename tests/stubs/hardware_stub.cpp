@@ -9,6 +9,7 @@ namespace {
 
 uint32_t matrixPixels[LedMatrix::NUM_PIXELS]{};
 char matrixLabel[4]{};
+int matrixNumber = -1;
 
 }
 
@@ -32,7 +33,7 @@ void LedMatrix::setPixel(uint8_t x, uint8_t y, uint32_t color) {
 void LedMatrix::fill(uint32_t color) {
     for (auto& pixel : matrixPixels) pixel = color;
 }
-void LedMatrix::drawNumber(int, uint32_t) {}
+void LedMatrix::drawNumber(int number, uint32_t) { matrixNumber = number; }
 void LedMatrix::drawLabel(const char (&text)[4], uint32_t) {
     for (uint8_t i = 0; i < 4; i++) matrixLabel[i] = text[i];
 }
@@ -43,6 +44,7 @@ namespace testing {
 void resetMatrix() {
     for (auto& pixel : matrixPixels) pixel = 0;
     for (auto& character : matrixLabel) character = 0;
+    matrixNumber = -1;
 }
 
 uint32_t pixelAt(uint8_t x, uint8_t y) {
@@ -53,6 +55,10 @@ uint32_t pixelAt(uint8_t x, uint8_t y) {
 
 const char* lastLabel() {
     return matrixLabel;
+}
+
+int lastNumber() {
+    return matrixNumber;
 }
 
 }
