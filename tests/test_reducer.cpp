@@ -48,11 +48,18 @@ TEST(reduce_f2_switches_to_settings_view) {
     CHECK_EQ(view.eventsSeen, 0);
 }
 
+TEST(reduce_f3_switches_to_patterns_view) {
+    FakeView view;
+    const auto next = state::reduce(state::UIState{}, press(KeyId::F3), &view);
+    CHECK(next.currentView == state::ViewId::PATTERNS);
+    CHECK_EQ(view.eventsSeen, 0);
+}
+
 TEST(reduce_consumes_unbound_function_keys_without_effect) {
     FakeView view;
     state::UIState s;
     s.currentView = state::ViewId::SETTINGS;
-    for (uint8_t usage = static_cast<uint8_t>(KeyId::F3);
+    for (uint8_t usage = static_cast<uint8_t>(KeyId::F4);
          usage <= static_cast<uint8_t>(KeyId::F12); ++usage) {
         const auto next = state::reduce(s, press(static_cast<KeyId>(usage)), &view);
         CHECK(next.currentView == state::ViewId::SETTINGS);

@@ -14,5 +14,8 @@ void setBpm(UIState& state, int bpm);
 void setPlaying(UIState& state, bool playing);
 void setCurrentView(UIState& state, ViewId viewId);
 void setValue(UIState& state, int value);
+void setSelectedPattern(UIState& state, uint8_t index);
+void addPattern(UIState& state);
+void togglePatternActive(UIState& state, uint8_t index);
 
 } // namespace ui::state

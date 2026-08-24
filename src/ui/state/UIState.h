@@ -8,6 +8,7 @@ namespace ui::state {
 enum class ViewId : uint8_t {
     INIT,
     SETTINGS,
+    PATTERNS,
     COUNT       // sentinel - keep last
 };
 
@@ -18,8 +19,12 @@ struct UIState {
     uint8_t bpm;
     bool playing;
     int value;
-    
-    UIState() : currentView(ViewId::INIT), bpm(120), playing(false), value(0) {}
+    uint8_t patternCount;
+    uint16_t activePatterns;
+    uint8_t selectedPattern;
+
+    UIState() : currentView(ViewId::INIT), bpm(120), playing(false), value(0),
+                patternCount(1), activePatterns(0x0001), selectedPattern(0) {}
 };
 
 } // namespace ui::state

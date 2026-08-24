@@ -9,6 +9,7 @@
 #include "views/IView.h"
 #include "views/InitView.h"
 #include "views/SettingsView.h"
+#include "views/PatternsView.h"
 #include "state/UIState.h"
 
 namespace ui {
@@ -32,6 +33,7 @@ private:
     // Views (heap-allocated but fixed at initialization, no dynamic allocation after)
     std::unique_ptr<InitView> initView;
     std::unique_ptr<SettingsView> settingsView;
+    std::unique_ptr<PatternsView> patternsView;
     std::array<IView*, state::VIEW_COUNT> views{};
     IView* activeView;
 

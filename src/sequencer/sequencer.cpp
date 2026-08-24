@@ -95,7 +95,12 @@ namespace sequencer {
             // Add more command handlers as needed
         case commands::Command::PATTERN_EUCLIDEAN_SET_LENGTH:
             patternSetEuclideanLength(msg.param1, msg.param2);
-        }
+            break;
+        case commands::Command::PATTERN_ADD:
+            addPattern(common::Pattern());
+            break;
+        default: break;
+    }
     }
 
     void Sequencer::play() {

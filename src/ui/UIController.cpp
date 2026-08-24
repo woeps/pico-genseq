@@ -20,10 +20,12 @@ void UIController::initialize()
     // Create views (allocated once at initialization)
     initView = std::make_unique<InitView>(*led, *ledMatrix);
     settingsView = std::make_unique<SettingsView>(*led, *ledMatrix);
+    patternsView = std::make_unique<PatternsView>(*ledMatrix);
 
     // Initialize view array
     views[static_cast<size_t>(state::ViewId::INIT)] = initView.get();
     views[static_cast<size_t>(state::ViewId::SETTINGS)] = settingsView.get();
+    views[static_cast<size_t>(state::ViewId::PATTERNS)] = patternsView.get();
 
     // Register views with StateManager so it can look up active view during dispatch
     state::getStateManager().setViews(views);

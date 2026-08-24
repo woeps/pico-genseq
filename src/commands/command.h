@@ -16,6 +16,7 @@ namespace commands {
         PATTERN_EUCLIDEAN_SET_PULSES,
         PATTERN_EUCLIDEAN_SET_ROTATION,
         PATTERN_EUCLIDEAN_SET_LENGTH,
+        PATTERN_ADD,
         // Add more commands as needed
     };
 

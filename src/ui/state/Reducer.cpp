@@ -27,6 +27,28 @@ void setCurrentView(UIState& state, ViewId viewId) {
     state.currentView = viewId;
 }
 
+void setSelectedPattern(UIState& state, uint8_t index) {
+    state.selectedPattern = std::min(index, static_cast<uint8_t>(state.patternCount));
+}
+
+void addPattern(UIState& state) {
+    if (state.patternCount >= 15) return;
+    state.patternCount++;
+    state.activePatterns |= (1 << (state.patternCount - 1));
+    state.selectedPattern = state.patternCount - 1;
+    commands::sendCommand(commands::Command::PATTERN_ADD);
+}
+
+void togglePatternActive(UIState& state, uint8_t index) {
+    if (index >= state.patternCount) return;
+    state.activePatterns ^= (1 << index);
+    if (state.activePatterns & (1 << index)) {
+        commands::sendCommand(commands::Command::PATTERN_ACTIVATE, index);
+    } else {
+        commands::sendCommand(commands::Command::PATTERN_DEACTIVATE, index);
+    }
+}
+
 namespace {
 
 constexpr uint8_t F1_USAGE  = static_cast<uint8_t>(KeyId::F1);
@@ -34,7 +56,7 @@ constexpr uint8_t F12_USAGE = static_cast<uint8_t>(KeyId::F12);
 
 // F1 -> INIT, F2 -> SETTINGS. Keys past the end of this table are reserved
 // for future views: consumed, traced, but without effect.
-constexpr ViewId FUNCTION_KEY_VIEWS[] = { ViewId::INIT, ViewId::SETTINGS };
+constexpr ViewId FUNCTION_KEY_VIEWS[] = { ViewId::INIT, ViewId::SETTINGS, ViewId::PATTERNS };
 
 bool isFunctionKey(KeyId id) {
     const uint8_t usage = static_cast<uint8_t>(id);
