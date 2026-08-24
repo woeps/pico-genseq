@@ -10,6 +10,9 @@
 #include "views/InitView.h"
 #include "views/SettingsView.h"
 #include "views/PatternsView.h"
+#include "views/GateSetView.h"
+#include "views/PitchSetView.h"
+#include "views/VelocitySetView.h"
 #include "state/UIState.h"
 
 namespace ui {
@@ -34,6 +37,9 @@ private:
     std::unique_ptr<InitView> initView;
     std::unique_ptr<SettingsView> settingsView;
     std::unique_ptr<PatternsView> patternsView;
+    std::unique_ptr<GateSetView> gateSetView;
+    std::unique_ptr<PitchSetView> pitchSetView;
+    std::unique_ptr<VelocitySetView> velocitySetView;
     std::array<IView*, state::VIEW_COUNT> views{};
     IView* activeView;
 

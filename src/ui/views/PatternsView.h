@@ -22,7 +22,6 @@ private:
     static constexpr uint8_t GRID_GAP = 1;
     static constexpr uint8_t GRID_START_X = 0;
     static constexpr uint8_t GRID_START_Y = 5;
-    static constexpr uint8_t MAX_PATTERNS = GRID_COLS * GRID_ROWS;
 //                                             0xXXGGRRBB
     static constexpr uint32_t COLOR_ACTIVE   = 0x0000FF00;
     static constexpr uint32_t COLOR_INACTIVE = 0x000000FF;

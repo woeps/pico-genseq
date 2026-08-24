@@ -28,6 +28,7 @@ constexpr Entry NAMES[] = {
     {KeyId::F7, "f7"},   {KeyId::F8, "f8"},   {KeyId::F9, "f9"},
     {KeyId::F10, "f10"}, {KeyId::F11, "f11"}, {KeyId::F12, "f12"},
 
+    {KeyId::DELETE_KEY, "delete"},
     {KeyId::RIGHT, "right"}, {KeyId::LEFT, "left"},
     {KeyId::DOWN, "down"},   {KeyId::UP, "up"},
 };

@@ -17,6 +17,7 @@ namespace commands {
         PATTERN_EUCLIDEAN_SET_ROTATION,
         PATTERN_EUCLIDEAN_SET_LENGTH,
         PATTERN_ADD,
+        PATTERN_REMOVE,
         // Add more commands as needed
     };
 

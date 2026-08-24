@@ -21,11 +21,17 @@ void UIController::initialize()
     initView = std::make_unique<InitView>(*led, *ledMatrix);
     settingsView = std::make_unique<SettingsView>(*led, *ledMatrix);
     patternsView = std::make_unique<PatternsView>(*ledMatrix);
+    gateSetView = std::make_unique<GateSetView>(*ledMatrix);
+    pitchSetView = std::make_unique<PitchSetView>(*ledMatrix);
+    velocitySetView = std::make_unique<VelocitySetView>(*ledMatrix);
 
     // Initialize view array
     views[static_cast<size_t>(state::ViewId::INIT)] = initView.get();
     views[static_cast<size_t>(state::ViewId::SETTINGS)] = settingsView.get();
     views[static_cast<size_t>(state::ViewId::PATTERNS)] = patternsView.get();
+    views[static_cast<size_t>(state::ViewId::GATE_SET)] = gateSetView.get();
+    views[static_cast<size_t>(state::ViewId::PITCH_SET)] = pitchSetView.get();
+    views[static_cast<size_t>(state::ViewId::VELOCITY_SET)] = velocitySetView.get();
 
     // Register views with StateManager so it can look up active view during dispatch
     state::getStateManager().setViews(views);

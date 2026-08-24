@@ -12,11 +12,17 @@ add_executable(genseq_tests
     test_initview.cpp
     test_reducer.cpp
     test_decoder.cpp
+    test_patternsview.cpp
+    test_setdetailviews.cpp
     stubs/command_stub.cpp
     stubs/hardware_stub.cpp
     ${SRC}/ui/KeyNames.cpp
     ${SRC}/ui/state/Reducer.cpp
     ${SRC}/ui/views/InitView.cpp
+    ${SRC}/ui/views/PatternsView.cpp
+    ${SRC}/ui/views/GateSetView.cpp
+    ${SRC}/ui/views/PitchSetView.cpp
+    ${SRC}/ui/views/VelocitySetView.cpp
     ${SRC}/ui/hardware/KeyboardDecoder.cpp
 )
 

@@ -42,6 +42,7 @@ namespace sequencer {
         void sendMidiClock();
 
         void addPattern(const common::Pattern& pattern);
+        void removePattern(size_t index);
         void activatePattern(size_t index);
         void deactivatePattern(size_t index);
         void patternSetEuclideanLength(size_t patternIndex, size_t length);

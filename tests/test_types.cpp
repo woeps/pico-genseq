@@ -29,6 +29,7 @@ TEST(key_ids_are_hid_usage_codes) {
     CHECK_EQ(static_cast<uint8_t>(KeyId::SPACE), 0x2C);
     CHECK_EQ(static_cast<uint8_t>(KeyId::F1), 0x3A);
     CHECK_EQ(static_cast<uint8_t>(KeyId::F12), 0x45);
+    CHECK_EQ(static_cast<uint8_t>(KeyId::DELETE_KEY), 0x4C);
     CHECK_EQ(static_cast<uint8_t>(KeyId::UP), 0x52);
 }
 
@@ -41,6 +42,7 @@ TEST(toName_returns_lowercase_names) {
     CHECK_STREQ(toName(KeyId::SPACE), "space");
     CHECK_STREQ(toName(KeyId::F1), "f1");
     CHECK_STREQ(toName(KeyId::F12), "f12");
+    CHECK_STREQ(toName(KeyId::DELETE_KEY), "delete");
     CHECK_STREQ(toName(KeyId::UP), "up");
     CHECK_STREQ(toName(KeyId::NUM_0), "0");
 }

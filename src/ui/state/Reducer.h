@@ -15,7 +15,9 @@ void setPlaying(UIState& state, bool playing);
 void setCurrentView(UIState& state, ViewId viewId);
 void setValue(UIState& state, int value);
 void setSelectedPattern(UIState& state, uint8_t index);
+void setSelectedPatternSet(UIState& state, PatternSet patternSet);
 void addPattern(UIState& state);
+void removePattern(UIState& state, uint8_t index);
 void togglePatternActive(UIState& state, uint8_t index);
 
 } // namespace ui::state

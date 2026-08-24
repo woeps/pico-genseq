@@ -31,12 +31,30 @@ void setSelectedPattern(UIState& state, uint8_t index) {
     state.selectedPattern = std::min(index, static_cast<uint8_t>(state.patternCount));
 }
 
+void setSelectedPatternSet(UIState& state, PatternSet patternSet) {
+    state.selectedPatternSet = patternSet;
+}
+
 void addPattern(UIState& state) {
-    if (state.patternCount >= 15) return;
+    if (state.patternCount >= MAX_PATTERNS) return;
     state.patternCount++;
     state.activePatterns |= (1 << (state.patternCount - 1));
     state.selectedPattern = state.patternCount - 1;
     commands::sendCommand(commands::Command::PATTERN_ADD);
+}
+
+void removePattern(UIState& state, uint8_t index) {
+    if (state.patternCount <= 1 || index >= state.patternCount) return;
+
+    const uint16_t lowerMask = index == 0 ? 0 : static_cast<uint16_t>((1u << index) - 1);
+    const uint16_t lower = state.activePatterns & lowerMask;
+    const uint16_t upper = state.activePatterns >> (index + 1);
+    state.activePatterns = lower | static_cast<uint16_t>(upper << index);
+    state.patternCount--;
+    if (state.selectedPattern > index) state.selectedPattern--;
+    state.selectedPattern = std::min(state.selectedPattern,
+                                     static_cast<uint8_t>(state.patternCount - 1));
+    commands::sendCommand(commands::Command::PATTERN_REMOVE, index);
 }
 
 void togglePatternActive(UIState& state, uint8_t index) {

@@ -125,3 +125,57 @@ TEST(reduce_returns_state_unchanged_without_an_active_view) {
     const auto next = state::reduce(s, press(KeyId::UP), nullptr);
     CHECK_EQ(next.value, 7);
 }
+
+TEST(remove_pattern_compacts_active_bits_and_sends_index) {
+    commands::testing::reset();
+    state::UIState s;
+    s.patternCount = 4;
+    s.activePatterns = 0b1101;
+    s.selectedPattern = 1;
+
+    state::removePattern(s, 1);
+
+    CHECK_EQ(s.patternCount, 3);
+    CHECK_EQ(s.activePatterns, 0b111);
+    CHECK_EQ(s.selectedPattern, 1);
+    auto& cmds = commands::testing::sentCommands();
+    CHECK_EQ(cmds.size(), 1);
+    if (!cmds.empty()) {
+        CHECK(cmds[0].cmd == commands::Command::PATTERN_REMOVE);
+        CHECK_EQ(cmds[0].param1, 1);
+    }
+}
+
+TEST(remove_pattern_clamps_selection_after_removing_last_pattern) {
+    state::UIState s;
+    s.patternCount = 4;
+    s.activePatterns = 0b1111;
+    s.selectedPattern = 3;
+
+    state::removePattern(s, 3);
+
+    CHECK_EQ(s.patternCount, 3);
+    CHECK_EQ(s.selectedPattern, 2);
+}
+
+TEST(remove_pattern_keeps_at_least_one_pattern) {
+    commands::testing::reset();
+    state::UIState s;
+
+    state::removePattern(s, 0);
+
+    CHECK_EQ(s.patternCount, 1);
+    CHECK_EQ(s.activePatterns, 1);
+    CHECK_EQ(commands::testing::sentCommands().size(), 0);
+}
+
+TEST(remove_pattern_shifts_a_later_selection_with_compacted_indices) {
+    state::UIState s;
+    s.patternCount = 5;
+    s.selectedPattern = 4;
+
+    state::removePattern(s, 1);
+
+    CHECK_EQ(s.patternCount, 4);
+    CHECK_EQ(s.selectedPattern, 3);
+}

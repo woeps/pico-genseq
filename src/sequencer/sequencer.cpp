@@ -99,6 +99,9 @@ namespace sequencer {
         case commands::Command::PATTERN_ADD:
             addPattern(common::Pattern());
             break;
+        case commands::Command::PATTERN_REMOVE:
+            removePattern(msg.param1);
+            break;
         default: break;
     }
     }
@@ -143,6 +146,11 @@ namespace sequencer {
 
     void Sequencer::addPattern(const common::Pattern& pattern) {
         patterns.push_back(pattern);
+    }
+
+    void Sequencer::removePattern(size_t index) {
+        if (patterns.size() <= 1 || index >= patterns.size()) return;
+        patterns.erase(patterns.begin() + index);
     }
 
     void Sequencer::activatePattern(size_t index) {
