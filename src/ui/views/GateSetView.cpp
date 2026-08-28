@@ -29,11 +29,12 @@ state::UIState GateSetView::handleEvent(const state::UIState& state, const event
 
     state::UIState newState = state;
     const bool isPressed = event.type == events::EventType::KEY_PRESSED;
-    switch (combo(event.data.key.id, event.data.key.mods)) {
+    const bool coarse = (event.data.key.mods & mod::SHIFT) != 0;
+    switch (combo(event.data.key.id, event.data.key.mods & ~mod::SHIFT)) {
         case combo(KeyId::LEFT):  state::moveGateSetProperty(newState, -1); break;
         case combo(KeyId::RIGHT): state::moveGateSetProperty(newState, 1); break;
-        case combo(KeyId::UP):    state::adjustGateSetValue(newState, 1); break;
-        case combo(KeyId::DOWN):  state::adjustGateSetValue(newState, -1); break;
+        case combo(KeyId::UP):    state::adjustGateSetValue(newState, 1, coarse); break;
+        case combo(KeyId::DOWN):  state::adjustGateSetValue(newState, -1, coarse); break;
         case combo(KeyId::ENTER):
             if (isPressed) state::commitGateSetEdit(newState);
             break;

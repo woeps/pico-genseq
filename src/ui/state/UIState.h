@@ -90,6 +90,32 @@ inline bool operator!=(const PitchSetConfig& lhs, const PitchSetConfig& rhs) {
     return !(lhs == rhs);
 }
 
+constexpr uint8_t MAX_VELOCITIES = 16;
+
+// VelocitySetConfig field indices: 0 = COUNT, 1 = ORDER, 2..count+1 = velocities
+constexpr uint8_t VELOCITY_SET_FIELD_COUNT = 0;
+constexpr uint8_t VELOCITY_SET_FIELD_ORDER = 1;
+constexpr uint8_t VELOCITY_SET_FIELD_VELOCITY_BASE = 2;
+
+struct VelocitySetConfig {
+    uint8_t count = 4;
+    common::PlayingOrder order = common::PlayingOrder::FORWARDS;
+    std::array<uint8_t, MAX_VELOCITIES> velocities{100, 80, 60, 80, 0, 0, 0, 0,
+                                                     0,   0,  0,  0, 0, 0, 0, 0};
+};
+
+inline bool operator==(const VelocitySetConfig& lhs, const VelocitySetConfig& rhs) {
+    if (lhs.count != rhs.count || lhs.order != rhs.order) return false;
+    for (uint8_t i = 0; i < lhs.count; i++) {
+        if (lhs.velocities[i] != rhs.velocities[i]) return false;
+    }
+    return true;
+}
+
+inline bool operator!=(const VelocitySetConfig& lhs, const VelocitySetConfig& rhs) {
+    return !(lhs == rhs);
+}
+
 constexpr size_t VIEW_COUNT = static_cast<size_t>(ViewId::COUNT);
 constexpr uint8_t MAX_PATTERNS = 15;
 static_assert(MAX_PATTERNS <= 16);
@@ -111,6 +137,10 @@ struct UIState {
     PitchSetConfig pitchSetDraft{};
     uint8_t selectedPitchSetField = PITCH_SET_FIELD_COUNT;
     bool pitchSetDirty = false;
+    std::array<VelocitySetConfig, MAX_PATTERNS> velocitySetConfigs{};
+    VelocitySetConfig velocitySetDraft{};
+    uint8_t selectedVelocitySetField = VELOCITY_SET_FIELD_COUNT;
+    bool velocitySetDirty = false;
 };
 
 } // namespace ui::state

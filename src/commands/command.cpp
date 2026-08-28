@@ -58,6 +58,30 @@ namespace commands {
         }
     }
 
+    void sendVelocitySet(uint8_t patternIndex, uint8_t count,
+                         common::PlayingOrder order,
+                         const std::vector<uint8_t>& velocities) {
+        const uint8_t velocityCount = static_cast<uint8_t>(
+            std::min(static_cast<size_t>(count), velocities.size()));
+        const uint8_t clampedCount = std::min(velocityCount, MAX_PITCH_SET_LENGTH);
+        const uint32_t packed = static_cast<uint32_t>(Command::PATTERN_VELOCITY_SET) |
+            (static_cast<uint32_t>(patternIndex) << 8) |
+            (static_cast<uint32_t>(clampedCount) << 16) |
+            (static_cast<uint32_t>(order) << 24);
+        multicore_fifo_push_blocking(packed);
+        const uint8_t wordCount = (clampedCount + 3) / 4;
+        for (uint8_t wordIndex = 0; wordIndex < wordCount; wordIndex++) {
+            uint32_t word = 0;
+            for (uint8_t byte = 0; byte < 4; byte++) {
+                const size_t velIndex = static_cast<size_t>(wordIndex) * 4 + byte;
+                if (velIndex < clampedCount) {
+                    word |= static_cast<uint32_t>(velocities[velIndex]) << (byte * 8);
+                }
+            }
+            multicore_fifo_push_blocking(word);
+        }
+    }
+
     CommandMessage receiveCommand() {
         commands::CommandMessage msg;
         if (multicore_fifo_rvalid()) {
@@ -94,11 +118,30 @@ namespace commands {
                     }
                 }
             }
+            if (msg.cmd == Command::PATTERN_VELOCITY_SET) {
+                const uint8_t receivedVelCount = (raw_cmd >> 16) & 0xFF;
+                msg.velocityCount = std::min(receivedVelCount, MAX_PITCH_SET_LENGTH);
+                msg.velocityOrder = static_cast<common::PlayingOrder>((raw_cmd >> 24) & 0xFF);
+                msg.velocities.assign(msg.velocityCount, 0);
+                const uint8_t wordCount = (msg.velocityCount + 3) / 4;
+                for (uint8_t i = 0; i < wordCount; i++) {
+                    const uint32_t word = multicore_fifo_pop_blocking();
+                    for (uint8_t byte = 0; byte < 4; byte++) {
+                        const size_t velIndex = static_cast<size_t>(i) * 4 + byte;
+                        if (velIndex < msg.velocityCount) {
+                            msg.velocities[velIndex] = (word >> (byte * 8)) & 0xFF;
+                        }
+                    }
+                }
+            }
             if (msg.cmd == Command::PATTERN_GATE_SET) {
                 printf("Receiving gate set: pattern: %d, gates: %d\n", msg.param1, msg.gateCount);
             } else if (msg.cmd == Command::PATTERN_PITCH_SET) {
                 printf("Receiving pitch set: pattern: %d, count: %d, order: %d\n",
                        msg.param1, msg.pitchCount, static_cast<int>(msg.pitchOrder));
+            } else if (msg.cmd == Command::PATTERN_VELOCITY_SET) {
+                printf("Receiving velocity set: pattern: %d, count: %d\n",
+                       msg.param1, msg.velocityCount);
             } else {
                 printf("Receiving command: %d, param1: %d, param2: %d\n",
                        static_cast<int>(msg.cmd), msg.param1, msg.param2);

@@ -84,11 +84,7 @@ namespace common {
                 position = static_cast<uint8_t>(position + pendulumDirection);
                 break;
             case PlayingOrder::RANDOM: {
-                uint8_t next;
-                do {
-                    next = lcgNext() % size;
-                } while (next == position);
-                position = next;
+                position = lcgNext() % size;
                 break;
             }
         }

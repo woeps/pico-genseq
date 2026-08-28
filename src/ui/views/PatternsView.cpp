@@ -84,6 +84,7 @@ state::UIState PatternsView::handleEvent(const state::UIState& state, const even
                 state::beginPitchSetEdit(newState);
                 state::setCurrentView(newState, state::ViewId::PITCH_SET);
             } else {
+                state::beginVelocitySetEdit(newState);
                 state::setCurrentView(newState, state::ViewId::VELOCITY_SET);
             }
             break;

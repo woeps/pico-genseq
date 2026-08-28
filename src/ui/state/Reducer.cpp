@@ -69,6 +69,19 @@ void restorePitchSetDraft(UIState& state) {
     sendPitchSetConfig(state.selectedPattern, state.pitchSetDraft);
 }
 
+void sendVelocitySetConfig(uint8_t patternIndex, const VelocitySetConfig& config) {
+    std::vector<uint8_t> velocities(config.velocities.begin(),
+                                    config.velocities.begin() + config.count);
+    commands::sendVelocitySet(patternIndex, config.count, config.order, velocities);
+}
+
+void restoreVelocitySetDraft(UIState& state) {
+    if (!state.velocitySetDirty || state.selectedPattern >= state.patternCount) return;
+    state.velocitySetDraft = state.velocitySetConfigs[state.selectedPattern];
+    state.velocitySetDirty = false;
+    sendVelocitySetConfig(state.selectedPattern, state.velocitySetDraft);
+}
+
 }
 
 void setBpm(UIState& state, int bpm) {
@@ -95,6 +108,9 @@ void setCurrentView(UIState& state, ViewId viewId) {
     }
     if (state.currentView == ViewId::PITCH_SET && viewId != ViewId::PITCH_SET) {
         restorePitchSetDraft(state);
+    }
+    if (state.currentView == ViewId::VELOCITY_SET && viewId != ViewId::VELOCITY_SET) {
+        restoreVelocitySetDraft(state);
     }
     state.currentView = viewId;
 }
@@ -124,8 +140,13 @@ void moveGateSetProperty(UIState& state, int direction) {
     state.selectedGateSetProperty = properties[next];
 }
 
-void adjustGateSetValue(UIState& state, int delta) {
+void adjustGateSetValue(UIState& state, int delta, bool coarse) {
     if (state.selectedPattern >= state.patternCount || delta == 0) return;
+    // Coarse step multiplies the step by 10 for numeric fields. NOTE_LENGTH is
+    // an enum stepped one position at a time, so it ignores the coarse flag.
+    const int step = coarse && state.selectedGateSetProperty != GateSetProperty::NOTE_LENGTH
+                         ? delta * 10
+                         : delta;
     GateSetConfig next = state.gateSetDraft;
 
     switch (next.algorithm) {
@@ -133,14 +154,14 @@ void adjustGateSetValue(UIState& state, int delta) {
             switch (state.selectedGateSetProperty) {
                 case GateSetProperty::ALGORITHM: return;
                 case GateSetProperty::STEPS:
-                    next.steps = std::clamp(static_cast<int>(next.steps) + delta, 1, 64);
+                    next.steps = std::clamp(static_cast<int>(next.steps) + step, 1, 64);
                     break;
                 case GateSetProperty::PULSES:
-                    next.pulses = std::clamp(static_cast<int>(next.pulses) + delta, 0,
+                    next.pulses = std::clamp(static_cast<int>(next.pulses) + step, 0,
                                              static_cast<int>(next.steps));
                     break;
                 case GateSetProperty::ROTATION:
-                    next.rotation = std::clamp(static_cast<int>(next.rotation) + delta, 0,
+                    next.rotation = std::clamp(static_cast<int>(next.rotation) + step, 0,
                                                static_cast<int>(next.steps) - 1);
                     break;
                 case GateSetProperty::NOTE_LENGTH:
@@ -150,7 +171,7 @@ void adjustGateSetValue(UIState& state, int delta) {
                         static_cast<int>(NoteLength::WHOLE)));
                     break;
                 case GateSetProperty::LENGTH:
-                    next.gateLength = std::clamp(static_cast<int>(next.gateLength) + delta, 0, 100);
+                    next.gateLength = std::clamp(static_cast<int>(next.gateLength) + step, 0, 100);
                     break;
             }
             clampEuclidean(next);
@@ -192,12 +213,13 @@ void movePitchSetField(UIState& state, int direction) {
     state.selectedPitchSetField = static_cast<uint8_t>(next);
 }
 
-void adjustPitchSetValue(UIState& state, int delta) {
+void adjustPitchSetValue(UIState& state, int delta, bool coarse) {
     if (state.selectedPattern >= state.patternCount || delta == 0) return;
     PitchSetConfig next = state.pitchSetDraft;
 
     if (state.selectedPitchSetField == PITCH_SET_FIELD_COUNT) {
-        next.count = std::clamp(static_cast<int>(next.count) + delta, 1,
+        const int step = coarse ? delta * 10 : delta;
+        next.count = std::clamp(static_cast<int>(next.count) + step, 1,
                                 static_cast<int>(MAX_PITCHES));
         if (next.count > state.pitchSetDraft.count) {
             const uint8_t fillPitch = state.pitchSetDraft.pitches[state.pitchSetDraft.count - 1];
@@ -206,16 +228,19 @@ void adjustPitchSetValue(UIState& state, int delta) {
             }
         }
     } else if (state.selectedPitchSetField == PITCH_SET_FIELD_ORDER) {
+        // ORDER is an enum stepped one position at a time; coarse has no effect.
         const int orderInt = static_cast<int>(next.order) + delta;
         next.order = static_cast<common::PlayingOrder>(
             std::clamp(orderInt,
                        static_cast<int>(common::PlayingOrder::FORWARDS),
                        static_cast<int>(common::PlayingOrder::RANDOM)));
     } else {
+        // Coarse shifts by a full octave (12 semitones).
+        const int step = coarse ? delta * 12 : delta;
         const uint8_t pitchIndex = state.selectedPitchSetField - PITCH_SET_FIELD_PITCH_BASE;
         if (pitchIndex >= next.count) return;
         next.pitches[pitchIndex] = static_cast<uint8_t>(
-            std::clamp(static_cast<int>(next.pitches[pitchIndex]) + delta, 0, 127));
+            std::clamp(static_cast<int>(next.pitches[pitchIndex]) + step, 0, 127));
     }
 
     if (next == state.pitchSetDraft) return;
@@ -241,6 +266,70 @@ void syncPitchSet(const UIState& state, uint8_t index) {
     if (index < state.patternCount) sendPitchSetConfig(index, state.pitchSetConfigs[index]);
 }
 
+void beginVelocitySetEdit(UIState& state) {
+    if (state.selectedPattern >= state.patternCount) return;
+    state.velocitySetDraft = state.velocitySetConfigs[state.selectedPattern];
+    state.selectedVelocitySetField = VELOCITY_SET_FIELD_COUNT;
+    state.velocitySetDirty = false;
+}
+
+void moveVelocitySetField(UIState& state, int direction) {
+    const uint8_t lastField = VELOCITY_SET_FIELD_VELOCITY_BASE + state.velocitySetDraft.count - 1;
+    int next = static_cast<int>(state.selectedVelocitySetField) + direction;
+    next = std::clamp(next, static_cast<int>(VELOCITY_SET_FIELD_COUNT),
+                      static_cast<int>(lastField));
+    state.selectedVelocitySetField = static_cast<uint8_t>(next);
+}
+
+void adjustVelocitySetValue(UIState& state, int delta, bool coarse) {
+    if (state.selectedPattern >= state.patternCount || delta == 0) return;
+    VelocitySetConfig next = state.velocitySetDraft;
+
+    if (state.selectedVelocitySetField == VELOCITY_SET_FIELD_COUNT) {
+        const int step = coarse ? delta * 10 : delta;
+        next.count = static_cast<uint8_t>(std::clamp(
+            static_cast<int>(next.count) + step, 1, static_cast<int>(MAX_VELOCITIES)));
+        if (next.count > state.velocitySetDraft.count) {
+            const uint8_t fillVel = state.velocitySetDraft.velocities[state.velocitySetDraft.count - 1];
+            for (uint8_t i = state.velocitySetDraft.count; i < next.count; i++) {
+                next.velocities[i] = fillVel;
+            }
+        }
+    } else if (state.selectedVelocitySetField == VELOCITY_SET_FIELD_ORDER) {
+        // ORDER is an enum stepped one position at a time; coarse has no effect.
+        const int orderInt = static_cast<int>(next.order) + delta;
+        next.order = static_cast<common::PlayingOrder>(
+            std::clamp(orderInt,
+                       static_cast<int>(common::PlayingOrder::FORWARDS),
+                       static_cast<int>(common::PlayingOrder::RANDOM)));
+    } else {
+        const int step = coarse ? delta * 10 : delta;
+        const uint8_t velIndex = state.selectedVelocitySetField - VELOCITY_SET_FIELD_VELOCITY_BASE;
+        if (velIndex >= next.count) return;
+        next.velocities[velIndex] = static_cast<uint8_t>(
+            std::clamp(static_cast<int>(next.velocities[velIndex]) + step, 0, 127));
+    }
+
+    if (next == state.velocitySetDraft) return;
+    state.velocitySetDraft = next;
+    state.velocitySetDirty = next != state.velocitySetConfigs[state.selectedPattern];
+    sendVelocitySetConfig(state.selectedPattern, next);
+}
+
+void commitVelocitySetEdit(UIState& state) {
+    if (state.selectedPattern >= state.patternCount) return;
+    state.velocitySetConfigs[state.selectedPattern] = state.velocitySetDraft;
+    state.velocitySetDirty = false;
+}
+
+void undoVelocitySetEdit(UIState& state) {
+    restoreVelocitySetDraft(state);
+}
+
+void syncVelocitySet(const UIState& state, uint8_t index) {
+    if (index < state.patternCount) sendVelocitySetConfig(index, state.velocitySetConfigs[index]);
+}
+
 void setSelectedPattern(UIState& state, uint8_t index) {
     state.selectedPattern = std::min(index, static_cast<uint8_t>(state.patternCount));
 }
@@ -254,12 +343,14 @@ void addPattern(UIState& state) {
     const uint8_t newPattern = state.patternCount;
     state.gateSetConfigs[newPattern] = GateSetConfig{};
     state.pitchSetConfigs[newPattern] = PitchSetConfig{};
+    state.velocitySetConfigs[newPattern] = VelocitySetConfig{};
     state.patternCount++;
     state.activePatterns |= (1 << newPattern);
     state.selectedPattern = newPattern;
     commands::sendCommand(commands::Command::PATTERN_ADD);
     syncGateSet(state, newPattern);
     syncPitchSet(state, newPattern);
+    syncVelocitySet(state, newPattern);
 }
 
 void removePattern(UIState& state, uint8_t index) {
@@ -272,9 +363,11 @@ void removePattern(UIState& state, uint8_t index) {
     for (uint8_t i = index; i + 1 < state.patternCount; i++) {
         state.gateSetConfigs[i] = state.gateSetConfigs[i + 1];
         state.pitchSetConfigs[i] = state.pitchSetConfigs[i + 1];
+        state.velocitySetConfigs[i] = state.velocitySetConfigs[i + 1];
     }
     state.gateSetConfigs[state.patternCount - 1] = GateSetConfig{};
     state.pitchSetConfigs[state.patternCount - 1] = PitchSetConfig{};
+    state.velocitySetConfigs[state.patternCount - 1] = VelocitySetConfig{};
     state.patternCount--;
     if (state.selectedPattern > index) state.selectedPattern--;
     state.selectedPattern = std::min(state.selectedPattern,
