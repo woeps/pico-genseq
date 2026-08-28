@@ -43,10 +43,12 @@ namespace sequencer {
         // Calculate time for one tick based on BPM
         uint32_t tickDurationUs = 60 * 1000 * 1000 / (bpm * PPQN);
 
-        // Check if it's time for the next tick
+        // Check if it's time for the next tick.
+        // Advance lastTickTime by exactly tickDurationUs (not by setting it to currentTime)
+        // so accumulated late-detection jitter doesn't shift the phase of future ticks.
         absolute_time_t currentTime = get_absolute_time();
         if (absolute_time_diff_us(lastTickTime, currentTime) >= tickDurationUs) {
-            lastTickTime = currentTime;
+            lastTickTime = delayed_by_us(lastTickTime, tickDurationUs);
 
             // Process all active patterns
             for (auto& pattern : patterns) {
