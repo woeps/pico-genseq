@@ -66,7 +66,7 @@ namespace sequencer {
                 }
                 else if (flank == common::FALLING) {
                     sendMidiNoteOff(pattern.getMidiChannel(), pitchSet.getPitch());
-                    pitchSet.setPosition((pitchSet.getPosition() + 1) % pitchSet.getPitches().size());
+                    pitchSet.advance();
                     velocitySet.setPosition((velocitySet.getPosition() + 1) % velocitySet.getVelocities().size());
                 }
                 const uint32_t nextGatePosition = static_cast<uint32_t>(
@@ -96,6 +96,9 @@ namespace sequencer {
             // Add more command handlers as needed
         case commands::Command::PATTERN_GATE_SET:
             setPatternGateSet(msg.param1, msg.gates);
+            break;
+        case commands::Command::PATTERN_PITCH_SET:
+            setPatternPitchSet(msg.param1, msg.pitchCount, msg.pitchOrder, msg.pitches);
             break;
         case commands::Command::PATTERN_ADD:
             addPattern(common::Pattern());
@@ -170,6 +173,14 @@ namespace sequencer {
         if (patternIndex < patterns.size()) {
             patterns[patternIndex].setGateSet(common::GateSet(gates));
         }
+    }
+
+    void Sequencer::setPatternPitchSet(size_t patternIndex, uint8_t count,
+                                       common::PlayingOrder order, const std::vector<uint8_t>& pitches) {
+        if (patternIndex >= patterns.size()) return;
+        std::vector<uint8_t> activePitches(pitches.begin(), pitches.begin() + count);
+        common::PitchSet pitchSet(activePitches, order);
+        patterns[patternIndex].setPitchSet(pitchSet);
     }
 
     void Sequencer::sendMidiNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) {

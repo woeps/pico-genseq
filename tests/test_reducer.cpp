@@ -189,12 +189,15 @@ TEST(add_pattern_initializes_and_sends_default_gate_set) {
     state::addPattern(s);
 
     CHECK_EQ(s.gateSetConfigs[2].steps, 16);
-    CHECK_EQ(commands::testing::sentCommands().size(), 2);
-    if (commands::testing::sentCommands().size() >= 2) {
+    CHECK_EQ(commands::testing::sentCommands().size(), 3);
+    if (commands::testing::sentCommands().size() >= 3) {
         CHECK(commands::testing::sentCommands()[0].cmd == commands::Command::PATTERN_ADD);
         CHECK(commands::testing::sentCommands()[1].cmd == commands::Command::PATTERN_GATE_SET);
         CHECK_EQ(commands::testing::sentCommands()[1].param1, 2);
         CHECK_EQ(commands::testing::sentCommands()[1].gateCount, 96);
+        CHECK(commands::testing::sentCommands()[2].cmd == commands::Command::PATTERN_PITCH_SET);
+        CHECK_EQ(commands::testing::sentCommands()[2].param1, 2);
+        CHECK_EQ(commands::testing::sentCommands()[2].pitchCount, 4);
     }
 }
 
@@ -242,5 +245,81 @@ TEST(leaving_dirty_gate_set_view_restores_committed_preview) {
     CHECK_EQ(commands::testing::sentCommands().size(), 1);
     if (!commands::testing::sentCommands().empty()) {
         CHECK(commands::testing::sentCommands()[0].cmd == commands::Command::PATTERN_GATE_SET);
+    }
+}
+
+TEST(leaving_dirty_pitch_set_view_restores_committed_preview) {
+    commands::testing::reset();
+    state::UIState s;
+    s.currentView = state::ViewId::PITCH_SET;
+    s.pitchSetDraft.pitches[0] = 99;
+    s.pitchSetDirty = true;
+
+    const auto next = state::reduce(s, press(KeyId::F1), nullptr);
+
+    CHECK(next.currentView == state::ViewId::INIT);
+    CHECK(!next.pitchSetDirty);
+    CHECK_EQ(next.pitchSetDraft.pitches[0], 60);
+    CHECK_EQ(commands::testing::sentCommands().size(), 1);
+    if (!commands::testing::sentCommands().empty()) {
+        CHECK(commands::testing::sentCommands()[0].cmd == commands::Command::PATTERN_PITCH_SET);
+    }
+}
+
+TEST(add_pattern_initializes_and_sends_default_pitch_set) {
+    commands::testing::reset();
+    state::UIState s;
+    s.patternCount = 2;
+
+    state::addPattern(s);
+
+    CHECK_EQ(s.pitchSetConfigs[2].count, 4);
+    CHECK_EQ(s.pitchSetConfigs[2].pitches[0], 60);
+    auto& cmds = commands::testing::sentCommands();
+    // PATTERN_ADD, PATTERN_GATE_SET, PATTERN_PITCH_SET
+    bool hasPitchSet = false;
+    for (const auto& c : cmds) {
+        if (c.cmd == commands::Command::PATTERN_PITCH_SET) {
+            hasPitchSet = true;
+            CHECK_EQ(c.param1, 2);
+            CHECK_EQ(c.pitchCount, 4);
+            CHECK_EQ(c.pitches[0], 60);
+        }
+    }
+    CHECK(hasPitchSet);
+}
+
+TEST(remove_pattern_compacts_pitch_set_configs) {
+    state::UIState s;
+    s.patternCount = 3;
+    s.pitchSetConfigs[0].pitches[0] = 60;
+    s.pitchSetConfigs[1].pitches[0] = 62;
+    s.pitchSetConfigs[2].pitches[0] = 64;
+
+    state::removePattern(s, 1);
+
+    CHECK_EQ(s.pitchSetConfigs[0].pitches[0], 60);
+    CHECK_EQ(s.pitchSetConfigs[1].pitches[0], 64);
+    CHECK_EQ(s.pitchSetConfigs[2].pitches[0], 60);  // reset to default
+}
+
+TEST(sync_pitch_set_sends_configured_pitches) {
+    commands::testing::reset();
+    state::UIState s;
+    s.pitchSetConfigs[0].count = 3;
+    s.pitchSetConfigs[0].pitches[0] = 55;
+    s.pitchSetConfigs[0].pitches[1] = 57;
+    s.pitchSetConfigs[0].pitches[2] = 59;
+    s.pitchSetConfigs[0].order = common::PlayingOrder::BACKWARDS;
+
+    state::syncPitchSet(s, 0);
+
+    CHECK_EQ(commands::testing::sentCommands().size(), 1);
+    if (!commands::testing::sentCommands().empty()) {
+        const auto& cmd = commands::testing::sentCommands()[0];
+        CHECK(cmd.cmd == commands::Command::PATTERN_PITCH_SET);
+        CHECK_EQ(cmd.pitchCount, 3);
+        CHECK_EQ(cmd.pitches[0], 55);
+        CHECK(cmd.pitchOrder == common::PlayingOrder::BACKWARDS);
     }
 }

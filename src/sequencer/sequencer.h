@@ -46,6 +46,8 @@ namespace sequencer {
         void activatePattern(size_t index);
         void deactivatePattern(size_t index);
         void setPatternGateSet(size_t patternIndex, const std::vector<bool>& gates);
+        void setPatternPitchSet(size_t patternIndex, uint8_t count,
+                                common::PlayingOrder order, const std::vector<uint8_t>& pitches);
 
         void sendMidiNoteOn(uint8_t channel, uint8_t note, uint8_t velocity);
         void sendMidiNoteOff(uint8_t channel, uint8_t note);

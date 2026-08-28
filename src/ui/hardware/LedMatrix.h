@@ -25,7 +25,7 @@ public:
     void fill(uint32_t color);
     void drawNumber(int number, uint32_t color);
     void drawLabel(const char (&text)[4], uint32_t color);
-    void drawNote(const char (&noteStr)[3], uint32_t color);
+    void drawNote(const char (&noteStr)[4], uint32_t color);
 
 private:
     uint8_t pin;

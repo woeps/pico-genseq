@@ -17,6 +17,7 @@ add_executable(genseq_tests
     stubs/command_stub.cpp
     stubs/hardware_stub.cpp
     ${SRC}/common/gate_set.cpp
+    ${SRC}/common/pitch_set.cpp
     ${SRC}/ui/KeyNames.cpp
     ${SRC}/ui/state/Reducer.cpp
     ${SRC}/ui/views/InitView.cpp

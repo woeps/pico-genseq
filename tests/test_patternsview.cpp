@@ -77,7 +77,14 @@ TEST(patternsview_enter_routes_selected_set_to_its_detail_view) {
     CHECK(gate.selectedGateSetProperty == state::GateSetProperty::ALGORITHM);
     CHECK(!gate.gateSetDirty);
     s.selectedPatternSet = state::PatternSet::PITCH;
-    CHECK(f.view.handleEvent(s, press(KeyId::ENTER)).currentView == state::ViewId::PITCH_SET);
+    s.pitchSetConfigs[0].pitches[0] = 77;
+    s.pitchSetDraft.pitches[0] = 50;
+    s.pitchSetDirty = true;
+    const auto pitch = f.view.handleEvent(s, press(KeyId::ENTER));
+    CHECK(pitch.currentView == state::ViewId::PITCH_SET);
+    CHECK_EQ(pitch.pitchSetDraft.pitches[0], 77);
+    CHECK_EQ(pitch.selectedPitchSetField, state::PITCH_SET_FIELD_COUNT);
+    CHECK(!pitch.pitchSetDirty);
     s.selectedPatternSet = state::PatternSet::VELOCITY;
     CHECK(f.view.handleEvent(s, press(KeyId::ENTER)).currentView == state::ViewId::VELOCITY_SET);
 }

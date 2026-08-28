@@ -9,6 +9,7 @@ namespace {
 
 uint32_t matrixPixels[LedMatrix::NUM_PIXELS]{};
 char matrixLabel[4]{};
+char matrixNote[4]{};
 int matrixNumber = -1;
 
 }
@@ -37,13 +38,16 @@ void LedMatrix::drawNumber(int number, uint32_t) { matrixNumber = number; }
 void LedMatrix::drawLabel(const char (&text)[4], uint32_t) {
     for (uint8_t i = 0; i < 4; i++) matrixLabel[i] = text[i];
 }
-void LedMatrix::drawNote(const char (&)[3], uint32_t) {}
+void LedMatrix::drawNote(const char (&noteStr)[4], uint32_t) {
+    for (uint8_t i = 0; i < 4; i++) matrixNote[i] = noteStr[i];
+}
 
 namespace testing {
 
 void resetMatrix() {
     for (auto& pixel : matrixPixels) pixel = 0;
     for (auto& character : matrixLabel) character = 0;
+    for (auto& character : matrixNote) character = 0;
     matrixNumber = -1;
 }
 
@@ -59,6 +63,10 @@ const char* lastLabel() {
 
 int lastNumber() {
     return matrixNumber;
+}
+
+const char* lastNote() {
+    return matrixNote;
 }
 
 }

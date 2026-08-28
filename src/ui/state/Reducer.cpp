@@ -1,6 +1,7 @@
 #include "Reducer.h"
 #include "../../commands/command.h"
 #include "../../common/gate_set.h"
+#include "../../common/pitch_set.h"
 #include <algorithm>
 #include <cstdio>
 
@@ -55,6 +56,19 @@ void restoreGateSetDraft(UIState& state) {
     sendGateSet(state.selectedPattern, state.gateSetDraft);
 }
 
+void sendPitchSetConfig(uint8_t patternIndex, const PitchSetConfig& config) {
+    std::vector<uint8_t> pitches(config.pitches.begin(),
+                                 config.pitches.begin() + config.count);
+    commands::sendPitchSet(patternIndex, config.count, config.order, pitches);
+}
+
+void restorePitchSetDraft(UIState& state) {
+    if (!state.pitchSetDirty || state.selectedPattern >= state.patternCount) return;
+    state.pitchSetDraft = state.pitchSetConfigs[state.selectedPattern];
+    state.pitchSetDirty = false;
+    sendPitchSetConfig(state.selectedPattern, state.pitchSetDraft);
+}
+
 }
 
 void setBpm(UIState& state, int bpm) {
@@ -78,6 +92,9 @@ void setValue(UIState& state, int value) {
 void setCurrentView(UIState& state, ViewId viewId) {
     if (state.currentView == ViewId::GATE_SET && viewId != ViewId::GATE_SET) {
         restoreGateSetDraft(state);
+    }
+    if (state.currentView == ViewId::PITCH_SET && viewId != ViewId::PITCH_SET) {
+        restorePitchSetDraft(state);
     }
     state.currentView = viewId;
 }
@@ -160,6 +177,70 @@ void syncGateSet(const UIState& state, uint8_t index) {
     if (index < state.patternCount) sendGateSet(index, state.gateSetConfigs[index]);
 }
 
+void beginPitchSetEdit(UIState& state) {
+    if (state.selectedPattern >= state.patternCount) return;
+    state.pitchSetDraft = state.pitchSetConfigs[state.selectedPattern];
+    state.selectedPitchSetField = PITCH_SET_FIELD_COUNT;
+    state.pitchSetDirty = false;
+}
+
+void movePitchSetField(UIState& state, int direction) {
+    const uint8_t lastField = PITCH_SET_FIELD_PITCH_BASE + state.pitchSetDraft.count - 1;
+    int next = static_cast<int>(state.selectedPitchSetField) + direction;
+    next = std::clamp(next, static_cast<int>(PITCH_SET_FIELD_COUNT),
+                      static_cast<int>(lastField));
+    state.selectedPitchSetField = static_cast<uint8_t>(next);
+}
+
+void adjustPitchSetValue(UIState& state, int delta) {
+    if (state.selectedPattern >= state.patternCount || delta == 0) return;
+    PitchSetConfig next = state.pitchSetDraft;
+
+    if (state.selectedPitchSetField == PITCH_SET_FIELD_COUNT) {
+        next.count = std::clamp(static_cast<int>(next.count) + delta, 1,
+                                static_cast<int>(MAX_PITCHES));
+        if (next.count > state.pitchSetDraft.count) {
+            const uint8_t fillPitch = state.pitchSetDraft.pitches[state.pitchSetDraft.count - 1];
+            for (uint8_t i = state.pitchSetDraft.count; i < next.count; i++) {
+                next.pitches[i] = fillPitch;
+            }
+        }
+    } else if (state.selectedPitchSetField == PITCH_SET_FIELD_ORDER) {
+        const int orderInt = static_cast<int>(next.order) + delta;
+        next.order = static_cast<common::PlayingOrder>(
+            std::clamp(orderInt,
+                       static_cast<int>(common::PlayingOrder::FORWARDS),
+                       static_cast<int>(common::PlayingOrder::RANDOM)));
+    } else {
+        const uint8_t pitchIndex = state.selectedPitchSetField - PITCH_SET_FIELD_PITCH_BASE;
+        if (pitchIndex >= next.count) return;
+        next.pitches[pitchIndex] = static_cast<uint8_t>(
+            std::clamp(static_cast<int>(next.pitches[pitchIndex]) + delta, 0, 127));
+    }
+
+    if (next == state.pitchSetDraft) return;
+    state.pitchSetDraft = next;
+    state.pitchSetDirty = next != state.pitchSetConfigs[state.selectedPattern];
+    sendPitchSetConfig(state.selectedPattern, next);
+}
+
+void commitPitchSetEdit(UIState& state) {
+    if (state.selectedPattern >= state.patternCount) return;
+    state.pitchSetConfigs[state.selectedPattern] = state.pitchSetDraft;
+    state.pitchSetDirty = false;
+}
+
+void undoPitchSetEdit(UIState& state) {
+    if (!state.pitchSetDirty || state.selectedPattern >= state.patternCount) return;
+    state.pitchSetDraft = state.pitchSetConfigs[state.selectedPattern];
+    state.pitchSetDirty = false;
+    sendPitchSetConfig(state.selectedPattern, state.pitchSetDraft);
+}
+
+void syncPitchSet(const UIState& state, uint8_t index) {
+    if (index < state.patternCount) sendPitchSetConfig(index, state.pitchSetConfigs[index]);
+}
+
 void setSelectedPattern(UIState& state, uint8_t index) {
     state.selectedPattern = std::min(index, static_cast<uint8_t>(state.patternCount));
 }
@@ -172,11 +253,13 @@ void addPattern(UIState& state) {
     if (state.patternCount >= MAX_PATTERNS) return;
     const uint8_t newPattern = state.patternCount;
     state.gateSetConfigs[newPattern] = GateSetConfig{};
+    state.pitchSetConfigs[newPattern] = PitchSetConfig{};
     state.patternCount++;
     state.activePatterns |= (1 << newPattern);
     state.selectedPattern = newPattern;
     commands::sendCommand(commands::Command::PATTERN_ADD);
     syncGateSet(state, newPattern);
+    syncPitchSet(state, newPattern);
 }
 
 void removePattern(UIState& state, uint8_t index) {
@@ -188,8 +271,10 @@ void removePattern(UIState& state, uint8_t index) {
     state.activePatterns = lower | static_cast<uint16_t>(upper << index);
     for (uint8_t i = index; i + 1 < state.patternCount; i++) {
         state.gateSetConfigs[i] = state.gateSetConfigs[i + 1];
+        state.pitchSetConfigs[i] = state.pitchSetConfigs[i + 1];
     }
     state.gateSetConfigs[state.patternCount - 1] = GateSetConfig{};
+    state.pitchSetConfigs[state.patternCount - 1] = PitchSetConfig{};
     state.patternCount--;
     if (state.selectedPattern > index) state.selectedPattern--;
     state.selectedPattern = std::min(state.selectedPattern,

@@ -30,6 +30,19 @@ void sendGateSet(uint8_t patternIndex, const std::vector<bool>& gates) {
     testing::sentCommands().push_back(msg);
 }
 
+void sendPitchSet(uint8_t patternIndex, uint8_t count,
+                  common::PlayingOrder order, const std::vector<uint8_t>& pitches) {
+    CommandMessage msg;
+    msg.cmd = Command::PATTERN_PITCH_SET;
+    msg.param1 = patternIndex;
+    msg.pitchCount = static_cast<uint8_t>(
+        std::min(static_cast<size_t>(count), pitches.size()));
+    msg.pitchCount = std::min(msg.pitchCount, MAX_PITCH_SET_LENGTH);
+    msg.pitchOrder = order;
+    msg.pitches.assign(pitches.begin(), pitches.begin() + msg.pitchCount);
+    testing::sentCommands().push_back(msg);
+}
+
 CommandMessage receiveCommand() { return {}; }
 
 } // namespace commands

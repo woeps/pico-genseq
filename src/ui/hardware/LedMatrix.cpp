@@ -55,7 +55,7 @@ void LedMatrix::drawLabel(const char (&text)[4], uint32_t color)
     dirty = true;
 }
 
-void LedMatrix::drawNote(const char (&noteStr)[3], uint32_t color)
+void LedMatrix::drawNote(const char (&noteStr)[4], uint32_t color)
 {
     get_note_pattern(&noteStr, &buffer, &color);
     dirty = true;

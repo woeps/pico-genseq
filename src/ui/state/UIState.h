@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include "../../common/pitch_set.h"
 
 namespace ui::state {
 
@@ -63,6 +64,32 @@ inline bool operator!=(const GateSetConfig& lhs, const GateSetConfig& rhs) {
     return !(lhs == rhs);
 }
 
+constexpr uint8_t MAX_PITCHES = 16;
+
+// PitchSetConfig field indices: 0 = COUNT, 1 = ORDER, 2..2+count-1 = pitches
+constexpr uint8_t PITCH_SET_FIELD_COUNT = 0;
+constexpr uint8_t PITCH_SET_FIELD_ORDER = 1;
+constexpr uint8_t PITCH_SET_FIELD_PITCH_BASE = 2;
+
+struct PitchSetConfig {
+    uint8_t count = 4;
+    common::PlayingOrder order = common::PlayingOrder::FORWARDS;
+    std::array<uint8_t, MAX_PITCHES> pitches{60, 67, 69, 72, 0, 0, 0, 0,
+                                              0, 0, 0, 0, 0, 0, 0, 0};
+};
+
+inline bool operator==(const PitchSetConfig& lhs, const PitchSetConfig& rhs) {
+    if (lhs.count != rhs.count || lhs.order != rhs.order) return false;
+    for (uint8_t i = 0; i < lhs.count; i++) {
+        if (lhs.pitches[i] != rhs.pitches[i]) return false;
+    }
+    return true;
+}
+
+inline bool operator!=(const PitchSetConfig& lhs, const PitchSetConfig& rhs) {
+    return !(lhs == rhs);
+}
+
 constexpr size_t VIEW_COUNT = static_cast<size_t>(ViewId::COUNT);
 constexpr uint8_t MAX_PATTERNS = 15;
 static_assert(MAX_PATTERNS <= 16);
@@ -80,6 +107,10 @@ struct UIState {
     GateSetConfig gateSetDraft{};
     GateSetProperty selectedGateSetProperty = GateSetProperty::ALGORITHM;
     bool gateSetDirty = false;
+    std::array<PitchSetConfig, MAX_PATTERNS> pitchSetConfigs{};
+    PitchSetConfig pitchSetDraft{};
+    uint8_t selectedPitchSetField = PITCH_SET_FIELD_COUNT;
+    bool pitchSetDirty = false;
 };
 
 } // namespace ui::state

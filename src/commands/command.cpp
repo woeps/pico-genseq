@@ -35,6 +35,29 @@ namespace commands {
         }
     }
 
+    void sendPitchSet(uint8_t patternIndex, uint8_t count,
+                      common::PlayingOrder order, const std::vector<uint8_t>& pitches) {
+        const uint8_t pitchCount = static_cast<uint8_t>(
+            std::min(static_cast<size_t>(count), pitches.size()));
+        const uint8_t clampedCount = std::min(pitchCount, MAX_PITCH_SET_LENGTH);
+        const uint32_t packed = static_cast<uint32_t>(Command::PATTERN_PITCH_SET) |
+            (static_cast<uint32_t>(patternIndex) << 8) |
+            (static_cast<uint32_t>(clampedCount) << 16) |
+            (static_cast<uint32_t>(order) << 24);
+        multicore_fifo_push_blocking(packed);
+        const uint8_t wordCount = (clampedCount + 3) / 4;
+        for (uint8_t wordIndex = 0; wordIndex < wordCount; wordIndex++) {
+            uint32_t word = 0;
+            for (uint8_t byte = 0; byte < 4; byte++) {
+                const size_t pitchIndex = static_cast<size_t>(wordIndex) * 4 + byte;
+                if (pitchIndex < clampedCount) {
+                    word |= static_cast<uint32_t>(pitches[pitchIndex]) << (byte * 8);
+                }
+            }
+            multicore_fifo_push_blocking(word);
+        }
+    }
+
     CommandMessage receiveCommand() {
         commands::CommandMessage msg;
         if (multicore_fifo_rvalid()) {
@@ -55,8 +78,27 @@ namespace commands {
                     }
                 }
             }
+            if (msg.cmd == Command::PATTERN_PITCH_SET) {
+                const uint8_t receivedPitchCount = (raw_cmd >> 16) & 0xFF;
+                msg.pitchCount = std::min(receivedPitchCount, MAX_PITCH_SET_LENGTH);
+                msg.pitchOrder = static_cast<common::PlayingOrder>((raw_cmd >> 24) & 0xFF);
+                msg.pitches.assign(msg.pitchCount, 0);
+                const uint8_t wordCount = (msg.pitchCount + 3) / 4;
+                for (uint8_t i = 0; i < wordCount; i++) {
+                    const uint32_t word = multicore_fifo_pop_blocking();
+                    for (uint8_t byte = 0; byte < 4; byte++) {
+                        const size_t pitchIndex = static_cast<size_t>(i) * 4 + byte;
+                        if (pitchIndex < msg.pitchCount) {
+                            msg.pitches[pitchIndex] = (word >> (byte * 8)) & 0xFF;
+                        }
+                    }
+                }
+            }
             if (msg.cmd == Command::PATTERN_GATE_SET) {
                 printf("Receiving gate set: pattern: %d, gates: %d\n", msg.param1, msg.gateCount);
+            } else if (msg.cmd == Command::PATTERN_PITCH_SET) {
+                printf("Receiving pitch set: pattern: %d, count: %d, order: %d\n",
+                       msg.param1, msg.pitchCount, static_cast<int>(msg.pitchOrder));
             } else {
                 printf("Receiving command: %d, param1: %d, param2: %d\n",
                        static_cast<int>(msg.cmd), msg.param1, msg.param2);

@@ -40,6 +40,7 @@ void UIController::initialize()
     // Set initial view
     const state::UIState& initialState = state::getStateManager().getState();
     state::syncGateSet(initialState, 0);
+    state::syncPitchSet(initialState, 0);
     onStateChanged(initialState);
 
     // Subscribe to state changes for view switching

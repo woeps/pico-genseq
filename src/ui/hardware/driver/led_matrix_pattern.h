@@ -328,32 +328,39 @@ static inline void get_label_pattern(const char (*text)[4], uint32_t (*buffer)[2
     for (int pos = 0; pos < 4; pos++) {
         char c = (*text)[pos];
         if (c == '\0') c = ' '; // Fallback if string is short
-        
-        if (c >= 'A' && c <= 'Z') c = c - 'A' + 'a';
-        // if (c < 'a' || c > 'z') c = 'a';
-        if (c < 'a' || c > 'z') continue;
-        int idx = c - 'a';
 
-        for (int row = 0; row < 5; row++) {
-            for (int col = 0; col < 4; col++) {
-                (*buffer)[row * 16 + pos * 4 + col] = font[idx][row][col] ? *color : 0;
+        if (c >= 'A' && c <= 'Z') c = c - 'A' + 'a';
+        if (c >= 'a' && c <= 'z') {
+            int idx = c - 'a';
+            for (int row = 0; row < 5; row++) {
+                for (int col = 0; col < 4; col++) {
+                    (*buffer)[row * 16 + pos * 4 + col] = font[idx][row][col] ? *color : 0;
+                }
+            }
+        } else if (c >= '0' && c <= '9') {
+            int idx = c - '0';
+            for (int row = 0; row < 5; row++) {
+                for (int col = 0; col < 4; col++) {
+                    (*buffer)[row * 16 + pos * 4 + col] = digits[idx][row][col] ? *color : 0;
+                }
             }
         }
     }
 }
 
-static inline void get_note_pattern(const char (*note_str)[3], uint32_t (*buffer)[256], uint32_t *color) {
+static inline void get_note_pattern(const char (*note_str)[4], uint32_t (*buffer)[256], uint32_t *color) {
     // Clear only rows 6-15 (10 rows * 16 columns)
     // memset(&(*buffer)[6 * 16], 0, 10 * 16 * sizeof(uint32_t));
-    
+
     // Layout strategy:
     // Rows 6-10 (5 rows height, 1:1 vertical).
     // Col 0: Flat Dot.
     // Cols 1-4: Note (A-G), 1:1 scaling.
+    // Col 8: Minus sign (for octave -1).
     // Cols 9-12: Octave (0-9), 1:1 scaling.
     // Col 15: Sharp Dot.
 
-    int start_row = 6; 
+    int start_row = 6;
 
     // 1. Note (A-G) -> Cols 1-4
     char note = (*note_str)[0];
@@ -386,7 +393,7 @@ static inline void get_note_pattern(const char (*note_str)[3], uint32_t (*buffer
     char mod = (*note_str)[2];
     bool is_sharp = (mod == '#' || mod == 's' || mod == 'S');
     bool is_flat = (mod == 'b' || mod == 'f' || mod == 'F');
-    
+
     if (is_sharp) {
         // Sharp: Outer Right (Col 15), Top (row 6)
         int col = 15;
@@ -395,6 +402,14 @@ static inline void get_note_pattern(const char (*note_str)[3], uint32_t (*buffer
         // Flat: Outer Left (Col 0), Bottom (row 10)
         int col = 0;
         (*buffer)[(start_row + 4) * 16 + col] = *color;
+    }
+
+    // 4. Negative octave sign -> Col 8, middle row
+    if ((*note_str)[3] == '-') {
+        int row = start_row + 2;
+        for (int col = 7; col <= 8; col++) {
+            (*buffer)[row * 16 + col] = *color;
+        }
     }
 }
 

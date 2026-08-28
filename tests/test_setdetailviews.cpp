@@ -6,6 +6,7 @@
 #include "ui/views/VelocitySetView.h"
 #include "ui/state/UIState.h"
 #include "common/gate_set.h"
+#include "common/pitch_set.h"
 #include "ui/Event.h"
 
 using namespace ui;
@@ -178,13 +179,252 @@ TEST(gatesetview_clears_dirty_when_edited_back_to_committed_value) {
     CHECK_EQ(s.gateSetDraft.pulses, 4);
 }
 
-TEST(pitchsetview_renders_title_and_escape_returns_to_patterns) {
+TEST(pitchsetview_renders_count_field_by_default_and_escape_returns_to_patterns) {
     hardware::LedMatrix matrix{0};
     PitchSetView view{matrix};
+    state::UIState s;
+    s.currentView = state::ViewId::PITCH_SET;
     hardware::testing::resetMatrix();
-    view.render(state::UIState{});
-    CHECK_STREQ(hardware::testing::lastLabel(), "PIt");
+    view.render(s);
+    CHECK_STREQ(hardware::testing::lastLabel(), "Cnt");
+    CHECK_EQ(hardware::testing::lastNumber(), 4);
     checkEscapeReturnsToPatterns(view, state::ViewId::PITCH_SET);
+}
+
+TEST(pitchsetview_navigates_through_count_order_and_pitches) {
+    hardware::LedMatrix matrix{0};
+    PitchSetView view{matrix};
+    state::UIState s;
+    s.currentView = state::ViewId::PITCH_SET;
+    s.selectedPitchSetField = state::PITCH_SET_FIELD_COUNT;
+
+    s = view.handleEvent(s, press(KeyId::RIGHT));
+    CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_ORDER);
+    s = view.handleEvent(s, press(KeyId::RIGHT));
+    CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_PITCH_BASE + 0);
+    s = view.handleEvent(s, press(KeyId::RIGHT));
+    CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_PITCH_BASE + 1);
+    s = view.handleEvent(s, press(KeyId::RIGHT));
+    CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_PITCH_BASE + 2);
+    s = view.handleEvent(s, press(KeyId::RIGHT));
+    CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_PITCH_BASE + 3);
+    // clamp at last pitch
+    CHECK_EQ(view.handleEvent(s, press(KeyId::RIGHT)).selectedPitchSetField,
+             state::PITCH_SET_FIELD_PITCH_BASE + 3);
+    // go back
+    s = view.handleEvent(s, press(KeyId::LEFT));
+    CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_PITCH_BASE + 2);
+    s = view.handleEvent(s, press(KeyId::LEFT));
+    s = view.handleEvent(s, press(KeyId::LEFT));
+    s = view.handleEvent(s, press(KeyId::LEFT));
+    CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_ORDER);
+    s = view.handleEvent(s, press(KeyId::LEFT));
+    CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_COUNT);
+    // clamp at count
+    CHECK_EQ(view.handleEvent(s, press(KeyId::LEFT)).selectedPitchSetField,
+             state::PITCH_SET_FIELD_COUNT);
+}
+
+TEST(pitchsetview_edits_count_and_duplicates_last_pitch) {
+    hardware::LedMatrix matrix{0};
+    PitchSetView view{matrix};
+    state::UIState s;
+    s.currentView = state::ViewId::PITCH_SET;
+    s.selectedPitchSetField = state::PITCH_SET_FIELD_COUNT;
+    commands::testing::reset();
+
+    s = view.handleEvent(s, press(KeyId::UP));
+    CHECK_EQ(s.pitchSetDraft.count, 5);
+    CHECK_EQ(s.pitchSetDraft.pitches[4], 72);  // duplicated last pitch (72)
+    CHECK(s.pitchSetDirty);
+    CHECK_EQ(commands::testing::sentCommands().size(), 1);
+    if (!commands::testing::sentCommands().empty()) {
+        const auto& cmd = commands::testing::sentCommands()[0];
+        CHECK(cmd.cmd == commands::Command::PATTERN_PITCH_SET);
+        CHECK_EQ(cmd.param1, 0);
+        CHECK_EQ(cmd.pitchCount, 5);
+        CHECK_EQ(cmd.pitches[4], 72);
+    }
+
+    // shrink back
+    s = view.handleEvent(s, press(KeyId::DOWN));
+    CHECK_EQ(s.pitchSetDraft.count, 4);
+    CHECK(!s.pitchSetDirty);
+}
+
+TEST(pitchsetview_clamps_count_to_1_and_16) {
+    hardware::LedMatrix matrix{0};
+    PitchSetView view{matrix};
+    state::UIState s;
+    s.currentView = state::ViewId::PITCH_SET;
+    s.selectedPitchSetField = state::PITCH_SET_FIELD_COUNT;
+    s.pitchSetDraft.count = 1;
+
+    CHECK_EQ(view.handleEvent(s, press(KeyId::DOWN)).pitchSetDraft.count, 1);
+
+    s.pitchSetDraft.count = 16;
+    CHECK_EQ(view.handleEvent(s, press(KeyId::UP)).pitchSetDraft.count, 16);
+}
+
+TEST(pitchsetview_edits_order_and_renders_label) {
+    hardware::LedMatrix matrix{0};
+    PitchSetView view{matrix};
+    state::UIState s;
+    s.currentView = state::ViewId::PITCH_SET;
+    s.selectedPitchSetField = state::PITCH_SET_FIELD_ORDER;
+    commands::testing::reset();
+
+    s = view.handleEvent(s, press(KeyId::UP));
+    CHECK(s.pitchSetDraft.order == common::PlayingOrder::BACKWARDS);
+    CHECK(s.pitchSetDirty);
+    CHECK_EQ(commands::testing::sentCommands().size(), 1);
+
+    s = view.handleEvent(s, press(KeyId::UP));
+    CHECK(s.pitchSetDraft.order == common::PlayingOrder::PENDULUM);
+
+    s = view.handleEvent(s, press(KeyId::UP));
+    CHECK(s.pitchSetDraft.order == common::PlayingOrder::RANDOM);
+
+    // clamp at RANDOM
+    CHECK(view.handleEvent(s, press(KeyId::UP)).pitchSetDraft.order == common::PlayingOrder::RANDOM);
+
+    s = view.handleEvent(s, press(KeyId::DOWN));
+    CHECK(s.pitchSetDraft.order == common::PlayingOrder::PENDULUM);
+
+    hardware::testing::resetMatrix();
+    view.render(s);
+    CHECK_STREQ(hardware::testing::lastLabel(), "Pnd");
+}
+
+TEST(pitchsetview_edits_pitch_and_renders_note_name) {
+    hardware::LedMatrix matrix{0};
+    PitchSetView view{matrix};
+    state::UIState s;
+    s.currentView = state::ViewId::PITCH_SET;
+    s.selectedPitchSetField = state::PITCH_SET_FIELD_PITCH_BASE;
+    commands::testing::reset();
+
+    s = view.handleEvent(s, press(KeyId::UP));
+    CHECK_EQ(s.pitchSetDraft.pitches[0], 61);
+    CHECK(s.pitchSetDirty);
+    CHECK_EQ(commands::testing::sentCommands().size(), 1);
+
+    hardware::testing::resetMatrix();
+    view.render(s);
+    const char* note = hardware::testing::lastNote();
+    CHECK_EQ(note[0], 'c');
+    CHECK_EQ(note[1], '4');
+    CHECK_EQ(note[2], '#');
+    CHECK_STREQ(hardware::testing::lastLabel(), "p0");
+}
+
+TEST(pitchsetview_renders_natural_note_and_sharp_boundary) {
+    hardware::LedMatrix matrix{0};
+    PitchSetView view{matrix};
+    state::UIState s;
+    s.currentView = state::ViewId::PITCH_SET;
+    s.selectedPitchSetField = state::PITCH_SET_FIELD_PITCH_BASE;
+
+    // MIDI 60 = C4 natural
+    s.pitchSetDraft.pitches[0] = 60;
+    hardware::testing::resetMatrix();
+    view.render(s);
+    const char* noteC4 = hardware::testing::lastNote();
+    CHECK_EQ(noteC4[0], 'c');
+    CHECK_EQ(noteC4[1], '4');
+    CHECK_EQ(noteC4[2], ' ');
+    CHECK_EQ(noteC4[3], ' ');
+
+    // MIDI 61 = C#4
+    s.pitchSetDraft.pitches[0] = 61;
+    hardware::testing::resetMatrix();
+    view.render(s);
+    const char* noteCs4 = hardware::testing::lastNote();
+    CHECK_EQ(noteCs4[0], 'c');
+    CHECK_EQ(noteCs4[2], '#');
+
+    // MIDI 0 = C-1 (negative octave)
+    s.pitchSetDraft.pitches[0] = 0;
+    hardware::testing::resetMatrix();
+    view.render(s);
+    const char* noteCm1 = hardware::testing::lastNote();
+    CHECK_EQ(noteCm1[0], 'c');
+    CHECK_EQ(noteCm1[1], '1');
+    CHECK_EQ(noteCm1[3], '-');
+
+    // MIDI 127 = G9 (natural)
+    s.pitchSetDraft.pitches[0] = 127;
+    hardware::testing::resetMatrix();
+    view.render(s);
+    const char* noteG9 = hardware::testing::lastNote();
+    CHECK_EQ(noteG9[0], 'g');
+    CHECK_EQ(noteG9[1], '9');
+    CHECK_EQ(noteG9[2], ' ');
+}
+
+TEST(pitchsetview_clamps_pitch_to_0_and_127) {
+    hardware::LedMatrix matrix{0};
+    PitchSetView view{matrix};
+    state::UIState s;
+    s.currentView = state::ViewId::PITCH_SET;
+    s.selectedPitchSetField = state::PITCH_SET_FIELD_PITCH_BASE;
+
+    s.pitchSetDraft.pitches[0] = 0;
+    CHECK_EQ(view.handleEvent(s, press(KeyId::DOWN)).pitchSetDraft.pitches[0], 0);
+
+    s.pitchSetDraft.pitches[0] = 127;
+    CHECK_EQ(view.handleEvent(s, press(KeyId::UP)).pitchSetDraft.pitches[0], 127);
+}
+
+TEST(pitchsetview_enter_commits_and_escape_undoes_then_exits) {
+    hardware::LedMatrix matrix{0};
+    PitchSetView view{matrix};
+    state::UIState s;
+    s.currentView = state::ViewId::PITCH_SET;
+    s.selectedPitchSetField = state::PITCH_SET_FIELD_PITCH_BASE;
+    s = view.handleEvent(s, press(KeyId::UP));
+    CHECK(s.pitchSetDirty);
+    commands::testing::reset();
+
+    auto undone = view.handleEvent(s, press(KeyId::ESCAPE));
+    CHECK(undone.currentView == state::ViewId::PITCH_SET);
+    CHECK(!undone.pitchSetDirty);
+    CHECK_EQ(undone.pitchSetDraft.pitches[0], 60);
+    CHECK_EQ(commands::testing::sentCommands().size(), 1);
+    CHECK(view.handleEvent(undone, press(KeyId::ESCAPE)).currentView == state::ViewId::PATTERNS);
+
+    // commit path
+    s = view.handleEvent(s, press(KeyId::ENTER));
+    CHECK(!s.pitchSetDirty);
+    CHECK_EQ(s.pitchSetConfigs[0].pitches[0], 61);
+    CHECK(view.handleEvent(s, press(KeyId::ESCAPE)).currentView == state::ViewId::PATTERNS);
+}
+
+TEST(pitchsetview_clears_dirty_when_edited_back_to_committed_value) {
+    hardware::LedMatrix matrix{0};
+    PitchSetView view{matrix};
+    state::UIState s;
+    s.currentView = state::ViewId::PITCH_SET;
+    s.selectedPitchSetField = state::PITCH_SET_FIELD_PITCH_BASE;
+
+    s = view.handleEvent(s, press(KeyId::UP));
+    CHECK(s.pitchSetDirty);
+    s = view.handleEvent(s, press(KeyId::DOWN));
+    CHECK(!s.pitchSetDirty);
+    CHECK_EQ(s.pitchSetDraft.pitches[0], 60);
+}
+
+TEST(pitchsetview_renders_dirty_indicator) {
+    hardware::LedMatrix matrix{0};
+    PitchSetView view{matrix};
+    state::UIState s;
+    s.currentView = state::ViewId::PITCH_SET;
+    s.selectedPitchSetField = state::PITCH_SET_FIELD_PITCH_BASE;
+    s.pitchSetDirty = true;
+
+    hardware::testing::resetMatrix();
+    view.render(s);
+    CHECK_EQ(hardware::testing::pixelAt(15, 0), 0x0000FF00);
 }
 
 TEST(velocitysetview_renders_title_and_escape_returns_to_patterns) {
@@ -234,4 +474,69 @@ TEST(euclidean_gate_set_handles_zero_dimensions) {
 
     const auto silent = common::GateSet::createEuclidean(8, 0, 0, 24, 50);
     for (bool gate : silent.getGates()) CHECK(!gate);
+}
+
+TEST(pitchset_forwards_advances_wrapping) {
+    common::PitchSet ps({10, 20, 30}, common::PlayingOrder::FORWARDS);
+    CHECK_EQ(ps.getPitch(), 10);
+    ps.advance();
+    CHECK_EQ(ps.getPitch(), 20);
+    ps.advance();
+    CHECK_EQ(ps.getPitch(), 30);
+    ps.advance();
+    CHECK_EQ(ps.getPitch(), 10);
+}
+
+TEST(pitchset_backwards_advances_wrapping) {
+    common::PitchSet ps({10, 20, 30}, common::PlayingOrder::BACKWARDS);
+    CHECK_EQ(ps.getPitch(), 10);
+    ps.advance();
+    CHECK_EQ(ps.getPitch(), 30);
+    ps.advance();
+    CHECK_EQ(ps.getPitch(), 20);
+    ps.advance();
+    CHECK_EQ(ps.getPitch(), 10);
+}
+
+TEST(pitchset_pendulum_bounces_without_repeating_endpoints) {
+    common::PitchSet ps({10, 20, 30}, common::PlayingOrder::PENDULUM);
+    CHECK_EQ(ps.getPitch(), 10);
+    ps.advance(); CHECK_EQ(ps.getPitch(), 20);
+    ps.advance(); CHECK_EQ(ps.getPitch(), 30);
+    ps.advance(); CHECK_EQ(ps.getPitch(), 20);
+    ps.advance(); CHECK_EQ(ps.getPitch(), 10);
+    ps.advance(); CHECK_EQ(ps.getPitch(), 20);
+    ps.advance(); CHECK_EQ(ps.getPitch(), 30);
+}
+
+TEST(pitchset_random_advances_to_a_valid_index) {
+    common::PitchSet ps({10, 20, 30, 40}, common::PlayingOrder::RANDOM);
+    const uint8_t startPos = ps.getPosition();
+    ps.advance();
+    const uint8_t endPos = ps.getPosition();
+    CHECK(endPos < 4);
+    CHECK(endPos != startPos);
+}
+
+TEST(pitchset_single_pitch_advance_is_stable) {
+    common::PitchSet ps({42}, common::PlayingOrder::FORWARDS);
+    CHECK_EQ(ps.getPitch(), 42);
+    ps.advance();
+    CHECK_EQ(ps.getPitch(), 42);
+    ps.setOrder(common::PlayingOrder::BACKWARDS);
+    ps.advance();
+    CHECK_EQ(ps.getPitch(), 42);
+    ps.setOrder(common::PlayingOrder::PENDULUM);
+    ps.advance();
+    CHECK_EQ(ps.getPitch(), 42);
+}
+
+TEST(pitchset_reset_restores_position_zero) {
+    common::PitchSet ps({10, 20, 30}, common::PlayingOrder::FORWARDS);
+    ps.advance();
+    ps.advance();
+    CHECK_EQ(ps.getPosition(), 2);
+    ps.reset();
+    CHECK_EQ(ps.getPosition(), 0);
+    CHECK_EQ(ps.getPitch(), 10);
 }
