@@ -3,26 +3,24 @@
 #include <vector>
 #include <cstdint>
 #include <map>
+#include "IMidiOutput.h"
 #include "hardware/uart.h"
 #include "../commands/command.h"
 #include "../common/pattern.h"
 
 namespace sequencer {
 
-    // Constants
-#define MIDI_BAUD_RATE 31250  // Standard MIDI baud rate
-
 // Main sequencer class
     class Sequencer {
     public:
-        Sequencer(uart_inst_t* uart, uint tx, uint rx);
+        Sequencer(IMidiOutput& output);
 
         void init();
         void update();
         void processCommand(commands::CommandMessage msg);
 
     private:
-        uart_inst_t* uart;
+        IMidiOutput& output;
         std::vector<common::Pattern> patterns;
         uint16_t bpm;
         bool playing;
@@ -42,9 +40,15 @@ namespace sequencer {
         void sendMidiClock();
 
         void addPattern(const common::Pattern& pattern);
+        void removePattern(size_t index);
         void activatePattern(size_t index);
         void deactivatePattern(size_t index);
-        void patternSetEuclideanLength(size_t patternIndex, size_t length);
+        void setPatternGateSet(size_t patternIndex, const std::vector<bool>& gates);
+        void setPatternPitchSet(size_t patternIndex, uint8_t count,
+                                common::PlayingOrder order, const std::vector<uint8_t>& pitches);
+        void setPatternVelocitySet(size_t patternIndex, uint8_t count,
+                                   common::PlayingOrder order,
+                                   const std::vector<uint8_t>& velocities);
 
         void sendMidiNoteOn(uint8_t channel, uint8_t note, uint8_t velocity);
         void sendMidiNoteOff(uint8_t channel, uint8_t note);

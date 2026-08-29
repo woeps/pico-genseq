@@ -14,6 +14,7 @@
 * [Technical](#technical)
   * [MIDI Implementation](technical/midi-implementation.md)
   * [Build & Flash Guide](technical/build-flash.md)
+  * [USB Keyboard Bring-up](technical/usb-keyboard-bringup.md)
 * [Reference](#reference)
   * [Dependencies & Requirements](reference/dependencies.md)
   * [Troubleshooting FAQ](reference/troubleshooting.md)

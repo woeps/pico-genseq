@@ -22,8 +22,8 @@ namespace common {
         // Get the total length of the pattern in ticks
         uint32_t getLength() const;
 
-        void setPosition(uint8_t position);
-        uint8_t getPosition() const;
+        void setPosition(uint32_t position);
+        uint32_t getPosition() const;
         
         // Check if a gate is active at the given tick position
         Flank getFlank() const;
@@ -37,15 +37,17 @@ namespace common {
         /// \param steps The total number of steps in the pattern
         /// \param pulses The number of pulses to distribute evenly
         /// \param rotation The rotation in steps to apply to the resulting pattern
-        /// \param patternLength The total length of the pattern in ticks
+        /// \param stepLength The length of each step in ticks
+        /// \param gateLength The gate length as a percentage of the interval until the next pulse
         ///
         /// \return A GateSet with the generated pattern
-        static GateSet createEuclidean(uint8_t steps, uint8_t pulses, uint8_t rotation, uint32_t patternLength);
+        static GateSet createEuclidean(uint8_t steps, uint8_t pulses, uint8_t rotation,
+                                       uint8_t stepLength, uint8_t gateLength);
 
     private:
         std::vector<bool> gates;
-        uint8_t position;
-        uint8_t previousPosition;
+        uint32_t position;
+        uint32_t previousPosition;
         Flank flank;
     };
 } // namespace common

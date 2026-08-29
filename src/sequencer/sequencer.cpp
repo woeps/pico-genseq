@@ -1,7 +1,5 @@
 #include "sequencer.h"
 #include "midi_messages.h"
-#include "pico/multicore.h"
-#include "hardware/gpio.h"
 #include "../common/pitch_set.h"
 #include "../common/velocity_set.h"
 #include "../common/gate_set.h"
@@ -11,26 +9,15 @@
 
 namespace sequencer {
 
-    // Global variables for multicore communication
-    static Sequencer* globalSequencer = nullptr;
-
-    // Multicore FIFO for command passing
-    static void sequencer_task(uart_inst_t* uart);
-
     // Sequencer implementation
-    Sequencer::Sequencer(uart_inst_t* uart, uint txPin, uint rxPin) :
-        uart(uart),
+    Sequencer::Sequencer(IMidiOutput& output) :
+        output(output),
         bpm(120),
         playing(false),
         lastTickTime(get_absolute_time()),
         midiClockEnabled(true),
         patterns({ common::Pattern() }) {
-        // Initialize UART for MIDI
-        uart_init(uart, MIDI_BAUD_RATE);
-
-        // Configure UART pins (assuming UART1 uses GPIO 4 and 5)
-        gpio_set_function(txPin, GPIO_FUNC_UART);
-        gpio_set_function(rxPin, GPIO_FUNC_UART);
+        // MIDI transport is injected; no UART/pin setup here anymore.
     }
 
     void Sequencer::init() {
@@ -43,10 +30,12 @@ namespace sequencer {
         // Calculate time for one tick based on BPM
         uint32_t tickDurationUs = 60 * 1000 * 1000 / (bpm * PPQN);
 
-        // Check if it's time for the next tick
+        // Check if it's time for the next tick.
+        // Advance lastTickTime by exactly tickDurationUs (not by setting it to currentTime)
+        // so accumulated late-detection jitter doesn't shift the phase of future ticks.
         absolute_time_t currentTime = get_absolute_time();
         if (absolute_time_diff_us(lastTickTime, currentTime) >= tickDurationUs) {
-            lastTickTime = currentTime;
+            lastTickTime = delayed_by_us(lastTickTime, tickDurationUs);
 
             // Process all active patterns
             for (auto& pattern : patterns) {
@@ -66,10 +55,11 @@ namespace sequencer {
                 }
                 else if (flank == common::FALLING) {
                     sendMidiNoteOff(pattern.getMidiChannel(), pitchSet.getPitch());
-                    pitchSet.setPosition(pitchSet.getPosition() + 1);
-                    velocitySet.setPosition(velocitySet.getPosition() + 1);
+                    pitchSet.advance();
+                    velocitySet.advance();
                 }
-                int nextGatePosition = gateSet.getPosition() + 1;
+                const uint32_t nextGatePosition = static_cast<uint32_t>(
+                    (gateSet.getPosition() + 1) % gateSet.getGates().size());
                 gateSet.setPosition(nextGatePosition);
             }
         }
@@ -93,9 +83,23 @@ namespace sequencer {
             deactivatePattern(msg.param1);
             break;
             // Add more command handlers as needed
-        case commands::Command::PATTERN_EUCLIDEAN_SET_LENGTH:
-            patternSetEuclideanLength(msg.param1, msg.param2);
-        }
+        case commands::Command::PATTERN_GATE_SET:
+            setPatternGateSet(msg.param1, msg.gates);
+            break;
+        case commands::Command::PATTERN_PITCH_SET:
+            setPatternPitchSet(msg.param1, msg.pitchCount, msg.pitchOrder, msg.pitches);
+            break;
+        case commands::Command::PATTERN_VELOCITY_SET:
+            setPatternVelocitySet(msg.param1, msg.velocityCount, msg.velocityOrder, msg.velocities);
+            break;
+        case commands::Command::PATTERN_ADD:
+            addPattern(common::Pattern());
+            break;
+        case commands::Command::PATTERN_REMOVE:
+            removePattern(msg.param1);
+            break;
+        default: break;
+    }
     }
 
     void Sequencer::play() {
@@ -140,6 +144,11 @@ namespace sequencer {
         patterns.push_back(pattern);
     }
 
+    void Sequencer::removePattern(size_t index) {
+        if (patterns.size() <= 1 || index >= patterns.size()) return;
+        patterns.erase(patterns.begin() + index);
+    }
+
     void Sequencer::activatePattern(size_t index) {
         if (index < patterns.size()) {
             patterns[index].setActive(true);
@@ -152,11 +161,27 @@ namespace sequencer {
         }
     }
 
-    void Sequencer::patternSetEuclideanLength(size_t patternIndex, size_t length) {
-        printf("TODO: patternSetEuclideanLength: %d, %d\n", patternIndex, length);
-        // if (patternIndex < patterns.size()) {
-        //     patterns[patternIndex].setEuclideanLength(length);
-        // }
+    void Sequencer::setPatternGateSet(size_t patternIndex, const std::vector<bool>& gates) {
+        if (patternIndex < patterns.size()) {
+            patterns[patternIndex].setGateSet(common::GateSet(gates));
+        }
+    }
+
+    void Sequencer::setPatternPitchSet(size_t patternIndex, uint8_t count,
+                                       common::PlayingOrder order, const std::vector<uint8_t>& pitches) {
+        if (patternIndex >= patterns.size()) return;
+        std::vector<uint8_t> activePitches(pitches.begin(), pitches.begin() + count);
+        common::PitchSet pitchSet(activePitches, order);
+        patterns[patternIndex].setPitchSet(pitchSet);
+    }
+
+    void Sequencer::setPatternVelocitySet(size_t patternIndex, uint8_t count,
+                                          common::PlayingOrder order,
+                                          const std::vector<uint8_t>& velocities) {
+        if (patternIndex >= patterns.size()) return;
+        std::vector<uint8_t> activeVelocities(velocities.begin(), velocities.begin() + count);
+        common::VelocitySet velocitySet(activeVelocities, order);
+        patterns[patternIndex].setVelocitySet(velocitySet);
     }
 
     void Sequencer::sendMidiNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) {
@@ -192,32 +217,7 @@ namespace sequencer {
     }
 
     void Sequencer::sendMidiByte(uint8_t byte) {
-        uart_putc_raw(uart, byte);
-    }
-
-    // Sequencer task for second core
-    static void sequencer_task() {
-        // Make sure the global sequencer is initialized
-        if (globalSequencer) {
-            while (true) {
-                // Check for commands from the UI core
-                commands::CommandMessage msg = commands::receiveCommand();
-                globalSequencer->processCommand(msg);
-
-                // Update the sequencer
-                globalSequencer->update();
-            }
-        }
-    }
-
-    void createSequencerTask(uart_inst_t* uart, uint txPin, uint rxPin) {
-        // Create a global sequencer instance
-        static Sequencer sequencer(uart, txPin, rxPin);
-        globalSequencer = &sequencer;
-        globalSequencer->init();
-
-        // Launch the sequencer task on the second core
-        multicore_launch_core1(sequencer_task);
+        output.write(byte);
     }
 
 } // namespace sequencer
