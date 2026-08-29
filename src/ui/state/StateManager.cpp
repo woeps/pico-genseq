@@ -14,6 +14,13 @@ void StateManager::dispatch(const events::Event& event) {
     }
 }
 
+void StateManager::setState(const UIState& newState) {
+    currentState = newState;
+    if (listener_) {
+        listener_(currentState);
+    }
+}
+
 void StateManager::subscribe(StateChangeListener listener) {
     listener_ = listener;
 }

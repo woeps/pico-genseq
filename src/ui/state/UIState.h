@@ -23,6 +23,17 @@ enum class PatternSet : uint8_t {
     VELOCITY,
 };
 
+// Transient save-feedback banner state (persist-settings feature).
+// Drives the LCD feedback presented by the core0 UI loop; NONE means no
+// banner is pending. NOT_LOADED is the boot-time fallback shown when the
+// saved config could not be loaded (Req 6.7).
+enum class SaveBanner : uint8_t {
+    NONE,
+    SUCCESS,
+    FAILURE,
+    NOT_LOADED,
+};
+
 enum class GateAlgorithm : uint8_t {
     EUCLIDEAN,
 };
@@ -141,6 +152,16 @@ struct UIState {
     VelocitySetConfig velocitySetDraft{};
     uint8_t selectedVelocitySetField = VELOCITY_SET_FIELD_COUNT;
     bool velocitySetDirty = false;
+
+    // --- Persist-settings save status (transient, plain state) ---
+    // Set by the pure reducer when Ctrl+S is recognized (Req 1.4), drained by
+    // the core0 UI loop which performs the actual flash save. The reducer never
+    // touches flash.
+    bool saveRequested = false;
+    // Transient banner driving the LCD feedback (Req 7.2 / 6.7). NOT_LOADED is
+    // set on boot when the saved config could not be loaded, so a separate
+    // boot flag is not required (Req 6.7).
+    SaveBanner saveBanner = SaveBanner::NONE;
 };
 
 } // namespace ui::state

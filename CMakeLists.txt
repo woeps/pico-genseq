@@ -40,12 +40,14 @@ file(GLOB_RECURSE SEQUENCER_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DI
 file(GLOB_RECURSE COMMON_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/common/*.cpp")
 file(GLOB_RECURSE COMMANDS_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/commands/*.cpp")
 file(GLOB_RECURSE UI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.c")
+file(GLOB_RECURSE PERSISTENCE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/persistence/*.cpp")
 
 # Print the found source files for debugging
 message(STATUS "Sequencer sources: ${SEQUENCER_SOURCES}")
 message(STATUS "Common sources: ${COMMON_SOURCES}")
 message(STATUS "Commands sources: ${COMMANDS_SOURCES}")
 message(STATUS "UI sources: ${UI_SOURCES}")
+message(STATUS "Persistence sources: ${PERSISTENCE_SOURCES}")
 
 # Add source files for the sequencer, commands, and UI components
 add_executable(genseq 
@@ -54,6 +56,7 @@ add_executable(genseq
     ${COMMON_SOURCES}
     ${COMMANDS_SOURCES}
     ${UI_SOURCES}
+    ${PERSISTENCE_SOURCES}
 )
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/src/generated)
@@ -78,6 +81,8 @@ target_link_libraries(genseq
     hardware_gpio
     hardware_i2c
     hardware_dma
+    hardware_flash
+    hardware_sync
     tinyusb_host
     tinyusb_board
 )
@@ -87,6 +92,7 @@ target_include_directories(genseq PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/src
         ${CMAKE_CURRENT_LIST_DIR}/src/config
         ${CMAKE_CURRENT_LIST_DIR}/src/generated
+        ${CMAKE_CURRENT_LIST_DIR}/src/persistence
 )
 
 

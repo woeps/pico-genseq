@@ -38,4 +38,12 @@ void addPattern(UIState& state);
 void removePattern(UIState& state, uint8_t index);
 void togglePatternActive(UIState& state, uint8_t index);
 
+// Seed core1 from a restored UIState by replaying the existing sync-command
+// path (persist-settings feature, task 6.3). Grows core1's pattern vector with
+// PATTERN_ADD to match state.patternCount (pattern 0 already exists by
+// default), syncs every pattern's gate/pitch/velocity sets, applies the active
+// mask via PATTERN_ACTIVATE / PATTERN_DEACTIVATE, and sets the BPM. Pulls the
+// SDK (commands::) so it is firmware-only, not host-compilable.
+void restoreSequencerFromState(const UIState& state);
+
 } // namespace ui::state

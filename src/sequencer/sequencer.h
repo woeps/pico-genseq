@@ -3,26 +3,24 @@
 #include <vector>
 #include <cstdint>
 #include <map>
+#include "IMidiOutput.h"
 #include "hardware/uart.h"
 #include "../commands/command.h"
 #include "../common/pattern.h"
 
 namespace sequencer {
 
-    // Constants
-#define MIDI_BAUD_RATE 31250  // Standard MIDI baud rate
-
 // Main sequencer class
     class Sequencer {
     public:
-        Sequencer(uart_inst_t* uart, uint tx, uint rx);
+        Sequencer(IMidiOutput& output);
 
         void init();
         void update();
         void processCommand(commands::CommandMessage msg);
 
     private:
-        uart_inst_t* uart;
+        IMidiOutput& output;
         std::vector<common::Pattern> patterns;
         uint16_t bpm;
         bool playing;

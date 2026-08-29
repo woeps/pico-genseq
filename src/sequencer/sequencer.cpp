@@ -1,7 +1,5 @@
 #include "sequencer.h"
 #include "midi_messages.h"
-#include "pico/multicore.h"
-#include "hardware/gpio.h"
 #include "../common/pitch_set.h"
 #include "../common/velocity_set.h"
 #include "../common/gate_set.h"
@@ -11,26 +9,15 @@
 
 namespace sequencer {
 
-    // Global variables for multicore communication
-    static Sequencer* globalSequencer = nullptr;
-
-    // Multicore FIFO for command passing
-    static void sequencer_task(uart_inst_t* uart);
-
     // Sequencer implementation
-    Sequencer::Sequencer(uart_inst_t* uart, uint txPin, uint rxPin) :
-        uart(uart),
+    Sequencer::Sequencer(IMidiOutput& output) :
+        output(output),
         bpm(120),
         playing(false),
         lastTickTime(get_absolute_time()),
         midiClockEnabled(true),
         patterns({ common::Pattern() }) {
-        // Initialize UART for MIDI
-        uart_init(uart, MIDI_BAUD_RATE);
-
-        // Configure UART pins (assuming UART1 uses GPIO 4 and 5)
-        gpio_set_function(txPin, GPIO_FUNC_UART);
-        gpio_set_function(rxPin, GPIO_FUNC_UART);
+        // MIDI transport is injected; no UART/pin setup here anymore.
     }
 
     void Sequencer::init() {
@@ -230,32 +217,7 @@ namespace sequencer {
     }
 
     void Sequencer::sendMidiByte(uint8_t byte) {
-        uart_putc_raw(uart, byte);
-    }
-
-    // Sequencer task for second core
-    static void sequencer_task() {
-        // Make sure the global sequencer is initialized
-        if (globalSequencer) {
-            while (true) {
-                // Check for commands from the UI core
-                commands::CommandMessage msg = commands::receiveCommand();
-                globalSequencer->processCommand(msg);
-
-                // Update the sequencer
-                globalSequencer->update();
-            }
-        }
-    }
-
-    void createSequencerTask(uart_inst_t* uart, uint txPin, uint rxPin) {
-        // Create a global sequencer instance
-        static Sequencer sequencer(uart, txPin, rxPin);
-        globalSequencer = &sequencer;
-        globalSequencer->init();
-
-        // Launch the sequencer task on the second core
-        multicore_launch_core1(sequencer_task);
+        output.write(byte);
     }
 
 } // namespace sequencer

@@ -385,6 +385,37 @@ void togglePatternActive(UIState& state, uint8_t index) {
     }
 }
 
+void restoreSequencerFromState(const UIState& state) {
+    // core1 launches with a single default pattern (index 0). Grow its pattern
+    // vector to match the restored count using the same command the UI uses
+    // when the user adds a pattern.
+    for (uint8_t i = 1; i < state.patternCount; i++) {
+        commands::sendCommand(commands::Command::PATTERN_ADD);
+    }
+
+    // Push each pattern's durable config down the existing sync path. This
+    // regenerates the euclidean gate vector and sets pitch/velocity sets on
+    // core1, exactly as UIController::initialize seeds pattern 0 today.
+    for (uint8_t i = 0; i < state.patternCount; i++) {
+        syncGateSet(state, i);
+        syncPitchSet(state, i);
+        syncVelocitySet(state, i);
+    }
+
+    // Align core1's active mask with the restored activePatterns bitmask. Every
+    // pattern defaults to active on core1 after PATTERN_ADD, so explicitly
+    // activate/deactivate each index to match the saved state.
+    for (uint8_t i = 0; i < state.patternCount; i++) {
+        if ((state.activePatterns >> i) & 0x1) {
+            commands::sendCommand(commands::Command::PATTERN_ACTIVATE, i);
+        } else {
+            commands::sendCommand(commands::Command::PATTERN_DEACTIVATE, i);
+        }
+    }
+
+    commands::sendCommand(commands::Command::BPM_SET, state.bpm);
+}
+
 namespace {
 
 constexpr uint8_t F1_USAGE  = static_cast<uint8_t>(KeyId::F1);
@@ -405,6 +436,20 @@ bool isReserved(KeyId id) {
     return id == KeyId::SPACE || isFunctionKey(id);
 }
 
+// Recognize the global Save_Combo (Ctrl+S) explicitly. Matched on a key press
+// with the CTRL modifier bit set (other modifiers are ignored). Req 1.1.
+bool isSaveCombo(const events::Event& e) {
+    return e.type == events::EventType::KEY_PRESSED &&
+           e.data.key.id == KeyId::S &&
+           (e.data.key.mods & mod::CTRL) != 0;
+}
+
+// Pure intent recorder: flags a save request for the core0 UI loop to drain.
+// No flash access, no blocking - the reducer never performs the save itself.
+void requestSave(UIState& state) {
+    state.saveRequested = true;
+}
+
 void applyGlobal(UIState& state, KeyId id) {
     if (id == KeyId::SPACE) {
         setPlaying(state, !state.playing);
@@ -422,6 +467,12 @@ void applyGlobal(UIState& state, KeyId id) {
 } // namespace
 
 UIState reduce(const UIState& state, const events::Event& event, ui::IView* activeView) {
+    if (isSaveCombo(event)) {
+        UIState next = state;
+        requestSave(next);          // record intent; UI loop performs the save
+        return next;                // consumed globally; never routed to a view (Req 1.2)
+    }
+
     if (isReserved(event.data.key.id)) {
         UIState next = state;
         if (event.type == events::EventType::KEY_PRESSED &&
