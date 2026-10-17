@@ -10,6 +10,7 @@
 * [Development](#development)
   * [CMake Configuration](development/cmake-configuration.md)
   * [Development Workflow](development/development-workflow.md)
+  * [Performance Instrumentation](development/performance-instrumentation.md)
   * [UI System Guide](development/ui-system-guide.md)
 * [Technical](#technical)
   * [MIDI Implementation](technical/midi-implementation.md)

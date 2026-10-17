@@ -4,6 +4,7 @@
 #include "state/PersistMapping.h"
 #include "../persistence/PersistableConfig.h"
 #include "../persistence/BootBannerPolicy.h"
+#include "../instrumentation/PerformanceTrace.h"
 #include "pico/time.h"
 #include <cstdio>
 
@@ -197,7 +198,9 @@ void UIController::drainSaveRequest()
 
     const persistence::PersistableConfig cfg =
         state::toPersistableConfig(snapshot);
+    instrumentation::PerformanceTrace::saveBegin();
     const persistence::SaveOutcome outcome = persistenceManager->save(cfg);
+    instrumentation::PerformanceTrace::saveEnd();
 
     const uint32_t endMs = to_ms_since_boot(get_absolute_time());
     saveInProgress = false;

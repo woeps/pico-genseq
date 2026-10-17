@@ -1,5 +1,4 @@
 #include "velocity_set.h"
-#include <cstdio>
 
 namespace common {
 
@@ -32,10 +31,6 @@ namespace common {
             this->position = 0;
             this->previousPosition = 0;
             return;
-        }
-        if (position >= velocities.size()) {
-            printf("VelocitySet::setPosition: position %d is out of bounds for velocity set of size %zu\n",
-                   position, velocities.size());
         }
         this->previousPosition = this->position;
         this->position = position % velocities.size();

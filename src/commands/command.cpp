@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <stdio.h>
 #include "command.h"
 #include "pico/multicore.h"
 
@@ -11,8 +10,6 @@ namespace commands {
         uint32_t packed = static_cast<uint32_t>(cmd) |
             (static_cast<uint32_t>(param1) << 8) |
             (static_cast<uint32_t>(param2) << 16);
-        
-        printf("Sending command: %d, param1: %d, param2: %d\n", static_cast<int>(cmd), param1, param2);
 
         // Send to the sequencer core
         multicore_fifo_push_blocking(packed);
@@ -133,18 +130,6 @@ namespace commands {
                         }
                     }
                 }
-            }
-            if (msg.cmd == Command::PATTERN_GATE_SET) {
-                printf("Receiving gate set: pattern: %d, gates: %d\n", msg.param1, msg.gateCount);
-            } else if (msg.cmd == Command::PATTERN_PITCH_SET) {
-                printf("Receiving pitch set: pattern: %d, count: %d, order: %d\n",
-                       msg.param1, msg.pitchCount, static_cast<int>(msg.pitchOrder));
-            } else if (msg.cmd == Command::PATTERN_VELOCITY_SET) {
-                printf("Receiving velocity set: pattern: %d, count: %d\n",
-                       msg.param1, msg.velocityCount);
-            } else {
-                printf("Receiving command: %d, param1: %d, param2: %d\n",
-                       static_cast<int>(msg.cmd), msg.param1, msg.param2);
             }
         }
         return msg;

@@ -1,6 +1,5 @@
 #include "gate_set.h"
 #include <algorithm>
-#include <cstdio>
 #include <map>
 
 namespace common {
@@ -39,10 +38,6 @@ namespace common {
     }
 
     void GateSet::setPosition(uint32_t position) {
-        if (position >= gates.size()) {
-            printf("GateSet::setPosition: position %lu is out of bounds for gate set of size %zu\n",
-                   static_cast<unsigned long>(position), gates.size());
-        }
         this->previousPosition = this->position;
         this->position = position % gates.size();
 
@@ -83,7 +78,6 @@ namespace common {
 
     Flank getInitFlank(std::vector<bool> gates) {
         if (gates.size() == 0) {
-            printf("GateSet::getInitFlank: no gates\n");
             return LOW;
         }
         else {

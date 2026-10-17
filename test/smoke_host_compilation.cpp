@@ -64,6 +64,16 @@ bool verifyExactTickBoundary(uint16_t bpm) {
     play.cmd = commands::Command::PLAY;
     seq.processCommand(play);
 
+    // Rejected commands are neither traced nor counted as applied operations.
+    commands::CommandMessage invalidTarget;
+    invalidTarget.cmd = commands::Command::PATTERN_ACTIVATE;
+    invalidTarget.param1 = 255;
+    seq.processCommand(invalidTarget);
+
+    commands::CommandMessage unknown;
+    unknown.cmd = static_cast<commands::Command>(0xFF);
+    seq.processCommand(unknown);
+
     const uint64_t tickDurationUs = 60ULL * 1000ULL * 1000ULL / (bpm * 24ULL);
     if (!expectBytes(recording.record(), {sequencer::midi::SystemRealTimeMessage::START},
                      bpm, "play")) {
@@ -130,8 +140,51 @@ bool verifyExactTickBoundary(uint16_t bpm) {
         67,
         20,
     };
-    return expectBytes(recording.record(), afterPhasePreserved, bpm,
-                       "ideal tick after late service");
+    if (!expectBytes(recording.record(), afterPhasePreserved, bpm,
+                     "ideal tick after late service")) {
+        return false;
+    }
+
+    // Jump four periods. The current pre-reconciliation scheduler services one
+    // overdue tick and records all three logical deadlines missed behind it.
+    // This is baseline instrumentation for the later reconciliation task.
+    clock.advanceMicros(4 * tickDurationUs);
+    seq.update();
+
+    const sequencer::PerformanceMetrics& metrics = seq.performanceMetrics();
+    const bool metricsMatch =
+        metrics.logicalTicksServiced == 4 &&
+        metrics.maxSchedulerLatenessUs == 3 * tickDurationUs &&
+        metrics.missedLogicalTicks == 3 &&
+        metrics.reconciliationCount == 0 &&
+        metrics.midiBytesDispatched == recording.record().size() &&
+        metrics.midiBytesDispatched == 13 &&
+        metrics.operationsApplied == 3 &&
+        metrics.midiQueueHighWater == 0 &&
+        metrics.commandQueueHighWater == 0 &&
+        metrics.lastFault == sequencer::PerformanceFaultCause::NONE;
+
+    if (!metricsMatch) {
+        std::fprintf(stderr,
+                     "FAIL metrics for BPM %u: ticks=%llu maxLate=%llu missed=%llu "
+                     "midi=%llu operations=%llu\n",
+                     static_cast<unsigned>(bpm),
+                     static_cast<unsigned long long>(metrics.logicalTicksServiced),
+                     static_cast<unsigned long long>(metrics.maxSchedulerLatenessUs),
+                     static_cast<unsigned long long>(metrics.missedLogicalTicks),
+                     static_cast<unsigned long long>(metrics.midiBytesDispatched),
+                     static_cast<unsigned long long>(metrics.operationsApplied));
+        return false;
+    }
+
+    seq.resetPerformanceMetrics();
+    const sequencer::PerformanceMetrics& reset = seq.performanceMetrics();
+    return reset.logicalTicksServiced == 0 &&
+           reset.maxSchedulerLatenessUs == 0 &&
+           reset.missedLogicalTicks == 0 &&
+           reset.midiBytesDispatched == 0 &&
+           reset.operationsApplied == 0 &&
+           reset.lastFault == sequencer::PerformanceFaultCause::NONE;
 }
 
 }  // namespace

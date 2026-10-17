@@ -4,6 +4,7 @@
 #include "pico/multicore.h"
 #include "core_pause.h"
 #include "../commands/command.h"
+#include "../instrumentation/PerformanceTrace.h"
 
 namespace sequencer {
 
@@ -46,6 +47,9 @@ void createSequencerTask(uart_inst_t* uart, uint txPin, uint rxPin) {
     globalSequencer->init();
 
     if (!launched) {
+        // Initialize traces exactly once immediately before launching core1.
+        // Repeated factory calls must not drive live trace pins back to zero.
+        instrumentation::PerformanceTrace::initialize();
         launched = true;
         multicore_launch_core1(sequencer_task);
     }

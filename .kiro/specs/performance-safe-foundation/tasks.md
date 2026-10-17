@@ -24,7 +24,7 @@ of this plan.
     - Drive the production tick path at exact, early, and late timestamps
     - Cover wrap-safe arithmetic and representative BPM values
     - _Requirements: 3.1, 11.1, 11.2_
-  - [ ] 1.3 Add development timing metrics and compile-time trace points
+  - [x] 1.3 Add development timing metrics and compile-time trace points
     - Track maximum lateness, missed ticks, reconciliation, queue high-water marks, and fault cause
     - Provide trace points for tick, MIDI dispatch, operation apply, save, and fault transitions
     - Ensure release builds do not print from timing-critical code

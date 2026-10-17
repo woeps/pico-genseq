@@ -95,5 +95,28 @@ target_include_directories(genseq PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/src/persistence
 )
 
+# Optional logic-analyzer instrumentation. Tracing and every individual pin are
+# disabled by default; configure only GPIOs that are free on the actual hardware.
+option(GENSEQ_PERFORMANCE_TRACE_ENABLED
+       "Enable performance trace GPIOs" OFF)
+set(GENSEQ_TRACE_TICK_PIN -1 CACHE STRING
+    "GPIO driven high while a logical tick is processed")
+set(GENSEQ_TRACE_MIDI_PIN -1 CACHE STRING
+    "GPIO pulsed around each MIDI byte dispatch")
+set(GENSEQ_TRACE_OPERATION_PIN -1 CACHE STRING
+    "GPIO driven high while a sequencer operation is applied")
+set(GENSEQ_TRACE_SAVE_PIN -1 CACHE STRING
+    "GPIO driven high while a save is in progress")
+set(GENSEQ_TRACE_FAULT_PIN -1 CACHE STRING
+    "GPIO held high while a performance fault is latched")
+
+target_compile_definitions(genseq PRIVATE
+    GENSEQ_PERFORMANCE_TRACE_ENABLED=$<BOOL:${GENSEQ_PERFORMANCE_TRACE_ENABLED}>
+    GENSEQ_TRACE_TICK_PIN=${GENSEQ_TRACE_TICK_PIN}
+    GENSEQ_TRACE_MIDI_PIN=${GENSEQ_TRACE_MIDI_PIN}
+    GENSEQ_TRACE_OPERATION_PIN=${GENSEQ_TRACE_OPERATION_PIN}
+    GENSEQ_TRACE_SAVE_PIN=${GENSEQ_TRACE_SAVE_PIN}
+    GENSEQ_TRACE_FAULT_PIN=${GENSEQ_TRACE_FAULT_PIN}
+)
 
 pico_add_extra_outputs(genseq)

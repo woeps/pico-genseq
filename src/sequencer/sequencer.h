@@ -6,6 +6,7 @@
 
 #include "IMidiOutput.h"
 #include "IMonotonicClock.h"
+#include "PerformanceMetrics.h"
 #include "hardware/uart.h"
 #include "../commands/command.h"
 #include "../common/pattern.h"
@@ -21,6 +22,9 @@ public:
     void update();
     void processCommand(commands::CommandMessage msg);
 
+    const PerformanceMetrics& performanceMetrics() const { return metrics; }
+    void resetPerformanceMetrics();
+
 private:
     IMidiOutput& output;
     IMonotonicClock& clock;
@@ -29,6 +33,7 @@ private:
     bool playing;
     uint64_t lastTickTime;
     bool midiClockEnabled;
+    PerformanceMetrics metrics{};
 
     // Track active notes: activeNotes[channel][note] = true if the note is active
     bool activeNotes[16][128] = {{false}};
@@ -57,6 +62,7 @@ private:
     void sendMidiNoteOn(uint8_t channel, uint8_t note, uint8_t velocity);
     void sendMidiNoteOff(uint8_t channel, uint8_t note);
     void sendMidiByte(uint8_t byte);
+    bool canApplyCommand(const commands::CommandMessage& msg) const;
 };
 
 // Function to create the sequencer task for the second core

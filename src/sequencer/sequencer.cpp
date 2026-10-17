@@ -5,7 +5,7 @@
 #include "../common/gate_set.h"
 #include "../common/const.h"
 #include "../common/pattern.h"
-#include <cstdio>
+#include "../instrumentation/PerformanceTrace.h"
 
 namespace sequencer {
 
@@ -34,8 +34,14 @@ void Sequencer::update() {
     // shift the phase. Milestone 2's later Scheduler work will replace this
     // one-tick service behavior with bounded reconciliation and fault handling.
     const uint64_t currentTime = clock.nowMicros();
-    if (currentTime >= lastTickTime && currentTime - lastTickTime >= tickDurationUs) {
-        lastTickTime += tickDurationUs;
+    const uint64_t dueTime = lastTickTime + tickDurationUs;
+    if (currentTime >= dueTime) {
+        const uint64_t latenessUs = currentTime - dueTime;
+        const uint64_t missedTickCount = latenessUs / tickDurationUs;
+        metrics.observeSchedulerTick(latenessUs, missedTickCount);
+        lastTickTime = dueTime;
+
+        instrumentation::PerformanceTrace::tickBegin();
 
         // Process all active patterns.
         for (auto& pattern : patterns) {
@@ -64,10 +70,16 @@ void Sequencer::update() {
                 (gateSet.getPosition() + 1) % gateSet.getGates().size());
             gateSet.setPosition(nextGatePosition);
         }
+
+        instrumentation::PerformanceTrace::tickEnd();
     }
 }
 
 void Sequencer::processCommand(commands::CommandMessage msg) {
+    if (!canApplyCommand(msg)) return;
+
+    instrumentation::PerformanceTrace::operationApplyBegin();
+
     switch (msg.cmd) {
         case commands::Command::PLAY:
             play();
@@ -103,6 +115,37 @@ void Sequencer::processCommand(commands::CommandMessage msg) {
         default:
             break;
     }
+
+    ++metrics.operationsApplied;
+    instrumentation::PerformanceTrace::operationApplyEnd();
+}
+
+bool Sequencer::canApplyCommand(const commands::CommandMessage& msg) const {
+    switch (msg.cmd) {
+        case commands::Command::PLAY:
+        case commands::Command::STOP:
+        case commands::Command::BPM_SET:
+        case commands::Command::PATTERN_ADD:
+            return true;
+        case commands::Command::PATTERN_ACTIVATE:
+        case commands::Command::PATTERN_DEACTIVATE:
+        case commands::Command::PATTERN_GATE_SET:
+            return msg.param1 < patterns.size();
+        case commands::Command::PATTERN_PITCH_SET:
+            return msg.param1 < patterns.size() && msg.pitchCount <= msg.pitches.size();
+        case commands::Command::PATTERN_VELOCITY_SET:
+            return msg.param1 < patterns.size() &&
+                   msg.velocityCount <= msg.velocities.size();
+        case commands::Command::PATTERN_REMOVE:
+            return patterns.size() > 1 && msg.param1 < patterns.size();
+        case commands::Command::NOOP:
+        default:
+            return false;
+    }
+}
+
+void Sequencer::resetPerformanceMetrics() {
+    metrics = PerformanceMetrics{};
 }
 
 void Sequencer::play() {
@@ -220,7 +263,10 @@ void Sequencer::sendMidiNoteOff(uint8_t channel, uint8_t note) {
 }
 
 void Sequencer::sendMidiByte(uint8_t byte) {
+    instrumentation::PerformanceTrace::midiDispatchBegin();
     output.write(byte);
+    instrumentation::PerformanceTrace::midiDispatchEnd();
+    ++metrics.midiBytesDispatched;
 }
 
 }  // namespace sequencer

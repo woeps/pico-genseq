@@ -1,5 +1,4 @@
 #include "pitch_set.h"
-#include <cstdio>
 
 namespace common {
 
@@ -33,9 +32,6 @@ namespace common {
             this->position = 0;
             this->previousPosition = 0;
             return;
-        }
-        if(position >= pitches.size()) {
-            printf("PitchSet::setPosition: position %d is out of bounds for pitch set of size %zu\n", position, pitches.size());
         }
         this->previousPosition = this->position;
         this->position = position % pitches.size();
