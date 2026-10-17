@@ -22,6 +22,8 @@ GenSeq is a hardware MIDI sequencer that creates generative musical patterns bas
 Online documentation is available at [https://woeps.github.io/pico-genseq/](https://woeps.github.io/pico-genseq/).
 
 For comprehensive documentation, see the [docs/](docs/) directory:
+- [GenSeq v1 Product Charter](docs/product/genseq-v1-product-charter.md) - Approved product vision, audience, principles, scope, and performance model
+- [Project Roadmap](ROADMAP.md) - Milestone order, outcomes, and dependencies
 - [Architecture Deep Dive](docs/architecture/architecture-deep-dive.md) - Technical details
 - [Build & Flash Guide](docs/technical/build-flash.md) - Detailed instructions
 - [Dependencies & Setup](docs/reference/dependencies.md) - Development environment

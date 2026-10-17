@@ -10,27 +10,23 @@ During prototyping, a USB keyboard lets us discover and refine the interaction m
 
 ### 1. Product Identity: Define GenSeq v1
 
-Establish what the instrument is, what it is not, and what a successful performance with it feels like.
+**Status: Complete — product charter approved.**
 
-This milestone defines:
+The approved [GenSeq v1 Product Charter](docs/product/genseq-v1-product-charter.md) defines:
 
-- The instrument's core performance concept.
-- The relationship between patterns, generative material, and live intervention.
-- The role and information architecture of the LED matrix.
-- The provisional keyboard control model.
-- The intended final dedicated-control surface at a conceptual level.
-- Explicit v1 scope boundaries.
+- The target performer and core promise.
+- The Build → Layer → Mute → Transition performance loop.
+- Independent patterns as freely layerable MIDI voices.
+- Stable-by-default, performer-controlled generation.
+- Keep, Undo, Revert, and explicit Save semantics.
+- Immediate auditioning with selectable, musically quantized live changes.
+- A balanced performance and shallow-editing interaction model.
+- The LED-matrix-only display strategy and keyboard prototyping role.
+- One serial MIDI output, note-focused v1 scope, and explicit non-goals.
 
-GenSeq v1 is not:
+The charter also maps known implementation gaps to later milestones. Completing this product-definition milestone does not imply that those firmware capabilities are already implemented.
 
-- A general-purpose MIDI workstation.
-- A central MIDI routing hub.
-- A DAW replacement.
-- An LCD- or menu-driven device.
-- A full song-production environment.
-- A multi-port MIDI interface.
-
-**Milestone outcome:** A concise product definition and a set of design principles that guide all later decisions.
+**Milestone outcome:** An approved product definition and decision framework guiding all later milestones.
 
 ### 2. Performance-Safe Minimum Foundation
 
