@@ -157,7 +157,7 @@ of this plan.
   - [x] 7.3 Implement the global timing override
     - Override musical operations while safety actions remain immediate
     - _Requirements: 6.7_
-  - [ ] 7.4 Apply complete Pattern snapshots atomically at boundaries
+  - [x] 7.4 Apply complete Pattern snapshots atomically at boundaries
     - Avoid partial gate/pitch/velocity state and preserve current sounding-note lifecycle
     - _Requirements: 5.7, 6.8, 7.1_
   - [ ] 7.5 Add boundary and coalescing integration tests
@@ -171,7 +171,7 @@ of this plan.
     - Include accepted quantized changes and exclude unkept drafts
     - Ensure later edits cannot mutate an in-progress snapshot
     - _Requirements: 8.1–8.4_
-  - [ ] 8.2 Refactor persistence orchestration into a bounded service operation
+  - [x] 8.2 Refactor persistence orchestration into a bounded service operation
     - Avoid monopolizing the UI loop
     - Preserve existing distinct matrix outcome feedback
     - Track UI/input service gaps
@@ -215,7 +215,7 @@ of this plan.
     - _Requirements: 8.5–8.9, 9.6–9.9_
 
 - [ ] 11. Integrate persistent matrix fault feedback
-  - [ ] 11.1 Add a distinct latched Timing Fault state to UI state
+  - [x] 11.1 Add a distinct latched Timing Fault state to UI state
     - Preserve Working State and distinguish it from save/load feedback
     - _Requirements: 10.3, 10.4, 10.7_
   - [ ] 11.2 Render persistent LED-matrix fault indication

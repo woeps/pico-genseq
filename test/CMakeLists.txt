@@ -674,6 +674,60 @@ target_link_libraries(genseq_example_save_snapshot PRIVATE genseq_emission)
 add_test(NAME genseq_example_save_snapshot COMMAND genseq_example_save_snapshot)
 
 # ---------------------------------------------------------------------------
+# Example test: atomic Pattern snapshot application (task 7.4).
+#
+# Validates Requirements 5.7, 6.8, 7.1: the complete gate/pitch/velocity material
+# is swapped atomically; a sounding note (owned by NoteLifecycle) survives; the
+# release uses the recorded onset. Header-only applier; links genseq_emission for
+# common::Pattern + the sets.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_PATTERN_SNAPSHOT_APPLY_SRC "${TEST_DIR}/example_pattern_snapshot_apply.cpp")
+
+add_executable(genseq_example_pattern_snapshot_apply "${EXAMPLE_PATTERN_SNAPSHOT_APPLY_SRC}")
+target_include_directories(genseq_example_pattern_snapshot_apply PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_pattern_snapshot_apply PRIVATE genseq_emission)
+add_test(NAME genseq_example_pattern_snapshot_apply COMMAND genseq_example_pattern_snapshot_apply)
+
+# ---------------------------------------------------------------------------
+# Example test: bounded nonblocking save service (task 8.2).
+#
+# Validates Requirements 8.5-8.9: begin/pump/terminal state machine over the
+# in-memory FakeFlashStore, distinct SUCCESS/FAIL outcomes, snapshot immutability
+# across post-begin edits, no overlapping saves, and the UI/input service-gap
+# metric. Links genseq_persistence (serialize/manager); SaveService/SaveSnapshot
+# are header-only.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_SAVE_SERVICE_SRC "${TEST_DIR}/example_save_service.cpp")
+
+add_executable(genseq_example_save_service "${EXAMPLE_SAVE_SERVICE_SRC}")
+target_include_directories(genseq_example_save_service PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/persistence"
+    "${TEST_DIR}/persistence"
+)
+target_link_libraries(genseq_example_save_service PRIVATE genseq_persistence)
+add_test(NAME genseq_example_save_service COMMAND genseq_example_save_service)
+
+# ---------------------------------------------------------------------------
+# Example test: distinct latched Timing Fault UI state (task 11.1).
+#
+# Validates Requirements 10.3, 10.4, 10.7: the latched fault indicator is
+# distinct from the SaveBanner feedback, preserves Working State, is cleared only
+# explicitly, and retains a machine-readable cause. ui/state/UIState.h is
+# header-only (depends only on the header-only common::PlayingOrder enum).
+# ---------------------------------------------------------------------------
+set(EXAMPLE_FAULT_UI_STATE_SRC "${TEST_DIR}/example_fault_ui_state.cpp")
+
+add_executable(genseq_example_fault_ui_state "${EXAMPLE_FAULT_UI_STATE_SRC}")
+target_include_directories(genseq_example_fault_ui_state PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/ui"
+    "${SRC_DIR}/ui/state"
+)
+target_link_libraries(genseq_example_fault_ui_state PRIVATE genseq_emission)
+add_test(NAME genseq_example_fault_ui_state COMMAND genseq_example_fault_ui_state)
+
+# ---------------------------------------------------------------------------
 # Property-test executable.
 #
 # The property tests (task 6.3+) live in test/*.cpp. They are auto-discovered
@@ -734,6 +788,11 @@ if(RAPIDCHECK_AVAILABLE)
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_TIMING_POLICY_SRC}")
     # Wave-7 save-snapshot example (8.1) is its own target with its own main().
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SAVE_SNAPSHOT_SRC}")
+    # Wave-8 examples (7.4 apply, 8.2 save-service, 11.1 fault-ui-state) are
+    # their own targets with their own main(); exclude them from the runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_PATTERN_SNAPSHOT_APPLY_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SAVE_SERVICE_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_FAULT_UI_STATE_SRC}")
 
     if(NOT TEST_SOURCES)
         message(STATUS
