@@ -79,9 +79,14 @@ FlashResult FlashStore::eraseAndProgram(const uint8_t* data, std::size_t len) {
     // flash at once. We use a cooperative pause (NOT multicore_lockout, which
     // would hijack the command FIFO): core1 polls the pause request in its loop,
     // acknowledges, and busy-waits in RAM with interrupts disabled until we
-    // release it (Req 4.4). corePauseRequestAndWait() returns once core1 has
-    // acknowledged (or after a bounded safety spin).
-    sequencer::corePauseRequestAndWait();
+    // release it (Req 4.4). corePauseRequestAndWait() returns true ONLY on a
+    // positive acknowledgement within its absolute-time deadline (task 9.1,
+    // Req 8.8/9.8). On timeout it returns false and we ABORT with NO destructive
+    // write — the previous committed record is preserved (Req 9.6/9.7).
+    if (!sequencer::corePauseRequestAndWait()) {
+        sequencer::corePauseRelease();  // clear state; no write performed
+        return FlashResult::ERASE_FAILED;  // safe-write condition not established
+    }
 
     // Disable interrupts on the writing core: any ISR resident in flash would
     // fault while XIP is down.

@@ -37,6 +37,80 @@ enum class TimingPolicy : uint8_t {
     NextBar = 2,
 };
 
+// The musical operations whose application boundary this subsystem resolves.
+// Safety operations (Stop/panic/fault) are ALWAYS Immediate and ignore the
+// global override; the musical ones carry an approved default (task 7.2) that
+// the global override may replace (task 7.3).
+enum class OperationKind : uint8_t {
+    // Immediate by default and always immediate (safety / transport / live edit).
+    Play,
+    Stop,
+    Panic,
+    Audition,
+    Keep,
+    Undo,
+    // Next Beat by default.
+    Mute,
+    Unmute,
+    // Next Bar by default.
+    SetReplacement,  // committed gate/pitch/velocity replacement
+    Remove,
+    SceneTransition,  // future scenes; default Next Bar (Req 6.6)
+};
+
+namespace timing_policy {
+
+// Is this a SAFETY/immediate-locked operation? Play/Stop/panic/audition/Keep/
+// Undo are Immediate by default (Req 6.2) AND are never shifted by the global
+// override (Req 6.7, 7.3). The transport/live-edit set is treated as locked
+// Immediate here so the override only moves the quantizable musical ops.
+inline bool isImmediateLocked(OperationKind kind) {
+    switch (kind) {
+        case OperationKind::Play:
+        case OperationKind::Stop:
+        case OperationKind::Panic:
+        case OperationKind::Audition:
+        case OperationKind::Keep:
+        case OperationKind::Undo:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Approved per-operation DEFAULT policy (task 7.2, Req 6.2-6.6).
+inline TimingPolicy defaultPolicy(OperationKind kind) {
+    switch (kind) {
+        case OperationKind::Play:
+        case OperationKind::Stop:
+        case OperationKind::Panic:
+        case OperationKind::Audition:
+        case OperationKind::Keep:
+        case OperationKind::Undo:
+            return TimingPolicy::Immediate;        // Req 6.2
+        case OperationKind::Mute:
+        case OperationKind::Unmute:
+            return TimingPolicy::NextBeat;          // Req 6.3
+        case OperationKind::SetReplacement:
+        case OperationKind::Remove:
+        case OperationKind::SceneTransition:
+            return TimingPolicy::NextBar;           // Req 6.4-6.6
+    }
+    return TimingPolicy::Immediate;
+}
+
+// Resolve the EFFECTIVE policy for an operation under the global override
+// (task 7.3, Req 6.7). A safety/immediate-locked op always resolves to
+// Immediate and ignores the override. A musical op uses the override when one is
+// active, else its approved default. `overrideActive=false` means "use defaults".
+inline TimingPolicy effectivePolicy(OperationKind kind, bool overrideActive,
+                                    TimingPolicy overridePolicy) {
+    if (isImmediateLocked(kind)) return TimingPolicy::Immediate;  // safety stays immediate
+    return overrideActive ? overridePolicy : defaultPolicy(kind);
+}
+
+}  // namespace timing_policy
+
 namespace timing_policy {
 
 // The absolute logical tick at which an op requested at `currentTick` applies

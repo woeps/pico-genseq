@@ -140,7 +140,7 @@ of this plan.
   - [x] 6.4 Remove steady-state allocation and logging from core1 command handling
     - Use fixed-capacity Pattern snapshots and bounded per-cycle draining
     - _Requirements: 7.4, 7.9, 7.10_
-  - [ ] 6.5 Add inbox stress and model tests
+  - [x] 6.5 Add inbox stress and model tests
     - Exercise edit storms, full inbox, stale sequences, barriers, and producer/consumer interleaving
     - Assert complete payload visibility and bounded service work
     - _Requirements: 7.1–7.11, 11.2_
@@ -149,12 +149,12 @@ of this plan.
   - [x] 7.1 Implement `TimingPolicy` and effective-tick calculation
     - Resolve Immediate, Next Beat, and Next Bar from the Transport Timeline
     - _Requirements: 6.1, 6.8_
-  - [ ] 7.2 Encode approved per-operation defaults
+  - [x] 7.2 Encode approved per-operation defaults
     - Immediate: Play/Stop/panic/audition/Keep/Undo
     - Next Beat: mute/unmute
     - Next Bar: committed set replacement/remove and future scenes
     - _Requirements: 6.2–6.6_
-  - [ ] 7.3 Implement the global timing override
+  - [x] 7.3 Implement the global timing override
     - Override musical operations while safety actions remain immediate
     - _Requirements: 6.7_
   - [ ] 7.4 Apply complete Pattern snapshots atomically at boundaries
@@ -166,7 +166,7 @@ of this plan.
     - _Requirements: 6.1–6.9, 11.2_
 
 - [ ] 8. Make save capture consistent and nonblocking
-  - [ ] 8.1 Define Save Snapshot semantics in code
+  - [x] 8.1 Define Save Snapshot semantics in code
     - Capture accepted Working State atomically on core0
     - Include accepted quantized changes and exclude unkept drafts
     - Ensure later edits cannot mutate an in-progress snapshot
@@ -182,7 +182,7 @@ of this plan.
     - _Requirements: 8.1–8.9, 11.2_
 
 - [ ] 9. Storage benchmark and backend decision checkpoint
-  - [ ] 9.1 Harden the existing internal-flash pause protocol before benchmarking
+  - [x] 9.1 Harden the existing internal-flash pause protocol before benchmarking
     - Use explicit synchronization and absolute-time timeout
     - Return positive acknowledgement/failure
     - Prohibit erase/program after timeout

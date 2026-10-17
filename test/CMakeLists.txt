@@ -655,6 +655,25 @@ target_link_libraries(genseq_example_timing_policy PRIVATE genseq_emission)
 add_test(NAME genseq_example_timing_policy COMMAND genseq_example_timing_policy)
 
 # ---------------------------------------------------------------------------
+# Example test: Save Snapshot semantics (task 8.1).
+#
+# Validates Requirements 8.1-8.4: capture() takes an immutable by-value copy of
+# accepted Working State; a later edit to the live state cannot mutate the
+# in-progress snapshot; accepted (pending-application) changes are included and
+# unkept drafts excluded (via what the caller passes). SaveSnapshot.h +
+# PersistableConfig.h are header-only and SDK-free.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_SAVE_SNAPSHOT_SRC "${TEST_DIR}/example_save_snapshot.cpp")
+
+add_executable(genseq_example_save_snapshot "${EXAMPLE_SAVE_SNAPSHOT_SRC}")
+target_include_directories(genseq_example_save_snapshot PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/persistence"
+)
+target_link_libraries(genseq_example_save_snapshot PRIVATE genseq_emission)
+add_test(NAME genseq_example_save_snapshot COMMAND genseq_example_save_snapshot)
+
+# ---------------------------------------------------------------------------
 # Property-test executable.
 #
 # The property tests (task 6.3+) live in test/*.cpp. They are auto-discovered
@@ -713,6 +732,8 @@ if(RAPIDCHECK_AVAILABLE)
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SCHEDULER_FAULT_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_PATTERN_SNAPSHOT_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_TIMING_POLICY_SRC}")
+    # Wave-7 save-snapshot example (8.1) is its own target with its own main().
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SAVE_SNAPSHOT_SRC}")
 
     if(NOT TEST_SOURCES)
         message(STATUS

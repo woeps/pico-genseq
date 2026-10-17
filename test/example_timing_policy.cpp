@@ -80,6 +80,54 @@ void test_is_due() {
     check(tp::isDue(24, 30), "due after the boundary (zero boundary error, Req 6.8)");
 }
 
+// 7.2: approved per-operation default policies.
+void test_default_policies() {
+    using sequencer::OperationKind;
+    using sequencer::TimingPolicy;
+    namespace t = sequencer::timing_policy;
+    // Immediate (Req 6.2).
+    check(t::defaultPolicy(OperationKind::Play) == TimingPolicy::Immediate, "Play default Immediate");
+    check(t::defaultPolicy(OperationKind::Stop) == TimingPolicy::Immediate, "Stop default Immediate");
+    check(t::defaultPolicy(OperationKind::Panic) == TimingPolicy::Immediate, "Panic default Immediate");
+    check(t::defaultPolicy(OperationKind::Audition) == TimingPolicy::Immediate, "Audition default Immediate");
+    check(t::defaultPolicy(OperationKind::Keep) == TimingPolicy::Immediate, "Keep default Immediate");
+    check(t::defaultPolicy(OperationKind::Undo) == TimingPolicy::Immediate, "Undo default Immediate");
+    // Next Beat (Req 6.3).
+    check(t::defaultPolicy(OperationKind::Mute) == TimingPolicy::NextBeat, "Mute default NextBeat");
+    check(t::defaultPolicy(OperationKind::Unmute) == TimingPolicy::NextBeat, "Unmute default NextBeat");
+    // Next Bar (Req 6.4-6.6).
+    check(t::defaultPolicy(OperationKind::SetReplacement) == TimingPolicy::NextBar, "SetReplacement default NextBar");
+    check(t::defaultPolicy(OperationKind::Remove) == TimingPolicy::NextBar, "Remove default NextBar");
+    check(t::defaultPolicy(OperationKind::SceneTransition) == TimingPolicy::NextBar, "SceneTransition default NextBar");
+}
+
+// 7.3: global override moves musical ops but leaves safety ops Immediate.
+void test_global_override() {
+    using sequencer::OperationKind;
+    using sequencer::TimingPolicy;
+    namespace t = sequencer::timing_policy;
+
+    // No override active -> defaults apply.
+    check(t::effectivePolicy(OperationKind::Mute, false, TimingPolicy::NextBar) == TimingPolicy::NextBeat,
+          "no override: Mute keeps its NextBeat default");
+
+    // Override to Immediate: musical ops become Immediate...
+    check(t::effectivePolicy(OperationKind::Mute, true, TimingPolicy::Immediate) == TimingPolicy::Immediate,
+          "override Immediate moves Mute to Immediate");
+    check(t::effectivePolicy(OperationKind::SetReplacement, true, TimingPolicy::NextBeat) == TimingPolicy::NextBeat,
+          "override NextBeat moves SetReplacement to NextBeat");
+
+    // ...but safety ops ALWAYS stay Immediate regardless of the override (Req 6.7).
+    check(t::effectivePolicy(OperationKind::Stop, true, TimingPolicy::NextBar) == TimingPolicy::Immediate,
+          "override never moves Stop off Immediate");
+    check(t::effectivePolicy(OperationKind::Panic, true, TimingPolicy::NextBar) == TimingPolicy::Immediate,
+          "override never moves Panic off Immediate");
+    check(t::effectivePolicy(OperationKind::Play, true, TimingPolicy::NextBeat) == TimingPolicy::Immediate,
+          "override never moves Play off Immediate");
+    check(t::isImmediateLocked(OperationKind::Undo), "Undo is immediate-locked");
+    check(!t::isImmediateLocked(OperationKind::Remove), "Remove is not immediate-locked");
+}
+
 }  // namespace
 
 int main() {
@@ -88,6 +136,8 @@ int main() {
     test_next_bar();
     test_meter_3_8();
     test_is_due();
+    test_default_policies();
+    test_global_override();
 
     if (failures == 0) {
         std::printf("example_timing_policy: all checks passed\n");
