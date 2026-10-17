@@ -30,19 +30,26 @@ The charter also maps known implementation gaps to later milestones. Completing 
 
 ### 2. Performance-Safe Minimum Foundation
 
-Make the existing engine dependable before increasing its musical complexity.
+**Status: Planned — approved specification ready for implementation.**
 
-This milestone focuses on invariants rather than new creative capabilities:
+The approved Milestone 2 specification is split into:
 
-- Stable sequencing and transport timing.
-- Correct note lifecycle under all live operations.
-- Safe interaction between the UI, sequencer core, and persistence.
-- Predictable behavior during edits, pattern changes, stops, and saves.
-- Bounded real-time work and measurable performance criteria.
+- [Requirements](.kiro/specs/performance-safe-foundation/requirements.md)
+- [Design](.kiro/specs/performance-safe-foundation/design.md)
+- [Implementation Tasks](.kiro/specs/performance-safe-foundation/tasks.md)
 
-The aim is not to optimize everything immediately. It is to establish an architecture that new generators and performance operations cannot easily destabilize.
+This milestone establishes the invariants required before expanding the generative engine:
 
-Basic MIDI correctness belongs to this foundation even though broader MIDI configuration and input are addressed by the later connectivity milestone.
+- One authoritative transport timeline with configurable meter.
+- Correct optional MIDI Start, 24-PPQN Clock, and Stop output.
+- Deterministic late-tick reconciliation and visible fail-closed recovery.
+- Per-pattern note ownership with safe overlapping-note behavior.
+- Immediate, beat, and bar operation boundaries.
+- Bounded cross-core command and MIDI output queues.
+- MIDI-transparent, transactional saving with a measured storage-backend decision.
+- Reproducible host tests and retained RP2040 timing evidence.
+
+The implementation proceeds through independently verifiable safety slices and includes a user-reviewed storage decision checkpoint before final backend integration.
 
 **Milestone outcome:** A sequencer core that can be trusted during uninterrupted live performance.
 
