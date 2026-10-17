@@ -44,7 +44,7 @@ of this plan.
     - Prevent removal/reordering from retargeting pending operations or ownership
     - Add stale-generation rejection if identifiers can be reused
     - _Requirements: 5.1, 6.9, 7.8_
-  - [ ] 2.3 Add a centralized fixed-capacity `NoteLifecycle`
+  - [x] 2.3 Add a centralized fixed-capacity `NoteLifecycle`
     - Track each Pattern's exact sounding note plus aggregate channel/note ownership
     - Emit every approved retrigger and defer final Note Off until the last owner releases
     - Provide release-pattern, release-all, and panic operations
@@ -70,7 +70,7 @@ of this plan.
     - Reject unsupported values rather than rounding boundaries
     - Record the decision in the design
     - _Requirements: 1.3, 1.7_
-  - [ ] 3.2 Implement `TransportTimeline`
+  - [x] 3.2 Implement `TransportTimeline`
     - Own BPM, PPQN, meter, logical tick index, beat/bar indices, and intended timestamps
     - Preserve phase across BPM changes using fixed-point or remainder accumulation
     - _Requirements: 1.1–1.5_

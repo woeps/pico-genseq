@@ -480,6 +480,47 @@ target_link_libraries(genseq_example_pattern_id PRIVATE genseq_emission)
 add_test(NAME genseq_example_pattern_id COMMAND genseq_example_pattern_id)
 
 # ---------------------------------------------------------------------------
+# Example test: centralized NoteLifecycle (task 2.3).
+#
+# A standalone example validating Requirements 5.1-5.5, 5.8: ownership recorded
+# at onset, release by recorded identity, overlapping-pattern retrigger with an
+# aggregate refcount (final note-off only when the last owner releases),
+# monophonic replacement, and releaseAll/panic leaving zero per-pattern AND
+# aggregate ownership.
+#
+# NoteLifecycle.h is header-only and SDK-free (IMidiOutput + canonical
+# channel/id types + MIDI byte tables). The test uses the host RecordingMidiOutput
+# and links genseq_emission for consistency; NO Pico SDK libs, NO RapidCheck.
+# Its own main() means it MUST be excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_NOTE_LIFECYCLE_SRC "${TEST_DIR}/example_note_lifecycle.cpp")
+
+add_executable(genseq_example_note_lifecycle "${EXAMPLE_NOTE_LIFECYCLE_SRC}")
+target_include_directories(genseq_example_note_lifecycle PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_note_lifecycle PRIVATE genseq_emission)
+add_test(NAME genseq_example_note_lifecycle COMMAND genseq_example_note_lifecycle)
+
+# ---------------------------------------------------------------------------
+# Example test: TransportTimeline (task 3.2).
+#
+# A standalone example validating Requirements 1.1-1.5: start() establishes the
+# timeline, beat/bar boundaries derive from the tick index and meter, long-run
+# tick timestamps are drift-free (carried remainder, checked against an exact
+# rational reference across BPMs), a mid-run BPM change preserves tick index and
+# phase, and an unsupported meter/zero BPM is rejected.
+#
+# TransportTimeline.h is header-only and SDK-free. Links genseq_emission for
+# consistency; NO Pico SDK libs, NO RapidCheck. Its own main() means it MUST be
+# excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_TRANSPORT_TIMELINE_SRC "${TEST_DIR}/example_transport_timeline.cpp")
+
+add_executable(genseq_example_transport_timeline "${EXAMPLE_TRANSPORT_TIMELINE_SRC}")
+target_include_directories(genseq_example_transport_timeline PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_transport_timeline PRIVATE genseq_emission)
+add_test(NAME genseq_example_transport_timeline COMMAND genseq_example_transport_timeline)
+
+# ---------------------------------------------------------------------------
 # Property-test executable.
 #
 # The property tests (task 6.3+) live in test/*.cpp. They are auto-discovered
@@ -518,6 +559,10 @@ if(RAPIDCHECK_AVAILABLE)
     # The pattern-id example (task 2.2) is its own dedicated target with its own
     # main(); exclude it from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_PATTERN_ID_SRC}")
+    # The NoteLifecycle (2.3) and TransportTimeline (3.2) examples are their own
+    # dedicated targets with their own main(); exclude them from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_NOTE_LIFECYCLE_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_TRANSPORT_TIMELINE_SRC}")
 
     if(NOT TEST_SOURCES)
         message(STATUS
