@@ -40,30 +40,66 @@ void Sequencer::init() {
 void Sequencer::update() {
     if (!playing) return;
 
-    // All musical time advances through Scheduler::service(now) (task 5.1,
-    // Req 3.1-3.3). The scheduler runs immediate safety work first, then
-    // advances every due tick up to its documented per-service work budget,
-    // giving each tick its intended timestamp (so polling jitter does not shift
-    // the musical phase) and recording lateness. Bounded reconciliation and the
-    // one-beat fail-closed fault (tasks 5.2 / 5.3) extend this front end next;
-    // the safety callback is a no-op placeholder until then.
+    // All musical time advances through Scheduler::service(now) (tasks 5.1-5.3,
+    // Req 3.1-3.8). The scheduler runs immediate safety work first, advances
+    // every due tick up to its documented per-service work budget, reconciles
+    // missed ticks below one beat WITHOUT obsolete Note On output, and signals a
+    // fault when lateness reaches one beat.
     const uint64_t currentTime = clock.nowMicros();
 
-    auto safety = []() { /* fault/release work lands in tasks 5.2/5.3 */ };
+    auto safety = []() { /* reserved: pending safety-op draining (tasks 6.x) */ };
     auto tick = [this](uint64_t /*intendedMicros*/) {
         instrumentation::PerformanceTrace::tickBegin();
-        serviceTick();
+        serviceTick(/*reconcileOnly=*/false);
         instrumentation::PerformanceTrace::tickEnd();
     };
-    Scheduler<decltype(safety), decltype(tick)> scheduler(timeline, metrics);
-    scheduler.service(currentTime, std::move(safety), std::move(tick));
+    auto reconcile = [this](uint64_t /*intendedMicros*/) {
+        // Missed tick: advance phase and emit crossed releases only (Req 3.5),
+        // no obsolete Note On and no obsolete Clock byte (Req 3.4/3.6).
+        serviceTick(/*reconcileOnly=*/true);
+    };
+
+    Scheduler<decltype(safety), decltype(tick), decltype(reconcile)> scheduler(timeline,
+                                                                               metrics);
+    const ServiceReport report =
+        scheduler.service(currentTime, std::move(safety), std::move(tick), std::move(reconcile));
+
+    // Fail closed at one beat of lateness (task 5.3, Req 3.7): the scheduler
+    // serviced nothing this call and asked us to fault.
+    if (report.faulted) {
+        enterTimingFault(PerformanceFaultCause::SCHEDULER_LATENESS, report.faultLatenessUs);
+    }
 }
 
-void Sequencer::serviceTick() {
+void Sequencer::enterTimingFault(PerformanceFaultCause cause, uint64_t measurementUs) {
+    const FaultTransition t = fault.enter(cause, measurementUs, metrics);
+    if (!t.entered) return;  // already latched — idempotent, no second cleanup
+
+    instrumentation::PerformanceTrace::setFault(true);
+
+    // Stop generating new Pattern events and release every owned note (Req 10.1,
+    // 10.2). Working State (patterns + their configuration) is preserved; only
+    // runtime transport stops.
+    playing = false;
+    timeline.stop();
+    const bool emitStop = midiClockEnabled;
+    noteLifecycle.releaseAll();
+
+    // Emit MIDI Stop when MIDI Clock Output is enabled (Req 10.2 / 2.3).
+    if (emitStop) {
+        sendMidiByte(midi::SystemRealTimeMessage::STOP);
+    }
+    // Runtime positions are reset on the next explicit Play acknowledgement
+    // (Req 10.6), not here, so Working State inspection after a fault is stable.
+}
+
+void Sequencer::serviceTick(bool reconcileOnly) {
     // MIDI Clock: at PPQN 24, 24 Clock messages per quarter note means exactly
     // one Clock per logical tick. Emitted only when the unified setting is on
-    // (task 4.1, Req 2.2).
-    if (midiClockEnabled) {
+    // (task 4.1, Req 2.2). A reconciled (missed) tick emits NO Clock byte — the
+    // missed clock pulse is obsolete and must not be replayed in a burst
+    // (task 5.2, Req 3.6).
+    if (midiClockEnabled && !reconcileOnly) {
         sendMidiByte(midi::SystemRealTimeMessage::TIMING_CLOCK);
     }
 
@@ -84,13 +120,21 @@ void Sequencer::serviceTick() {
         const common::Flank flank = gateSet.getFlank();
 
         if (flank == common::RISING) {
-            // Record ownership at onset by the pattern's canonical channel and
-            // the exact pitch sounding NOW (task 2.4, Req 5.1).
-            noteLifecycle.noteOn(id, pattern.getCanonicalChannel(), pitchSet.getPitch(),
-                                 velocitySet.getVelocity());
+            // A reconciled (missed) tick must NOT emit an obsolete Note On
+            // (task 5.2, Req 3.4): the authoritative phase has already moved past
+            // this onset. Advance the material so the next authoritative tick is
+            // phase-correct, but emit nothing on the wire.
+            if (!reconcileOnly) {
+                // Record ownership at onset by the pattern's canonical channel and
+                // the exact pitch sounding NOW (task 2.4, Req 5.1).
+                noteLifecycle.noteOn(id, pattern.getCanonicalChannel(), pitchSet.getPitch(),
+                                     velocitySet.getVelocity());
+            }
         } else if (flank == common::FALLING) {
             // Release the captured onset via its recorded identity, NOT the
-            // pattern's current (possibly edited) pitch (task 2.4, Req 5.2).
+            // pattern's current (possibly edited) pitch (task 2.4, Req 5.2). This
+            // IS emitted during reconciliation: a note whose release boundary was
+            // crossed must be released so it does not hang (task 5.2, Req 3.5).
             noteLifecycle.releasePattern(id);
             pitchSet.advance();
             velocitySet.advance();
@@ -175,6 +219,14 @@ void Sequencer::resetPerformanceMetrics() {
 }
 
 void Sequencer::play() {
+    // Explicit Play acknowledges a latched Timing Fault (task 5.3, Req 10.6):
+    // clear the fault so playback can restart from defined positions below. The
+    // acknowledge() is idempotent — a no-op when not faulted.
+    const FaultTransition ack = fault.acknowledge();
+    if (ack.acknowledged) {
+        instrumentation::PerformanceTrace::setFault(false);
+    }
+
     // Deterministic repeated Play (Req 5.10): a Play while already playing does
     // NOT abandon existing ownership and does NOT emit an unmatched Start/Stop.
     if (playing) return;

@@ -93,7 +93,7 @@ of this plan.
     - Legal priority/interleaving for MIDI real-time messages
     - Reserved capacity or bounded direct handling for release/Stop/panic
     - _Requirements: 4.1, 4.2, 4.5, 4.7_
-  - [ ] 4.3 Add output backlog accounting and overload detection
+  - [x] 4.3 Add output backlog accounting and overload detection
     - Track current and maximum backlog
     - Enter Timing Fault after one beat of sustained wire-capacity overload
     - Never retain an unbounded delayed-event queue
@@ -108,12 +108,12 @@ of this plan.
     - Give every tick an intended timestamp and documented per-service work budget
     - Prioritize immediate safety work before ordinary edits
     - _Requirements: 3.1–3.3_
-  - [ ] 5.2 Implement bounded under-one-beat reconciliation
+  - [x] 5.2 Implement bounded under-one-beat reconciliation
     - Advance missed Pattern positions without obsolete Note On output
     - Emit required release events for notes whose release point was crossed
     - Resume at the authoritative phase without catch-up bursts
     - _Requirements: 3.4–3.6_
-  - [ ] 5.3 Implement fail-closed recovery at one beat
+  - [x] 5.3 Implement fail-closed recovery at one beat
     - Stop new events, release ownership, emit optional Stop, preserve Working State
     - Latch cause and metrics; prohibit automatic restart
     - _Requirements: 3.7, 10.1–10.7_
@@ -123,11 +123,11 @@ of this plan.
     - _Requirements: 3.1–3.8, 10.1–10.7, 11.1–11.3_
 
 - [ ] 6. Replace blocking cross-core payload transfer
-  - [ ] 6.1 Design a fixed-capacity shared-SRAM `CommandInbox`
+  - [x] 6.1 Design a fixed-capacity shared-SRAM `CommandInbox`
     - Define slot ownership, synchronization, memory bound, and compact notification strategy
     - Keep core1 independent of blocking multiword FIFO payload reads
     - _Requirements: 7.1–7.4_
-  - [ ] 6.2 Add sequence IDs and accepted/applied acknowledgements
+  - [x] 6.2 Add sequence IDs and accepted/applied acknowledgements
     - Bind updates to stable Pattern identities
     - Reject stale Pattern generations
     - _Requirements: 6.9, 7.8_

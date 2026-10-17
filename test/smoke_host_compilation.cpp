@@ -168,42 +168,42 @@ bool verifyExactTickBoundary(uint16_t bpm) {
         return false;
     }
 
-    // Jump four periods past the third tick's deadline. The task-5.1 Scheduler
-    // drains every due tick in one service() call UP TO its documented work
-    // budget (kDefaultTickBudget == 8), instead of the old one-tick-per-update
-    // behavior. Jumping 4 * floor(tickDuration) past deadline(3) makes either
-    // three or four further ticks overdue — the exact count depends on the
-    // sub-microsecond remainder the timeline carries at BPMs that do not divide
-    // 60e6/(bpm*24) evenly (BPM 40 is exact -> 4 catch-up ticks; 120/255 carry a
-    // remainder -> 3). All are well within the budget, so one update() services
-    // them all from their intended deadlines — bounded catch-up, not a burst.
-    // Each serviced tick emits one Clock plus its gate-edge note. We therefore
-    // assert tolerant bounds and strong internal self-consistency rather than a
-    // single brittle count.
+    // Jump four periods past the third tick's deadline. The task-5.2 Scheduler
+    // now RECONCILES missed ticks: every due tick is advanced in one service()
+    // call (bounded by the budget 8), but a tick overdue by >= one period is
+    // routed through reconciliation — it advances Pattern phase and emits only a
+    // crossed release (Note Off), NOT an obsolete Note On and NOT a Clock byte.
+    // Only the final authoritative-phase tick (< one period late) emits normally.
+    // Four periods is far below one beat (24 ticks), so NO fault occurs.
+    //
+    // The exact catch-up count and byte stream are remainder- and gate-phase
+    // dependent, so we assert the reconciliation INVARIANTS and strong internal
+    // self-consistency rather than a brittle byte count: all advanced ticks are
+    // accounted; at least one was reconciled; the normal-tick count is small; the
+    // metric byte count equals the recorded stream exactly; and no fault latched.
     clock.setMicros(deadline(3) + 4 * tickDurationUs);
     seq.update();
 
     const sequencer::PerformanceMetrics& metrics = seq.performanceMetrics();
-    // The first (most overdue) catch-up tick is tick 4; its lateness is measured
-    // against tick 4's exact deadline and is the maximum this call.
+    // Lateness of the most-overdue advanced tick (tick 4) vs its exact deadline.
     const uint64_t expectedLatenessApprox =
         (deadline(3) + 4 * tickDurationUs) - deadline(4);
     const bool latenessOk =
         metrics.maxSchedulerLatenessUs >= (expectedLatenessApprox >= 2 ? expectedLatenessApprox - 2 : 0) &&
         metrics.maxSchedulerLatenessUs <= expectedLatenessApprox + 2;
-    // 3 earlier ticks + {3 or 4} catch-up ticks = 6 or 7 total; each catch-up
-    // tick adds exactly 4 bytes (Clock + note triple) to the 13 bytes through
-    // tick 3, so midi is 25 or 29 and MUST equal the recorded stream length.
+    // 3 earlier normal ticks + {3 or 4} catch-up ticks advanced this call.
     const uint64_t ticks = metrics.logicalTicksServiced;
     const bool ticksOk = (ticks == 6 || ticks == 7);
-    const uint64_t expectedMidi = 13 + 4 * (ticks - 3);
     const bool metricsMatch =
         ticksOk &&
         latenessOk &&
+        // Reconciliation happened for the far-overdue catch-up ticks (all but the
+        // final authoritative one): with {3,4} catch-up ticks that is {2,3}.
+        (metrics.reconciliationCount >= 2 && metrics.reconciliationCount <= 3) &&
         (metrics.missedLogicalTicks >= 3 && metrics.missedLogicalTicks <= 6) &&
-        metrics.reconciliationCount == 0 &&
+        // Byte count self-consistency is the real anchor (reconciled ticks emit
+        // fewer bytes than normal ones, so a fixed count is not meaningful here).
         metrics.midiBytesDispatched == recording.record().size() &&
-        metrics.midiBytesDispatched == expectedMidi &&
         metrics.operationsApplied == 3 &&
         metrics.midiQueueHighWater == 0 &&
         metrics.commandQueueHighWater == 0 &&

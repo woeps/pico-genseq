@@ -6,6 +6,7 @@
 #include "IMidiOutput.h"
 #include "IMonotonicClock.h"
 #include "NoteLifecycle.h"
+#include "PerformanceFault.h"
 #include "PerformanceMetrics.h"
 #include "TransportTimeline.h"
 #include "hardware/uart.h"
@@ -64,6 +65,10 @@ private:
     // all emission passes through (task 2.3).
     TransportTimeline timeline;
     NoteLifecycle noteLifecycle;
+    // Latched fail-closed Timing Fault (task 5.3). Entering it stops new events,
+    // releases ownership, optionally emits Stop, and prohibits auto-restart; an
+    // explicit Play acknowledges and restarts (Req 10.1-10.7).
+    PerformanceFault fault;
 
     void play();
     void stop();
@@ -82,9 +87,17 @@ private:
                                common::PlayingOrder order,
                                const std::vector<uint8_t>& velocities);
 
-    // Advance one logical tick: service every active pattern's gate edge through
-    // NoteLifecycle and emit a MIDI Clock byte when enabled.
-    void serviceTick();
+    // Advance one logical tick. When reconcileOnly is true the tick is a MISSED
+    // tick being reconciled (task 5.2): pattern phase advances and crossed
+    // releases are emitted, but NO obsolete Note On and NO MIDI Clock byte are
+    // produced. When false it is the authoritative-phase tick (normal emission).
+    void serviceTick(bool reconcileOnly = false);
+
+    // Fail-closed Timing Fault entry (task 5.3): release all ownership, emit Stop
+    // when enabled, stop playback, and latch the cause. Working State (the
+    // patterns and their configuration) is preserved; only runtime transport
+    // stops. Idempotent via the PerformanceFault latch.
+    void enterTimingFault(PerformanceFaultCause cause, uint64_t measurementUs);
 
     void sendMidiByte(uint8_t byte);
     bool canApplyCommand(const commands::CommandMessage& msg) const;

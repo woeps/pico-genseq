@@ -581,6 +581,37 @@ target_link_libraries(genseq_example_scheduler PRIVATE genseq_emission)
 add_test(NAME genseq_example_scheduler COMMAND genseq_example_scheduler)
 
 # ---------------------------------------------------------------------------
+# Example test: output overload detection (task 4.3).
+#
+# A standalone example validating Requirements 4.4, 4.5, 4.6: current/max backlog
+# accounting, a backlog sustained for one beat of monotonic time latching a
+# sustained-overload signal, and a transient backlog that drains before one beat
+# NOT latching. OverloadDetector.h is header-only and SDK-free.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_OVERLOAD_DETECTOR_SRC "${TEST_DIR}/example_overload_detector.cpp")
+
+add_executable(genseq_example_overload_detector "${EXAMPLE_OVERLOAD_DETECTOR_SRC}")
+target_include_directories(genseq_example_overload_detector PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_overload_detector PRIVATE genseq_emission)
+add_test(NAME genseq_example_overload_detector COMMAND genseq_example_overload_detector)
+
+# ---------------------------------------------------------------------------
+# Example test: fixed-capacity CommandInbox + sequence IDs/acks (tasks 6.1, 6.2).
+#
+# A standalone example validating Requirements 7.1-7.4, 7.8, 6.9: single-producer/
+# single-consumer ring with complete-slot publish (no payload-word blocking),
+# fixed capacity (full refused, not grown), bounded drain, monotonic sequence IDs
+# with Accepted/Applied/Rejected ack status, and stale-generation rejection
+# against the live PatternIdAllocator. CommandInbox.h is header-only and SDK-free.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_COMMAND_INBOX_SRC "${TEST_DIR}/example_command_inbox.cpp")
+
+add_executable(genseq_example_command_inbox "${EXAMPLE_COMMAND_INBOX_SRC}")
+target_include_directories(genseq_example_command_inbox PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_command_inbox PRIVATE genseq_emission)
+add_test(NAME genseq_example_command_inbox COMMAND genseq_example_command_inbox)
+
+# ---------------------------------------------------------------------------
 # Property-test executable.
 #
 # The property tests (task 6.3+) live in test/*.cpp. They are auto-discovered
@@ -630,6 +661,10 @@ if(RAPIDCHECK_AVAILABLE)
     # targets with their own main(); exclude them from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_MIDI_EVENT_QUEUE_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SCHEDULER_SRC}")
+    # The overload detector (4.3) and CommandInbox (6.1/6.2) examples are their
+    # own targets with their own main(); exclude them from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_OVERLOAD_DETECTOR_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_COMMAND_INBOX_SRC}")
 
     if(NOT TEST_SOURCES)
         message(STATUS
