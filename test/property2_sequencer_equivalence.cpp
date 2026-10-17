@@ -24,12 +24,10 @@
 // MIDI-emitting members (sendMidiNoteOn/Off, sendMidiByte, play(), stop()) are PRIVATE and
 // reachable only via processCommand(PLAY/STOP) and via the update() tick loop.
 //
-// The host clock stub (test/pico_stubs/pico/time.h) is frozen at 0, so update()'s tick
-// condition (absolute_time_diff_us(lastTickTime, now) >= tickDurationUs) is 0 >= positive
-// == false. The tick loop therefore never advances host-side, so the RISING-flank path that
-// calls sendMidiNoteOn is unreachable here. Consequently activeNotes[][] stays all-false, so
-// stop() emits zero note-offs. This matches design.md's guidance to "exercise emission via
-// processCommand rather than the time loop."
+// This property injects a FakeMonotonicClock held at 0 and never calls update(), so the
+// tick loop does not advance. Consequently activeNotes[][] stays all-false and stop() emits
+// zero note-offs. Exact production tick-boundary behavior is exercised by
+// smoke_host_compilation.cpp using the same fake clock with controlled time advances.
 //
 // Reachable per-command emission (confirmed against src/sequencer/sequencer.cpp):
 //   PLAY               -> play():  midiClockEnabled defaults true -> emits exactly one 0xFA.
@@ -61,6 +59,7 @@
 // the full input space of channel/note/velocity.
 // -------------------------------------------------------------------------------------------
 
+#include "FakeMonotonicClock.h"
 #include "RecordingMidiOutput.h"
 #include "sequencer.h"
 #include "command.h"
@@ -182,7 +181,8 @@ bool runProperty2() {
         "command sequence, and the injected IMidiOutput is the sole/complete sink",
         [](const std::vector<GenCommand>& cmds) {
             RecordingMidiOutput recording;
-            sequencer::Sequencer seq(recording);  // reference member => sole emission sink
+            FakeMonotonicClock clock;
+            sequencer::Sequencer seq(recording, clock);  // injected output and time seams
             seq.init();
 
             for (const auto& c : cmds) {

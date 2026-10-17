@@ -16,11 +16,11 @@ of this plan.
 ## Tasks
 
 - [ ] 1. Establish deterministic host time and baseline instrumentation
-  - [ ] 1.1 Define an SDK-free `IMonotonicClock` and firmware `PicoMonotonicClock`
+  - [x] 1.1 Define an SDK-free `IMonotonicClock` and firmware `PicoMonotonicClock`
     - Express time as monotonic 64-bit microseconds
     - Inject the clock into the scheduler/sequencer without changing MIDI transport ownership
     - _Requirements: 1.1, 3.1, 11.1_
-  - [ ] 1.2 Add a controllable `FakeMonotonicClock` to the host harness
+  - [x] 1.2 Add a controllable `FakeMonotonicClock` to the host harness
     - Drive the production tick path at exact, early, and late timestamps
     - Cover wrap-safe arithmetic and representative BPM values
     - _Requirements: 3.1, 11.1, 11.2_
