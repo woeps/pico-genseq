@@ -22,6 +22,25 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 enable_testing()
 
 # ---------------------------------------------------------------------------
+# Sanitizer builds (performance-safe-foundation task 12.1, Req 11.4).
+#
+# Required host suites should run under AddressSanitizer + UndefinedBehavior-
+# Sanitizer where the toolchain supports them, to catch ownership and payload
+# lifetime bugs the fixed-capacity components rely on being absent. Opt in with
+#   cmake -B test/build -S test -DGENSEQ_SANITIZE=ON
+# and run ctest as usual; the flags apply to every target in this project. Off by
+# default so the normal build stays fast and dependency-free. GCC and Clang both
+# support these sanitizers; a toolchain that does not will simply reject the
+# flags at configure/compile time, which is the signal to build without them.
+# ---------------------------------------------------------------------------
+option(GENSEQ_SANITIZE "Build host tests with ASan + UBSan (task 12.1)" OFF)
+if(GENSEQ_SANITIZE)
+    message(STATUS "GENSEQ_SANITIZE=ON: building with -fsanitize=address,undefined")
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
+# ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 set(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
@@ -728,6 +747,62 @@ target_link_libraries(genseq_example_fault_ui_state PRIVATE genseq_emission)
 add_test(NAME genseq_example_fault_ui_state COMMAND genseq_example_fault_ui_state)
 
 # ---------------------------------------------------------------------------
+# Example test: backend-neutral A/B record store (task 10.1).
+#
+# Validates Req 9.1 + the A/B transactional shape for 9.6/9.7: commit alternates
+# slots and bumps generation; load selects the newest valid committed record; a
+# failed/interrupted commit preserves the previous record; capacity guard. Links
+# genseq_persistence (serialize/deserialize) + the in-memory FakeFlashStore.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_RECORD_STORE_SRC "${TEST_DIR}/example_record_store.cpp")
+
+add_executable(genseq_example_record_store "${EXAMPLE_RECORD_STORE_SRC}")
+target_include_directories(genseq_example_record_store PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/persistence"
+    "${TEST_DIR}/persistence"
+)
+target_link_libraries(genseq_example_record_store PRIVATE genseq_persistence)
+add_test(NAME genseq_example_record_store COMMAND genseq_example_record_store)
+
+# ---------------------------------------------------------------------------
+# Example test: persistent fault indication + explicit-Play ack (tasks 11.2/11.3).
+#
+# Validates Req 10.4/10.5/10.6: the fault matrix color is distinct and takes
+# precedence, does not auto-dismiss, and an explicit Play clears the latch (only
+# then). ui/state/FaultIndication.h + UIState.h are header-only.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_FAULT_INDICATION_SRC "${TEST_DIR}/example_fault_indication.cpp")
+
+add_executable(genseq_example_fault_indication "${EXAMPLE_FAULT_INDICATION_SRC}")
+target_include_directories(genseq_example_fault_indication PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/ui"
+    "${SRC_DIR}/ui/state"
+)
+target_link_libraries(genseq_example_fault_indication PRIVATE genseq_emission)
+add_test(NAME genseq_example_fault_indication COMMAND genseq_example_fault_indication)
+
+# ---------------------------------------------------------------------------
+# Example test: snapshot + save-coordination (task 8.3).
+#
+# Validates Req 8.1-8.9: draft/working/pending distinctions, mutation after
+# capture, a transactional A/B failure preserving the previous record, and that
+# unsafe coordination (capacity/injected failure) performs ZERO destructive
+# writes. Links genseq_persistence + the in-memory FakeFlashStore.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_SAVE_COORDINATION_SRC "${TEST_DIR}/example_save_coordination.cpp")
+
+add_executable(genseq_example_save_coordination "${EXAMPLE_SAVE_COORDINATION_SRC}")
+target_include_directories(genseq_example_save_coordination PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/persistence"
+    "${TEST_DIR}/persistence"
+)
+target_link_libraries(genseq_example_save_coordination PRIVATE genseq_persistence)
+add_test(NAME genseq_example_save_coordination COMMAND genseq_example_save_coordination)
+
+# ---------------------------------------------------------------------------
 # Property-test executable.
 #
 # The property tests (task 6.3+) live in test/*.cpp. They are auto-discovered
@@ -793,6 +868,11 @@ if(RAPIDCHECK_AVAILABLE)
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_PATTERN_SNAPSHOT_APPLY_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SAVE_SERVICE_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_FAULT_UI_STATE_SRC}")
+    # Wave-9 host examples (10.1 record-store, 11.2/11.3 fault-indication, 8.3
+    # save-coordination) are their own targets with their own main().
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_RECORD_STORE_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_FAULT_INDICATION_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SAVE_COORDINATION_SRC}")
 
     if(NOT TEST_SOURCES)
         message(STATUS

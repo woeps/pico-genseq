@@ -160,7 +160,7 @@ of this plan.
   - [x] 7.4 Apply complete Pattern snapshots atomically at boundaries
     - Avoid partial gate/pitch/velocity state and preserve current sounding-note lifecycle
     - _Requirements: 5.7, 6.8, 7.1_
-  - [ ] 7.5 Add boundary and coalescing integration tests
+  - [x] 7.5 Add boundary and coalescing integration tests
     - Queue operations before, on, and after boundaries across supported meters
     - Assert zero logical-tick application error
     - _Requirements: 6.1–6.9, 11.2_
@@ -176,7 +176,7 @@ of this plan.
     - Preserve existing distinct matrix outcome feedback
     - Track UI/input service gaps
     - _Requirements: 8.5–8.9_
-  - [ ] 8.3 Add snapshot and save-coordination host tests
+  - [x] 8.3 Add snapshot and save-coordination host tests
     - Cover draft/working/pending distinctions, mutation after capture, timeout, and failure
     - Assert unsafe coordination performs zero destructive writes
     - _Requirements: 8.1–8.9, 11.2_
@@ -202,7 +202,7 @@ of this plan.
     - _Requirements: 9.2–9.5, 9.9_
 
 - [ ] 10. Implement transactional persistence on the selected backend
-  - [ ] 10.1 Define backend-neutral record-store operations
+  - [x] 10.1 Define backend-neutral record-store operations
     - Keep serialization/orchestration independent from internal flash or external hardware
     - _Requirements: 9.1_
   - [ ] 10.2 Implement A/B slots or equivalent transactional commit
@@ -218,15 +218,15 @@ of this plan.
   - [x] 11.1 Add a distinct latched Timing Fault state to UI state
     - Preserve Working State and distinguish it from save/load feedback
     - _Requirements: 10.3, 10.4, 10.7_
-  - [ ] 11.2 Render persistent LED-matrix fault indication
+  - [x] 11.2 Render persistent LED-matrix fault indication
     - Do not auto-dismiss; keep input polling active
     - _Requirements: 10.4, 10.5_
-  - [ ] 11.3 Make explicit Play acknowledge and restart
+  - [x] 11.3 Make explicit Play acknowledge and restart
     - Clear the fault, reset runtime positions/pending invalid operations, start a new timeline
     - _Requirements: 10.5, 10.6_
 
 - [ ] 12. Final automated and hardware validation
-  - [ ] 12.1 Make required host tests reproducible
+  - [x] 12.1 Make required host tests reproducible
     - Register all required suites with CTest
     - Pin dependencies or provide always-available deterministic generated traces
     - Run sanitizer builds where supported
