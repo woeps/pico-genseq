@@ -13,36 +13,41 @@
 // Documented byte tables (design.md "Data Models"), reproduced as the reference model:
 //   Note-on (ch, note, vel): 0x90 | channelIndex, note & 0x7F, vel & 0x7F
 //   Note-off (ch, note):     0x80 | channelIndex, note & 0x7F, 0x00
-//   Play (clock enabled):    0xFA (START)
-//   Stop:                    a note-off triple for each active note, iterated ch 0..15, note 0..127
-//   channelIndex = (channel > 0 ? channel - 1 : 0) & 0x0F
+//   Play (clock enabled):    0xFA (START) on a stopped -> playing transition only
+//   Stop (clock enabled):    0xFC (STOP) on a playing -> stopped transition only; plus a
+//                            note-off triple for each active note (none active in this subset)
+//   channelIndex = canonical protocol channel 0..15 (common::MidiChannel; no 0/1 alias)
 //
 // -------------------------------------------------------------------------------------------
 // Reachable testable surface (see design.md "Testing Strategy", "Host build approach"):
 //
 // The Sequencer's PUBLIC API is init(), update(), processCommand(CommandMessage). The
-// MIDI-emitting members (sendMidiNoteOn/Off, sendMidiByte, play(), stop()) are PRIVATE and
+// MIDI-emitting members (NoteLifecycle emission, sendMidiByte, play(), stop()) are PRIVATE and
 // reachable only via processCommand(PLAY/STOP) and via the update() tick loop.
 //
 // This property injects a FakeMonotonicClock held at 0 and never calls update(), so the
-// tick loop does not advance. Consequently activeNotes[][] stays all-false and stop() emits
-// zero note-offs. Exact production tick-boundary behavior is exercised by
-// smoke_host_compilation.cpp using the same fake clock with controlled time advances.
+// tick loop does not advance. Consequently no note is ever owned and stop() emits
+// zero note-offs. Exact production tick-boundary behavior (including per-tick MIDI Clock
+// bytes) is exercised by smoke_host_compilation.cpp using the same fake clock with
+// controlled time advances.
 //
 // Reachable per-command emission (confirmed against src/sequencer/sequencer.cpp):
-//   PLAY               -> play():  midiClockEnabled defaults true -> emits exactly one 0xFA.
-//   STOP               -> stop():  emits a note-off for each active note; none are active
-//                                  in this reachable subset -> emits zero bytes.
+//   PLAY               -> play():  midiClockEnabled defaults true -> emits one 0xFA on a
+//                                  stopped->playing transition; a repeated PLAY emits nothing.
+//   STOP               -> stop():  emits one 0xFC on a playing->stopped transition (plus a
+//                                  note-off per active note; none active here); a repeated
+//                                  STOP emits nothing.
 //   BPM_SET            -> setBPM:  no MIDI bytes.
 //   PATTERN_ADD        -> addPattern: no MIDI bytes.
 //   PATTERN_ACTIVATE   -> activatePattern: sets a flag; no MIDI bytes (and update() is not
 //                                  driven, so an active empty pattern still emits nothing).
-//   PATTERN_DEACTIVATE -> deactivatePattern: no MIDI bytes.
-//   PATTERN_REMOVE     -> removePattern: no MIDI bytes.
+//   PATTERN_DEACTIVATE -> deactivatePattern: releases ownership (none held) -> no MIDI bytes.
+//   PATTERN_REMOVE     -> removePattern: releases ownership (none held) -> no MIDI bytes.
 //
-// So over this command subset the reference model reduces to: emit 0xFA for every PLAY and
-// nothing for every other command. This is a genuinely universal, input-driven statement:
-// the recorded stream must equal exactly (count and order) the 0xFA-per-PLAY stream. Asserting
+// So over this command subset the reference model reduces to a Start/Stop transport state
+// machine: 0xFA on each stopped->playing edge, 0xFC on each playing->stopped edge, nothing
+// otherwise. This is a genuinely universal, input-driven statement: the recorded stream must
+// equal exactly (count and order) the modeled transport stream. Asserting
 // exact equality of the whole vector proves (a) every emitted byte matches the documented
 // contract for the reached state (3.4), and (b) the RecordingMidiOutput is the sole sink and
 // captures the complete stream with nothing emitted by any other path (3.1, 5.3): if the
@@ -106,13 +111,27 @@ commands::CommandMessage toMessage(const GenCommand& c) {
 }
 
 // Reference model of the documented byte tables for the reachable command subset.
-// PLAY (clock enabled) -> 0xFA (START). No note is ever active in this subset, so STOP and
-// all pattern/bpm ops emit nothing.
+// Unified MIDI Clock Output (task 4.1, Req 2.1/2.3) with the default midiClockEnabled == true:
+//   - PLAY emits exactly one Start (0xFA) ONLY on a stopped -> playing transition. A PLAY
+//     while already playing is a deterministic no-op and emits nothing (Req 5.10).
+//   - STOP emits exactly one Stop (0xFC) ONLY on a playing -> stopped transition. A STOP while
+//     already stopped emits nothing.
+// No note is ever active in this subset (update() is never called with the clock held at 0),
+// so no note bytes and no per-tick Clock bytes are produced; pattern/bpm ops emit nothing.
 std::vector<uint8_t> referenceStream(const std::vector<GenCommand>& cmds) {
     std::vector<uint8_t> expected;
+    bool playing = false;
     for (const auto& c : cmds) {
         if (c.kind == CmdKind::Play) {
-            expected.push_back(sequencer::midi::SystemRealTimeMessage::START);  // 0xFA
+            if (!playing) {
+                expected.push_back(sequencer::midi::SystemRealTimeMessage::START);  // 0xFA
+                playing = true;
+            }
+        } else if (c.kind == CmdKind::Stop) {
+            if (playing) {
+                expected.push_back(sequencer::midi::SystemRealTimeMessage::STOP);  // 0xFC
+                playing = false;
+            }
         }
         // Every other reachable command emits no MIDI byte.
     }

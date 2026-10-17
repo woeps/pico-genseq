@@ -1,17 +1,36 @@
 #pragma once
 
 #include <cstdint>
-#include <map>
 #include <vector>
 
 #include "IMidiOutput.h"
 #include "IMonotonicClock.h"
+#include "NoteLifecycle.h"
 #include "PerformanceMetrics.h"
+#include "TransportTimeline.h"
 #include "hardware/uart.h"
 #include "../commands/command.h"
 #include "../common/pattern.h"
+#include "../common/PatternId.h"
 
 namespace sequencer {
+
+// Instrumented MIDI output adapter: forwards every byte to the real transport
+// while counting it and firing the dispatch trace markers. ALL MIDI emission —
+// transport bytes via sendMidiByte and note bytes via NoteLifecycle — goes
+// through one instrumented path so midiBytesDispatched and the PerformanceTrace
+// dispatch markers see the complete stream (Req 3.8 / 11.5). Defined in the
+// header because it is tiny and used by the Sequencer's member layout below.
+class MeteredMidiOutput : public IMidiOutput {
+public:
+    MeteredMidiOutput(IMidiOutput& inner, uint64_t& byteCounter)
+        : inner_(inner), byteCounter_(byteCounter) {}
+    void write(uint8_t byte) override;  // defined in sequencer.cpp (uses PerformanceTrace)
+
+private:
+    IMidiOutput& inner_;
+    uint64_t& byteCounter_;
+};
 
 // Main sequencer class
 class Sequencer {
@@ -28,19 +47,23 @@ public:
 private:
     IMidiOutput& output;
     IMonotonicClock& clock;
-    std::vector<common::Pattern> patterns;
-    uint16_t bpm;
-    bool playing;
-    uint64_t lastTickTime;
-    bool midiClockEnabled;
     PerformanceMetrics metrics{};
+    // Instrumented wrapper around `output`; constructed before noteLifecycle so
+    // the note service emits through the same counted/traced path.
+    MeteredMidiOutput meteredOutput;
+    std::vector<common::Pattern> patterns;
+    // Stable identity for each pattern slot, parallel to `patterns`. Note
+    // ownership binds to these ids, so removing/reordering a pattern never
+    // retargets another pattern's sounding note (tasks 2.2, 2.4).
+    std::vector<common::PatternId> patternIds;
+    common::PatternIdAllocator idAllocator;
+    bool playing;
+    bool midiClockEnabled;
 
-    // Track active notes: activeNotes[channel][note] = true if the note is active
-    bool activeNotes[16][128] = {{false}};
-
-    // Track which notes are active for each pattern and position
-    // patternNotes[patternIndex][position] = note number
-    std::map<size_t, std::map<uint32_t, uint8_t>> patternNotes;
+    // Global musical timeline (task 3.2) and the single note-ownership service
+    // all emission passes through (task 2.3).
+    TransportTimeline timeline;
+    NoteLifecycle noteLifecycle;
 
     void play();
     void stop();
@@ -59,8 +82,10 @@ private:
                                common::PlayingOrder order,
                                const std::vector<uint8_t>& velocities);
 
-    void sendMidiNoteOn(common::MidiChannel channel, uint8_t note, uint8_t velocity);
-    void sendMidiNoteOff(common::MidiChannel channel, uint8_t note);
+    // Advance one logical tick: service every active pattern's gate edge through
+    // NoteLifecycle and emit a MIDI Clock byte when enabled.
+    void serviceTick();
+
     void sendMidiByte(uint8_t byte);
     bool canApplyCommand(const commands::CommandMessage& msg) const;
 };

@@ -521,6 +521,27 @@ target_link_libraries(genseq_example_transport_timeline PRIVATE genseq_emission)
 add_test(NAME genseq_example_transport_timeline COMMAND genseq_example_transport_timeline)
 
 # ---------------------------------------------------------------------------
+# Example test: Sequencer integration of NoteLifecycle + TransportTimeline
+# (tasks 2.4, 2.5, 3.3, 4.1).
+#
+# Drives the REAL Sequencer through its public API with a FakeMonotonicClock to
+# validate the wave-3 hot-path wiring: falling edges release the recorded onset
+# (even after a pitch edit), Stop/mute/remove release ownership, repeated Play
+# is a no-op, and the unified MIDI Clock emits one Start / one Clock per tick /
+# one Stop.
+#
+# It links genseq_emission (real Sequencer + common) and uses the host
+# RecordingMidiOutput + FakeMonotonicClock; NO Pico SDK libs, NO RapidCheck. Its
+# own main() means it MUST be excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_SEQUENCER_INTEGRATION_SRC "${TEST_DIR}/example_sequencer_integration.cpp")
+
+add_executable(genseq_example_sequencer_integration "${EXAMPLE_SEQUENCER_INTEGRATION_SRC}")
+target_include_directories(genseq_example_sequencer_integration PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_sequencer_integration PRIVATE genseq_emission)
+add_test(NAME genseq_example_sequencer_integration COMMAND genseq_example_sequencer_integration)
+
+# ---------------------------------------------------------------------------
 # Property-test executable.
 #
 # The property tests (task 6.3+) live in test/*.cpp. They are auto-discovered
@@ -563,6 +584,9 @@ if(RAPIDCHECK_AVAILABLE)
     # dedicated targets with their own main(); exclude them from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_NOTE_LIFECYCLE_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_TRANSPORT_TIMELINE_SRC}")
+    # The Sequencer integration example (tasks 2.4/2.5/3.3/4.1) is its own target
+    # with its own main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SEQUENCER_INTEGRATION_SRC}")
 
     if(NOT TEST_SOURCES)
         message(STATUS

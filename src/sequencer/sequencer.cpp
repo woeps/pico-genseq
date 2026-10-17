@@ -12,12 +12,22 @@ namespace sequencer {
 Sequencer::Sequencer(IMidiOutput& output, IMonotonicClock& clock)
     : output(output),
       clock(clock),
+      meteredOutput(output, metrics.midiBytesDispatched),
       patterns({common::Pattern()}),
-      bpm(120),
       playing(false),
-      lastTickTime(clock.nowMicros()),
-      midiClockEnabled(true) {
+      midiClockEnabled(true),
+      noteLifecycle(meteredOutput) {
     // MIDI transport and monotonic time are injected; no hardware setup here.
+    timeline.setBpm(120);
+    // Allocate a stable identity for the initial pattern slot.
+    patternIds.push_back(idAllocator.allocate());
+}
+
+void MeteredMidiOutput::write(uint8_t byte) {
+    instrumentation::PerformanceTrace::midiDispatchBegin();
+    inner_.write(byte);
+    instrumentation::PerformanceTrace::midiDispatchEnd();
+    ++byteCounter_;
 }
 
 void Sequencer::init() {
@@ -27,51 +37,67 @@ void Sequencer::init() {
 void Sequencer::update() {
     if (!playing) return;
 
-    // Calculate time for one tick based on BPM.
-    const uint64_t tickDurationUs = 60ULL * 1000ULL * 1000ULL / (bpm * PPQN);
-
-    // Advance from the ideal prior deadline so ordinary polling jitter does not
-    // shift the phase. Milestone 2's later Scheduler work will replace this
-    // one-tick service behavior with bounded reconciliation and fault handling.
+    // Drive the global Transport Timeline from monotonic time. Each due tick is
+    // serviced from its intended timestamp so ordinary polling jitter does not
+    // shift the musical phase. Milestone 2's later Scheduler work (task 5.x)
+    // will replace this one-tick service with bounded reconciliation and fault
+    // handling; for now we advance one tick per due deadline.
     const uint64_t currentTime = clock.nowMicros();
-    const uint64_t dueTime = lastTickTime + tickDurationUs;
+    const uint64_t dueTime = timeline.nextTickMicros();
     if (currentTime >= dueTime) {
+        const uint64_t tickDurationUs = timeline.currentTickDurationMicros();
         const uint64_t latenessUs = currentTime - dueTime;
-        const uint64_t missedTickCount = latenessUs / tickDurationUs;
+        const uint64_t missedTickCount =
+            tickDurationUs ? (latenessUs / tickDurationUs) : 0;
         metrics.observeSchedulerTick(latenessUs, missedTickCount);
-        lastTickTime = dueTime;
+
+        timeline.advance();  // advance phase/tick index from the intended deadline
 
         instrumentation::PerformanceTrace::tickBegin();
+        serviceTick();
+        instrumentation::PerformanceTrace::tickEnd();
+    }
+}
 
-        // Process all active patterns.
-        for (auto& pattern : patterns) {
-            if (!pattern.isActive()) continue;
+void Sequencer::serviceTick() {
+    // MIDI Clock: at PPQN 24, 24 Clock messages per quarter note means exactly
+    // one Clock per logical tick. Emitted only when the unified setting is on
+    // (task 4.1, Req 2.2).
+    if (midiClockEnabled) {
+        sendMidiByte(midi::SystemRealTimeMessage::TIMING_CLOCK);
+    }
 
-            common::GateSet& gateSet = pattern.getGateSet();
-            common::PitchSet& pitchSet = pattern.getPitchSet();
-            common::VelocitySet& velocitySet = pattern.getVelocitySet();
+    for (size_t i = 0; i < patterns.size(); ++i) {
+        common::Pattern& pattern = patterns[i];
+        if (!pattern.isActive()) continue;
 
-            if (pitchSet.getPitches().empty() || velocitySet.getVelocities().empty() ||
-                gateSet.getGates().empty()) {
-                continue;
-            }
+        common::GateSet& gateSet = pattern.getGateSet();
+        common::PitchSet& pitchSet = pattern.getPitchSet();
+        common::VelocitySet& velocitySet = pattern.getVelocitySet();
 
-            const common::Flank flank = gateSet.getFlank();
-
-            if (flank == common::RISING) {
-                sendMidiNoteOn(pattern.getCanonicalChannel(), pitchSet.getPitch(),
-                               velocitySet.getVelocity());
-            } else if (flank == common::FALLING) {
-                sendMidiNoteOff(pattern.getCanonicalChannel(), pitchSet.getPitch());
-                pitchSet.advance();
-                velocitySet.advance();
-            }
-            const uint32_t nextGatePosition = static_cast<uint32_t>(
-                (gateSet.getPosition() + 1) % gateSet.getGates().size());
-            gateSet.setPosition(nextGatePosition);
+        if (pitchSet.getPitches().empty() || velocitySet.getVelocities().empty() ||
+            gateSet.getGates().empty()) {
+            continue;
         }
 
-        instrumentation::PerformanceTrace::tickEnd();
+        const common::PatternId id = patternIds[i];
+        const common::Flank flank = gateSet.getFlank();
+
+        if (flank == common::RISING) {
+            // Record ownership at onset by the pattern's canonical channel and
+            // the exact pitch sounding NOW (task 2.4, Req 5.1).
+            noteLifecycle.noteOn(id, pattern.getCanonicalChannel(), pitchSet.getPitch(),
+                                 velocitySet.getVelocity());
+        } else if (flank == common::FALLING) {
+            // Release the captured onset via its recorded identity, NOT the
+            // pattern's current (possibly edited) pitch (task 2.4, Req 5.2).
+            noteLifecycle.releasePattern(id);
+            pitchSet.advance();
+            velocitySet.advance();
+        }
+        const uint32_t nextGatePosition = static_cast<uint32_t>(
+            (gateSet.getPosition() + 1) % gateSet.getGates().size());
+        gateSet.setPosition(nextGatePosition);
     }
 }
 
@@ -149,33 +175,45 @@ void Sequencer::resetPerformanceMetrics() {
 }
 
 void Sequencer::play() {
-    // Send MIDI Start message if MIDI clock is enabled.
+    // Deterministic repeated Play (Req 5.10): a Play while already playing does
+    // NOT abandon existing ownership and does NOT emit an unmatched Start/Stop.
+    if (playing) return;
+
+    // Fresh start from defined positions (Req 1.6): reset every pattern's
+    // runtime positions so playback begins at the start of each cycle.
+    for (auto& pattern : patterns) {
+        pattern.getGateSet().reset();
+        pattern.getPitchSet().reset();
+        pattern.getVelocitySet().reset();
+    }
+
+    // Begin one monotonic Transport Timeline shared by every pattern (Req 1.1).
+    timeline.start(clock.nowMicros());
+    playing = true;
+
+    // Unified MIDI Clock Output (task 4.1, Req 2.1): exactly one Start before
+    // the first Clock or note event, only when enabled.
     if (midiClockEnabled) {
         sendMidiByte(midi::SystemRealTimeMessage::START);
     }
-
-    // Set playing state and initialize timing.
-    playing = true;
-    lastTickTime = clock.nowMicros();
-
-    // Clear pattern notes tracking to start fresh.
-    patternNotes.clear();
 }
 
 void Sequencer::stop() {
+    const bool wasPlaying = playing;
     playing = false;
+    timeline.stop();
 
-    // Send note off only for active notes. activeNotes is indexed by canonical
-    // protocol channel (0..15), so release through the same canonical channel.
-    for (uint8_t protocolChannel = 0; protocolChannel < 16; protocolChannel++) {
-        for (uint8_t note = 0; note < 128; note++) {
-            if (activeNotes[protocolChannel][note]) {
-                sendMidiNoteOff(common::MidiChannel(protocolChannel), note);
-            }
-        }
+    // Release every owned note and clear all ownership (Req 5.8).
+    noteLifecycle.releaseAll();
+
+    // Unified MIDI Clock Output (task 4.1, Req 2.3): exactly one Stop for this
+    // transition to stopped, only when enabled. Emitted only if we were actually
+    // playing so a redundant Stop produces no unmatched transport message.
+    if (midiClockEnabled && wasPlaying) {
+        sendMidiByte(midi::SystemRealTimeMessage::STOP);
     }
 
-    // Set all sets in all patterns to position 0.
+    // Reset every pattern's runtime positions to their defined start (Req 1.6).
     for (auto& pattern : patterns) {
         pattern.getGateSet().reset();
         pattern.getPitchSet().reset();
@@ -184,16 +222,26 @@ void Sequencer::stop() {
 }
 
 void Sequencer::setBPM(uint16_t bpm) {
-    this->bpm = bpm;
+    // Phase-preserving BPM change (Req 1.5): the timeline keeps the current tick
+    // index and intended timestamp and applies the new duration from the next
+    // tick. It does not restart pattern positions.
+    timeline.setBpm(bpm);
 }
 
 void Sequencer::addPattern(const common::Pattern& pattern) {
+    if (patterns.size() >= common::PATTERN_CAPACITY) return;  // fixed capacity
     patterns.push_back(pattern);
+    patternIds.push_back(idAllocator.allocate());
 }
 
 void Sequencer::removePattern(size_t index) {
     if (patterns.size() <= 1 || index >= patterns.size()) return;
+    // Release every note this pattern owns BEFORE destroying its runtime state
+    // so removal can never strand a sounding note (Req 5.6).
+    noteLifecycle.releasePattern(patternIds[index]);
+    idAllocator.release(patternIds[index]);
     patterns.erase(patterns.begin() + index);
+    patternIds.erase(patternIds.begin() + index);
 }
 
 void Sequencer::activatePattern(size_t index) {
@@ -204,12 +252,20 @@ void Sequencer::activatePattern(size_t index) {
 
 void Sequencer::deactivatePattern(size_t index) {
     if (index < patterns.size()) {
+        // Mute releases ownership at its effective boundary so a muted pattern
+        // leaves no hanging note (Req 5.6).
+        noteLifecycle.releasePattern(patternIds[index]);
         patterns[index].setActive(false);
     }
 }
 
 void Sequencer::setPatternGateSet(size_t patternIndex,
                                   const std::vector<bool>& gates) {
+    // Set replacement is note-safe without extra work: NoteLifecycle holds the
+    // sounding note by its recorded onset identity, independent of the pattern's
+    // gate/pitch/velocity material, so the currently sounding note completes
+    // using its original lifecycle and the replacement controls the NEXT note
+    // (task 2.5, Req 5.7). An empty gate set simply produces no further edges.
     if (patternIndex < patterns.size()) {
         patterns[patternIndex].setGateSet(common::GateSet(gates));
     }
@@ -233,35 +289,10 @@ void Sequencer::setPatternVelocitySet(size_t patternIndex, uint8_t count,
     patterns[patternIndex].setVelocitySet(velocitySet);
 }
 
-void Sequencer::sendMidiNoteOn(common::MidiChannel channel, uint8_t note, uint8_t velocity) {
-    // Ensure note is within range; the channel is already canonical 0..15.
-    note = note & 0x7F;
-
-    // Track this note as active, keyed by canonical protocol channel.
-    activeNotes[channel.value][note] = true;
-
-    sendMidiByte(midi::ChannelVoiceMessage::NOTE_ON | common::midi_channel::toStatusNibble(channel));
-    sendMidiByte(note & 0x7F);
-    sendMidiByte(velocity & 0x7F);
-}
-
-void Sequencer::sendMidiNoteOff(common::MidiChannel channel, uint8_t note) {
-    // Ensure note is within range; the channel is already canonical 0..15.
-    note = note & 0x7F;
-
-    // Mark this note as inactive, keyed by canonical protocol channel.
-    activeNotes[channel.value][note] = false;
-
-    sendMidiByte(midi::ChannelVoiceMessage::NOTE_OFF | common::midi_channel::toStatusNibble(channel));
-    sendMidiByte(note & 0x7F);
-    sendMidiByte(0);
-}
-
 void Sequencer::sendMidiByte(uint8_t byte) {
-    instrumentation::PerformanceTrace::midiDispatchBegin();
-    output.write(byte);
-    instrumentation::PerformanceTrace::midiDispatchEnd();
-    ++metrics.midiBytesDispatched;
+    // Transport bytes (Start/Clock/Stop) emit through the same instrumented
+    // path as note bytes so counting and tracing stay consistent.
+    meteredOutput.write(byte);
 }
 
 }  // namespace sequencer

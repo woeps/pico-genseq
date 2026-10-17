@@ -49,12 +49,12 @@ of this plan.
     - Emit every approved retrigger and defer final Note Off until the last owner releases
     - Provide release-pattern, release-all, and panic operations
     - _Requirements: 5.1–5.5, 5.8_
-  - [ ] 2.4 Route normal gate edges and Stop through `NoteLifecycle`
+  - [x] 2.4 Route normal gate edges and Stop through `NoteLifecycle`
     - Falling edges release the captured onset rather than the current pitch value
     - Stop leaves all ownership empty and resets Pattern runtime positions
     - Define deterministic repeated-Play behavior
     - _Requirements: 5.2, 5.8, 5.10_
-  - [ ] 2.5 Make live destructive operations note-safe
+  - [x] 2.5 Make live destructive operations note-safe
     - Mute/remove release ownership at their effective boundary
     - Gate/pitch/velocity replacement lets the current note finish and affects the next note
     - Handle empty sets and all-high gate sequences without stranded notes
@@ -74,7 +74,7 @@ of this plan.
     - Own BPM, PPQN, meter, logical tick index, beat/bar indices, and intended timestamps
     - Preserve phase across BPM changes using fixed-point or remainder accumulation
     - _Requirements: 1.1–1.5_
-  - [ ] 3.3 Align Pattern start/stop behavior with the timeline
+  - [x] 3.3 Align Pattern start/stop behavior with the timeline
     - Patterns keep independent cycle lengths while sharing transport boundaries
     - Normal restart and fault recovery begin from defined starting positions
     - _Requirements: 1.4, 1.6_
@@ -83,7 +83,7 @@ of this plan.
     - _Requirements: 1.1–1.7, 11.2_
 
 - [ ] 4. Complete MIDI transport and bounded output serialization
-  - [ ] 4.1 Implement the unified MIDI Clock Output setting
+  - [x] 4.1 Implement the unified MIDI Clock Output setting
     - Enabled: exactly one Start, 24 Clock messages per quarter note, exactly one Stop
     - Disabled: no Start/Clock/Stop while notes continue normally
     - Preserve compatibility with persisted `midiClockEnabled`
