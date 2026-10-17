@@ -37,6 +37,7 @@ The approved Milestone 2 specification is split into:
 - [Requirements](.kiro/specs/performance-safe-foundation/requirements.md)
 - [Design](.kiro/specs/performance-safe-foundation/design.md)
 - [Implementation Tasks](.kiro/specs/performance-safe-foundation/tasks.md)
+- [Hardware Timing Baseline (task 1.4 evidence)](docs/development/baseline/README.md) — BS05U captures of the current implementation; logical jitter ≈ 0, blocking save stalls MIDI ~33 ms (the defect this milestone fixes).
 
 This milestone establishes the invariants required before expanding the generative engine:
 

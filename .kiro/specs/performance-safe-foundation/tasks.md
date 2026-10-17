@@ -29,7 +29,7 @@ of this plan.
     - Provide trace points for tick, MIDI dispatch, operation apply, save, and fault transitions
     - Ensure release builds do not print from timing-critical code
     - _Requirements: 3.8, 4.4, 7.10, 11.5_
-  - [ ] 1.4 Capture and document the current hardware baseline
+  - [x] 1.4 Capture and document the current hardware baseline
     - Measure normal tick timing, maximum-pattern output, edit traffic, and current save pause
     - Separate logical scheduling jitter from UART wire serialization
     - Store commands, analyzer configuration, captures, and observed maxima
