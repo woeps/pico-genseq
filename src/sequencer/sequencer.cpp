@@ -1,11 +1,14 @@
 #include "sequencer.h"
 #include "midi_messages.h"
+#include "Scheduler.h"
 #include "../common/pitch_set.h"
 #include "../common/velocity_set.h"
 #include "../common/gate_set.h"
 #include "../common/const.h"
 #include "../common/pattern.h"
 #include "../instrumentation/PerformanceTrace.h"
+
+#include <utility>
 
 namespace sequencer {
 
@@ -37,26 +40,23 @@ void Sequencer::init() {
 void Sequencer::update() {
     if (!playing) return;
 
-    // Drive the global Transport Timeline from monotonic time. Each due tick is
-    // serviced from its intended timestamp so ordinary polling jitter does not
-    // shift the musical phase. Milestone 2's later Scheduler work (task 5.x)
-    // will replace this one-tick service with bounded reconciliation and fault
-    // handling; for now we advance one tick per due deadline.
+    // All musical time advances through Scheduler::service(now) (task 5.1,
+    // Req 3.1-3.3). The scheduler runs immediate safety work first, then
+    // advances every due tick up to its documented per-service work budget,
+    // giving each tick its intended timestamp (so polling jitter does not shift
+    // the musical phase) and recording lateness. Bounded reconciliation and the
+    // one-beat fail-closed fault (tasks 5.2 / 5.3) extend this front end next;
+    // the safety callback is a no-op placeholder until then.
     const uint64_t currentTime = clock.nowMicros();
-    const uint64_t dueTime = timeline.nextTickMicros();
-    if (currentTime >= dueTime) {
-        const uint64_t tickDurationUs = timeline.currentTickDurationMicros();
-        const uint64_t latenessUs = currentTime - dueTime;
-        const uint64_t missedTickCount =
-            tickDurationUs ? (latenessUs / tickDurationUs) : 0;
-        metrics.observeSchedulerTick(latenessUs, missedTickCount);
 
-        timeline.advance();  // advance phase/tick index from the intended deadline
-
+    auto safety = []() { /* fault/release work lands in tasks 5.2/5.3 */ };
+    auto tick = [this](uint64_t /*intendedMicros*/) {
         instrumentation::PerformanceTrace::tickBegin();
         serviceTick();
         instrumentation::PerformanceTrace::tickEnd();
-    }
+    };
+    Scheduler<decltype(safety), decltype(tick)> scheduler(timeline, metrics);
+    scheduler.service(currentTime, std::move(safety), std::move(tick));
 }
 
 void Sequencer::serviceTick() {

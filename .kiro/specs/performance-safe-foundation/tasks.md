@@ -59,7 +59,7 @@ of this plan.
     - Gate/pitch/velocity replacement lets the current note finish and affects the next note
     - Handle empty sets and all-high gate sequences without stranded notes
     - _Requirements: 5.6, 5.7_
-  - [ ] 2.6 Add model-based note lifecycle tests
+  - [x] 2.6 Add model-based note lifecycle tests
     - Cover overlaps, retriggers, edits, mute, remove, Stop, panic, repeated Play, and fault cleanup
     - Assert every generated trace ending in Stop/fault has zero ownership
     - _Requirements: 5.1–5.10, 11.2, 11.3_
@@ -78,7 +78,7 @@ of this plan.
     - Patterns keep independent cycle lengths while sharing transport boundaries
     - Normal restart and fault recovery begin from defined starting positions
     - _Requirements: 1.4, 1.6_
-  - [ ] 3.4 Add exhaustive meter and boundary tests
+  - [x] 3.4 Add exhaustive meter and boundary tests
     - Cover each supported denominator/numerator, BPM 40/120/255, and long-run phase
     - _Requirements: 1.1–1.7, 11.2_
 
@@ -88,7 +88,7 @@ of this plan.
     - Disabled: no Start/Clock/Stop while notes continue normally
     - Preserve compatibility with persisted `midiClockEnabled`
     - _Requirements: 2.1–2.6_
-  - [ ] 4.2 Add a fixed-capacity MIDI event queue
+  - [x] 4.2 Add a fixed-capacity MIDI event queue
     - Deterministic ordering for coincident events
     - Legal priority/interleaving for MIDI real-time messages
     - Reserved capacity or bounded direct handling for release/Stop/panic
@@ -104,7 +104,7 @@ of this plan.
     - _Requirements: 2.1–2.6, 4.1–4.7, 11.2_
 
 - [ ] 5. Implement deterministic scheduler recovery and Timing Fault
-  - [ ] 5.1 Refactor sequencing behind `Scheduler::service(now)`
+  - [x] 5.1 Refactor sequencing behind `Scheduler::service(now)`
     - Give every tick an intended timestamp and documented per-service work budget
     - Prioritize immediate safety work before ordinary edits
     - _Requirements: 3.1–3.3_

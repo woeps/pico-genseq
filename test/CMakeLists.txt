@@ -542,6 +542,45 @@ target_link_libraries(genseq_example_sequencer_integration PRIVATE genseq_emissi
 add_test(NAME genseq_example_sequencer_integration COMMAND genseq_example_sequencer_integration)
 
 # ---------------------------------------------------------------------------
+# Example test: fixed-capacity MIDI event queue (task 4.2).
+#
+# A standalone example validating Requirements 4.1, 4.2, 4.5, 4.7: deterministic
+# coincident ordering (timestamp, class priority, PatternId), real-time priority,
+# fixed capacity with no growth, and reserved safety capacity (ordinary events
+# refused into the reserve; a full-queue safety event reports DirectRequired).
+#
+# MidiEventQueue.h is header-only and SDK-free (only <cstdint> + canonical
+# PatternId). Links genseq_emission for consistency; NO Pico SDK libs, NO
+# RapidCheck. Its own main() means it MUST be excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_MIDI_EVENT_QUEUE_SRC "${TEST_DIR}/example_midi_event_queue.cpp")
+
+add_executable(genseq_example_midi_event_queue "${EXAMPLE_MIDI_EVENT_QUEUE_SRC}")
+target_include_directories(genseq_example_midi_event_queue PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_midi_event_queue PRIVATE genseq_emission)
+add_test(NAME genseq_example_midi_event_queue COMMAND genseq_example_midi_event_queue)
+
+# ---------------------------------------------------------------------------
+# Example test: Scheduler::service(now) front end (task 5.1).
+#
+# A standalone example validating Requirements 3.1, 3.2, 3.3: every serviced tick
+# carries its intended (deadline) timestamp independent of the observation time,
+# immediate safety work runs first on every call, and the per-service work is
+# bounded by a documented tick budget (surplus overdue ticks reported, not
+# drained in a burst; the next call resumes from the authoritative phase).
+#
+# Scheduler.h / TransportTimeline.h / PerformanceMetrics.h are header-only and
+# SDK-free. Links genseq_emission for consistency; NO Pico SDK libs, NO
+# RapidCheck. Its own main() means it MUST be excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_SCHEDULER_SRC "${TEST_DIR}/example_scheduler.cpp")
+
+add_executable(genseq_example_scheduler "${EXAMPLE_SCHEDULER_SRC}")
+target_include_directories(genseq_example_scheduler PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_scheduler PRIVATE genseq_emission)
+add_test(NAME genseq_example_scheduler COMMAND genseq_example_scheduler)
+
+# ---------------------------------------------------------------------------
 # Property-test executable.
 #
 # The property tests (task 6.3+) live in test/*.cpp. They are auto-discovered
@@ -587,6 +626,10 @@ if(RAPIDCHECK_AVAILABLE)
     # The Sequencer integration example (tasks 2.4/2.5/3.3/4.1) is its own target
     # with its own main(); exclude it from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SEQUENCER_INTEGRATION_SRC}")
+    # The MIDI event queue (4.2) and Scheduler (5.1) examples are their own
+    # targets with their own main(); exclude them from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_MIDI_EVENT_QUEUE_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SCHEDULER_SRC}")
 
     if(NOT TEST_SOURCES)
         message(STATUS

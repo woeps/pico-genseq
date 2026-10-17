@@ -168,30 +168,42 @@ bool verifyExactTickBoundary(uint16_t bpm) {
         return false;
     }
 
-    // Jump four periods past the third tick's deadline. The current
-    // pre-reconciliation scheduler services one overdue tick (the fourth) and
-    // records the logical deadlines missed behind it. This is baseline
-    // instrumentation for the later reconciliation task. Because the timeline
-    // carries a sub-microsecond remainder at BPMs that do not divide evenly,
-    // the exact lateness/missed values can differ by at most one tick/µs, so we
-    // assert tolerant bounds rather than brittle equality.
+    // Jump four periods past the third tick's deadline. The task-5.1 Scheduler
+    // drains every due tick in one service() call UP TO its documented work
+    // budget (kDefaultTickBudget == 8), instead of the old one-tick-per-update
+    // behavior. Jumping 4 * floor(tickDuration) past deadline(3) makes either
+    // three or four further ticks overdue — the exact count depends on the
+    // sub-microsecond remainder the timeline carries at BPMs that do not divide
+    // 60e6/(bpm*24) evenly (BPM 40 is exact -> 4 catch-up ticks; 120/255 carry a
+    // remainder -> 3). All are well within the budget, so one update() services
+    // them all from their intended deadlines — bounded catch-up, not a burst.
+    // Each serviced tick emits one Clock plus its gate-edge note. We therefore
+    // assert tolerant bounds and strong internal self-consistency rather than a
+    // single brittle count.
     clock.setMicros(deadline(3) + 4 * tickDurationUs);
     seq.update();
 
     const sequencer::PerformanceMetrics& metrics = seq.performanceMetrics();
-    // Lateness is measured against the fourth tick's exact deadline.
+    // The first (most overdue) catch-up tick is tick 4; its lateness is measured
+    // against tick 4's exact deadline and is the maximum this call.
     const uint64_t expectedLatenessApprox =
         (deadline(3) + 4 * tickDurationUs) - deadline(4);
     const bool latenessOk =
         metrics.maxSchedulerLatenessUs >= (expectedLatenessApprox >= 2 ? expectedLatenessApprox - 2 : 0) &&
         metrics.maxSchedulerLatenessUs <= expectedLatenessApprox + 2;
+    // 3 earlier ticks + {3 or 4} catch-up ticks = 6 or 7 total; each catch-up
+    // tick adds exactly 4 bytes (Clock + note triple) to the 13 bytes through
+    // tick 3, so midi is 25 or 29 and MUST equal the recorded stream length.
+    const uint64_t ticks = metrics.logicalTicksServiced;
+    const bool ticksOk = (ticks == 6 || ticks == 7);
+    const uint64_t expectedMidi = 13 + 4 * (ticks - 3);
     const bool metricsMatch =
-        metrics.logicalTicksServiced == 4 &&
+        ticksOk &&
         latenessOk &&
-        (metrics.missedLogicalTicks == 2 || metrics.missedLogicalTicks == 3) &&
+        (metrics.missedLogicalTicks >= 3 && metrics.missedLogicalTicks <= 6) &&
         metrics.reconciliationCount == 0 &&
         metrics.midiBytesDispatched == recording.record().size() &&
-        metrics.midiBytesDispatched == 17 &&  // 13 note/transport bytes + 4 per-tick Clock bytes
+        metrics.midiBytesDispatched == expectedMidi &&
         metrics.operationsApplied == 3 &&
         metrics.midiQueueHighWater == 0 &&
         metrics.commandQueueHighWater == 0 &&
