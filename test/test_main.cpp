@@ -18,6 +18,7 @@ bool runProperty1();  // property1_bytestream_preservation.cpp
 bool runProperty2();  // property2_sequencer_equivalence.cpp
 bool runProperty3();  // property3_note_lifecycle_model.cpp (perf-safe task 2.6)
 bool runProperty4Meter();  // property4_meter_boundary.cpp (perf-safe task 3.4)
+bool runProperty5MidiStream();  // property5_midi_stream.cpp (perf-safe task 4.4)
 bool runPersistProperty1();  // property1_persist_roundtrip.cpp (persist-settings Property 1)
 bool runPersistProperty2();  // property2_store_roundtrip.cpp (persist-settings Property 2)
 bool runPersistProperty3();  // property3_crc_detection.cpp (persist-settings Property 3)
@@ -31,6 +32,7 @@ int main() {
     ok &= runProperty2();
     ok &= runProperty3();
     ok &= runProperty4Meter();
+    ok &= runProperty5MidiStream();
     ok &= runPersistProperty1();
     ok &= runPersistProperty2();
     ok &= runPersistProperty3();

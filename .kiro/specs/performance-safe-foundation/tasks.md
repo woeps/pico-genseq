@@ -98,7 +98,7 @@ of this plan.
     - Enter Timing Fault after one beat of sustained wire-capacity overload
     - Never retain an unbounded delayed-event queue
     - _Requirements: 4.4–4.6_
-  - [ ] 4.4 Add host MIDI stream and ordering tests
+  - [x] 4.4 Add host MIDI stream and ordering tests
     - Verify transport on/off, coincident note ordering, real-time interleaving, and overload
     - Keep logical scheduling assertions separate from modeled wire skew
     - _Requirements: 2.1–2.6, 4.1–4.7, 11.2_
@@ -117,7 +117,7 @@ of this plan.
     - Stop new events, release ownership, emit optional Stop, preserve Working State
     - Latch cause and metrics; prohibit automatic restart
     - _Requirements: 3.7, 10.1–10.7_
-  - [ ] 5.4 Add fake-clock scheduler and fault tests
+  - [x] 5.4 Add fake-clock scheduler and fault tests
     - Cover just-under, exactly-at, and beyond-one-beat lateness
     - Verify no catch-up bursts and explicit Play restart from the beginning
     - _Requirements: 3.1–3.8, 10.1–10.7, 11.1–11.3_
@@ -131,13 +131,13 @@ of this plan.
     - Bind updates to stable Pattern identities
     - Reject stale Pattern generations
     - _Requirements: 6.9, 7.8_
-  - [ ] 6.3 Add priority, coalescing, barriers, and saturation policy
+  - [x] 6.3 Add priority, coalescing, barriers, and saturation policy
     - Prioritize Stop/panic/fault
     - Coalesce compatible replaceable edits latest-wins
     - Never coalesce across transport, remove, or snapshot barriers
     - Never block indefinitely when full
     - _Requirements: 7.5–7.7, 7.11_
-  - [ ] 6.4 Remove steady-state allocation and logging from core1 command handling
+  - [x] 6.4 Remove steady-state allocation and logging from core1 command handling
     - Use fixed-capacity Pattern snapshots and bounded per-cycle draining
     - _Requirements: 7.4, 7.9, 7.10_
   - [ ] 6.5 Add inbox stress and model tests
@@ -146,7 +146,7 @@ of this plan.
     - _Requirements: 7.1–7.11, 11.2_
 
 - [ ] 7. Add immediate, beat, and bar operation application
-  - [ ] 7.1 Implement `TimingPolicy` and effective-tick calculation
+  - [x] 7.1 Implement `TimingPolicy` and effective-tick calculation
     - Resolve Immediate, Next Beat, and Next Bar from the Transport Timeline
     - _Requirements: 6.1, 6.8_
   - [ ] 7.2 Encode approved per-operation defaults

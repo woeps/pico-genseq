@@ -612,6 +612,49 @@ target_link_libraries(genseq_example_command_inbox PRIVATE genseq_emission)
 add_test(NAME genseq_example_command_inbox COMMAND genseq_example_command_inbox)
 
 # ---------------------------------------------------------------------------
+# Example test: fake-clock scheduler + fault integration (task 5.4).
+#
+# Drives the REAL Sequencer across the three lateness regimes: under one beat
+# (reconcile, no catch-up burst, no fault), at/beyond one beat (fail closed:
+# release notes, one Stop, latched cause, no auto-restart), and explicit Play
+# restart after a fault. Links genseq_emission; NO SDK libs, NO RapidCheck.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_SCHEDULER_FAULT_SRC "${TEST_DIR}/example_scheduler_fault.cpp")
+
+add_executable(genseq_example_scheduler_fault "${EXAMPLE_SCHEDULER_FAULT_SRC}")
+target_include_directories(genseq_example_scheduler_fault PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_scheduler_fault PRIVATE genseq_emission)
+add_test(NAME genseq_example_scheduler_fault COMMAND genseq_example_scheduler_fault)
+
+# ---------------------------------------------------------------------------
+# Example test: fixed-capacity Pattern snapshot (task 6.4).
+#
+# Validates the allocation-free container core1 decodes commands into: gate
+# bitset round-trip, count clamping at protocol caps, pitch/velocity round-trip,
+# clear-and-reuse, and the documented fixed footprint. Header-only, SDK-free.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_PATTERN_SNAPSHOT_SRC "${TEST_DIR}/example_pattern_snapshot.cpp")
+
+add_executable(genseq_example_pattern_snapshot "${EXAMPLE_PATTERN_SNAPSHOT_SRC}")
+target_include_directories(genseq_example_pattern_snapshot PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_pattern_snapshot PRIVATE genseq_emission)
+add_test(NAME genseq_example_pattern_snapshot COMMAND genseq_example_pattern_snapshot)
+
+# ---------------------------------------------------------------------------
+# Example test: TimingPolicy + effective-tick resolution (task 7.1).
+#
+# Validates Immediate/Next Beat/Next Bar resolution against the Transport
+# Timeline across meters, the on-boundary -> next-boundary convention, and isDue.
+# Header-only, SDK-free.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_TIMING_POLICY_SRC "${TEST_DIR}/example_timing_policy.cpp")
+
+add_executable(genseq_example_timing_policy "${EXAMPLE_TIMING_POLICY_SRC}")
+target_include_directories(genseq_example_timing_policy PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_timing_policy PRIVATE genseq_emission)
+add_test(NAME genseq_example_timing_policy COMMAND genseq_example_timing_policy)
+
+# ---------------------------------------------------------------------------
 # Property-test executable.
 #
 # The property tests (task 6.3+) live in test/*.cpp. They are auto-discovered
@@ -665,6 +708,11 @@ if(RAPIDCHECK_AVAILABLE)
     # own targets with their own main(); exclude them from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_OVERLOAD_DETECTOR_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_COMMAND_INBOX_SRC}")
+    # Wave-6 examples (5.4 scheduler-fault, 6.4 pattern-snapshot, 7.1 timing-
+    # policy) are their own targets with their own main(); exclude them.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SCHEDULER_FAULT_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_PATTERN_SNAPSHOT_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_TIMING_POLICY_SRC}")
 
     if(NOT TEST_SOURCES)
         message(STATUS

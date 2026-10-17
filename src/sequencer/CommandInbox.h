@@ -55,6 +55,15 @@ struct InboxCommand {
     uint8_t a = 0;
     uint8_t b = 0;
     bool isSafety = false;       // Stop/panic/fault bypass ordinary gating (7.5)
+    // Coalescing key (task 6.3): a replaceable per-pattern property (e.g. gate /
+    // pitch / velocity). A later edit to the SAME (target, property) may replace
+    // an earlier pending one latest-wins — but only when neither is a barrier and
+    // no barrier sits between them. 0 == not coalescible (always queued).
+    uint8_t property = 0;
+    // Ordering barrier (task 6.3): transport transitions, Pattern removal, and
+    // save snapshots must NOT be coalesced across — edits on either side keep
+    // their relative order. A barrier op is itself never coalesced.
+    bool isBarrier = false;
 };
 
 enum class AckStatus : uint8_t { Unknown, Accepted, Applied, Rejected };
@@ -84,12 +93,59 @@ public:
         return cmd.sequence;
     }
 
+    // Producer: push with latest-wins COALESCING (task 6.3, Req 7.6/7.7). If a
+    // pending op targets the same (target, property) and is coalescible (both
+    // non-barrier, non-safety) AND no BARRIER sits between it and the tail, the
+    // pending op's payload is REPLACED in place and its (already-assigned)
+    // sequence is returned — no new slot is consumed. Otherwise this behaves like
+    // tryPush. Coalescing never crosses a transport/remove/snapshot barrier
+    // (Req 7.7), so edits on opposite sides of one keep their order.
+    SequenceId tryPushCoalescing(InboxCommand cmd) {
+        if (cmd.property != 0 && !cmd.isBarrier && !cmd.isSafety) {
+            // Scan pending slots newest-first; stop at the first barrier so we
+            // never coalesce across it.
+            uint16_t k = tail_;
+            while (k != head_) {
+                k = static_cast<uint16_t>((k + RingSize - 1) % RingSize);
+                InboxCommand& pending = slots_[k];
+                if (pending.isBarrier) break;  // do not coalesce across a barrier
+                if (!pending.isSafety && pending.property == cmd.property &&
+                    pending.target == cmd.target) {
+                    // Latest-wins: replace payload, keep the existing sequence.
+                    const SequenceId keep = pending.sequence;
+                    cmd.sequence = keep;
+                    pending = cmd;
+                    return keep;
+                }
+            }
+        }
+        return tryPush(cmd);
+    }
+
     // Consumer (core1): pop the oldest command. Returns false when empty. The
     // popped sequence is recorded Accepted (Req 7.8).
     bool tryPop(InboxCommand& out) {
         if (head_ == tail_) return false;  // empty
         out = slots_[head_];
         head_ = static_cast<uint16_t>((head_ + 1) % RingSize);
+        recordAck(out.sequence, AckStatus::Accepted);
+        return true;
+    }
+
+    // Consumer: pop the highest-PRIORITY pending command (task 6.3, Req 7.5).
+    // A pending SAFETY op (Stop/panic/fault) is returned ahead of any ordinary
+    // edit, regardless of FIFO position; among same-priority ops, FIFO order is
+    // preserved. Returns false when empty. The popped sequence is Accepted.
+    bool popPriority(InboxCommand& out) {
+        if (head_ == tail_) return false;
+        // Find the oldest pending safety op, if any.
+        uint16_t safetyRing = RingSize;  // sentinel
+        for (uint16_t k = head_; k != tail_; k = static_cast<uint16_t>((k + 1) % RingSize)) {
+            if (slots_[k].isSafety) { safetyRing = k; break; }
+        }
+        if (safetyRing == RingSize) return tryPop(out);  // no safety op -> FIFO
+        out = slots_[safetyRing];
+        removeAt(safetyRing);
         recordAck(out.sequence, AckStatus::Accepted);
         return true;
     }
@@ -130,6 +186,21 @@ public:
 
 private:
     static constexpr uint16_t RingSize = Capacity + 1;
+
+    // Remove the slot at ring position `ring` by shifting the entries after it
+    // (in logical order) one position toward head, then retracting the tail.
+    // Keeps the ring contiguous between head_ and tail_ so popPriority can take
+    // a safety op out of FIFO order. Bounded by count().
+    void removeAt(uint16_t ring) {
+        uint16_t cur = ring;
+        while (true) {
+            const uint16_t nxt = static_cast<uint16_t>((cur + 1) % RingSize);
+            if (nxt == tail_) break;
+            slots_[cur] = slots_[nxt];
+            cur = nxt;
+        }
+        tail_ = static_cast<uint16_t>((tail_ + RingSize - 1) % RingSize);
+    }
 
     // Record (or update) the ack for a sequence in the fixed-capacity ack ring.
     // A later status for the same sequence overwrites the earlier one (Accepted

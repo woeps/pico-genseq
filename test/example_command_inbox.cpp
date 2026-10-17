@@ -116,6 +116,57 @@ void test_stale_generation_rejection() {
     check(inbox.ackStatus(sSafety) == AckStatus::Applied, "safety op recorded Applied");
 }
 
+// 6.3: latest-wins coalescing of compatible replaceable edits by (target,
+// property); never across a barrier; safety priority; saturation never blocks.
+void test_coalescing_barriers_priority() {
+    sequencer::CommandInboxT<16, 32> inbox;
+    const common::PatternId p0(0, 1);
+    const common::PatternId p1(1, 1);
+    constexpr uint8_t kGate = 1, kPitch = 2;
+
+    // Two edits to the SAME (p0, gate) coalesce: the second replaces the first in
+    // place, keeping the first's sequence; count stays 1.
+    InboxCommand e1 = op(p0, 10); e1.property = kGate; e1.a = 3;
+    InboxCommand e2 = op(p0, 10); e2.property = kGate; e2.a = 9;  // latest-wins
+    const auto s1 = inbox.tryPushCoalescing(e1);
+    const auto s2 = inbox.tryPushCoalescing(e2);
+    check(s1 == s2, "coalesced edit keeps the original sequence id");
+    check(inbox.count() == 1, "two edits to same (target,property) coalesce to one slot (7.6)");
+
+    // A different property (pitch) or different target does NOT coalesce.
+    InboxCommand e3 = op(p0, 11); e3.property = kPitch;
+    InboxCommand e4 = op(p1, 10); e4.property = kGate;
+    inbox.tryPushCoalescing(e3);
+    inbox.tryPushCoalescing(e4);
+    check(inbox.count() == 3, "different property/target are not coalesced");
+
+    // A barrier (e.g. remove/transport) blocks coalescing across it: a later gate
+    // edit to p0 after a barrier does NOT replace the pre-barrier p0 gate edit.
+    InboxCommand barrier = op(p0, 20); barrier.isBarrier = true;
+    inbox.tryPushCoalescing(barrier);
+    InboxCommand e5 = op(p0, 10); e5.property = kGate; e5.a = 42;
+    inbox.tryPushCoalescing(e5);
+    check(inbox.count() == 5, "coalescing never crosses a barrier (7.7)");
+
+    // Safety priority: a Stop pushed last is popped FIRST via popPriority (7.5).
+    InboxCommand stop = op(common::PatternId{}, 99, /*safety=*/true);
+    inbox.tryPush(stop);
+    InboxCommand out;
+    check(inbox.popPriority(out) && out.isSafety && out.kind == 99,
+          "safety op is popped ahead of ordinary edits (7.5)");
+    check(!out.isSafety || out.kind == 99, "popped the safety op, not an edit");
+}
+
+// 6.3: saturation never blocks — a full inbox refuses with kInvalidSequence.
+void test_saturation_never_blocks() {
+    sequencer::CommandInboxT<4, 16> inbox;
+    const common::PatternId id(3, 1);
+    for (int i = 0; i < 4; ++i) inbox.tryPush(op(id, static_cast<uint8_t>(i)));
+    const auto refused = inbox.tryPush(op(id, 9));
+    check(refused == sequencer::kInvalidSequence,
+          "a full inbox refuses (never blocks indefinitely, 7.11)");
+}
+
 }  // namespace
 
 int main() {
@@ -123,6 +174,8 @@ int main() {
     test_fixed_capacity();
     test_bounded_drain();
     test_stale_generation_rejection();
+    test_coalescing_barriers_priority();
+    test_saturation_never_blocks();
 
     if (failures == 0) {
         std::printf("example_command_inbox: all checks passed\n");
