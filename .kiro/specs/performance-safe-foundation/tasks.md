@@ -36,11 +36,11 @@ of this plan.
     - _Requirements: 9.2, 9.3, 11.6, 11.7_
 
 - [ ] 2. Implement canonical channels and per-pattern note ownership
-  - [ ] 2.1 Define canonical MIDI channel conversion and validation
+  - [x] 2.1 Define canonical MIDI channel conversion and validation
     - Represent protocol channels as 0..15 internally and user channels as 1..16 only at boundaries
     - Remove the current channel 0/1 alias and cover all 16 channels
     - _Requirements: 5.1, 5.9_
-  - [ ] 2.2 Introduce stable `PatternId` runtime identity
+  - [x] 2.2 Introduce stable `PatternId` runtime identity
     - Prevent removal/reordering from retargeting pending operations or ownership
     - Add stale-generation rejection if identifiers can be reused
     - _Requirements: 5.1, 6.9, 7.8_
@@ -65,7 +65,7 @@ of this plan.
     - _Requirements: 5.1–5.10, 11.2, 11.3_
 
 - [ ] 3. Implement the global Transport Timeline and meter
-  - [ ] 3.1 Define supported Time Signature ranges
+  - [x] 3.1 Define supported Time Signature ranges
     - Choose bounded numerator and denominator sets exactly representable at the selected PPQN
     - Reject unsupported values rather than rounding boundaries
     - Record the decision in the design

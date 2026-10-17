@@ -134,6 +134,28 @@ The denominator is represented explicitly and validated against PPQN. With 24 PP
 rejected rather than rounded. The design phase will select a bounded numerator range and a
 power-of-two denominator set whose values divide 96 exactly.
 
+#### Supported Time Signature ranges (decision, task 3.1)
+
+A whole note is 4 quarter notes = `4 * PPQN` = 96 logical ticks. For every supported beat
+boundary to be exactly representable (Req 1.7), the denominator must divide 96 evenly. The
+denominator is further constrained to the conventional power-of-two note values. Since
+`96 = 2^5 * 3`, the power-of-two divisors of 96 are:
+
+> **Supported denominators:** `{1, 2, 4, 8, 16, 32}`
+
+1/64 is excluded: 64 is a power of two but does not divide 96, so a 1/64 beat is not exactly
+representable at PPQN 24 and is rejected rather than rounded. The numerator (beats per bar) is
+bounded to:
+
+> **Supported numerators:** `1 .. 32`
+
+which keeps a bar an exact whole number of ticks (`numerator * 96 / denominator`) for every
+supported denominator. Any numerator or denominator outside these sets is **rejected before
+publication**, never rounded to the nearest supported value. The default signature is 4/4
+(beat = 24 ticks, bar = 96 ticks). This decision is implemented SDK-free in
+`src/common/TimeSignature.h` (`common::TimeSignature`, `common::time_signature::isSupported`,
+`ticksPerBeat`, `ticksPerBar`) and covered host-side by `test/example_time_signature.cpp`.
+
 A BPM change is staged at a defined boundary. The current phase is preserved and subsequent
 tick durations use the new BPM. Fractional-microsecond error is carried with fixed-point or
 remainder accumulation rather than discarded on every tick.

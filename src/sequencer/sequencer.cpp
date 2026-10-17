@@ -59,10 +59,10 @@ void Sequencer::update() {
             const common::Flank flank = gateSet.getFlank();
 
             if (flank == common::RISING) {
-                sendMidiNoteOn(pattern.getMidiChannel(), pitchSet.getPitch(),
+                sendMidiNoteOn(pattern.getCanonicalChannel(), pitchSet.getPitch(),
                                velocitySet.getVelocity());
             } else if (flank == common::FALLING) {
-                sendMidiNoteOff(pattern.getMidiChannel(), pitchSet.getPitch());
+                sendMidiNoteOff(pattern.getCanonicalChannel(), pitchSet.getPitch());
                 pitchSet.advance();
                 velocitySet.advance();
             }
@@ -165,11 +165,12 @@ void Sequencer::play() {
 void Sequencer::stop() {
     playing = false;
 
-    // Send note off only for active notes.
-    for (uint8_t channel = 0; channel < 16; channel++) {
+    // Send note off only for active notes. activeNotes is indexed by canonical
+    // protocol channel (0..15), so release through the same canonical channel.
+    for (uint8_t protocolChannel = 0; protocolChannel < 16; protocolChannel++) {
         for (uint8_t note = 0; note < 128; note++) {
-            if (activeNotes[channel][note]) {
-                sendMidiNoteOff(channel, note);
+            if (activeNotes[protocolChannel][note]) {
+                sendMidiNoteOff(common::MidiChannel(protocolChannel), note);
             }
         }
     }
@@ -232,32 +233,26 @@ void Sequencer::setPatternVelocitySet(size_t patternIndex, uint8_t count,
     patterns[patternIndex].setVelocitySet(velocitySet);
 }
 
-void Sequencer::sendMidiNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) {
-    // Ensure channel and note are within valid ranges.
-    channel = channel & 0x0F;  // Limit to 0-15
-    note = note & 0x7F;        // Limit to 0-127
+void Sequencer::sendMidiNoteOn(common::MidiChannel channel, uint8_t note, uint8_t velocity) {
+    // Ensure note is within range; the channel is already canonical 0..15.
+    note = note & 0x7F;
 
-    // Track this note as active.
-    activeNotes[channel][note] = true;
+    // Track this note as active, keyed by canonical protocol channel.
+    activeNotes[channel.value][note] = true;
 
-    // MIDI channels are 1-based in the API but 0-based in the protocol.
-    const uint8_t channelIndex = (channel > 0) ? (channel - 1) : 0;
-    sendMidiByte(midi::ChannelVoiceMessage::NOTE_ON | (channelIndex & 0x0F));
+    sendMidiByte(midi::ChannelVoiceMessage::NOTE_ON | common::midi_channel::toStatusNibble(channel));
     sendMidiByte(note & 0x7F);
     sendMidiByte(velocity & 0x7F);
 }
 
-void Sequencer::sendMidiNoteOff(uint8_t channel, uint8_t note) {
-    // Ensure channel and note are within valid ranges.
-    channel = channel & 0x0F;  // Limit to 0-15
-    note = note & 0x7F;        // Limit to 0-127
+void Sequencer::sendMidiNoteOff(common::MidiChannel channel, uint8_t note) {
+    // Ensure note is within range; the channel is already canonical 0..15.
+    note = note & 0x7F;
 
-    // Mark this note as inactive.
-    activeNotes[channel][note] = false;
+    // Mark this note as inactive, keyed by canonical protocol channel.
+    activeNotes[channel.value][note] = false;
 
-    // MIDI channels are 1-based in the API but 0-based in the protocol.
-    const uint8_t channelIndex = (channel > 0) ? (channel - 1) : 0;
-    sendMidiByte(midi::ChannelVoiceMessage::NOTE_OFF | (channelIndex & 0x0F));
+    sendMidiByte(midi::ChannelVoiceMessage::NOTE_OFF | common::midi_channel::toStatusNibble(channel));
     sendMidiByte(note & 0x7F);
     sendMidiByte(0);
 }

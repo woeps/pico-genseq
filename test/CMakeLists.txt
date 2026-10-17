@@ -419,6 +419,67 @@ target_link_libraries(genseq_example_save_combo PRIVATE genseq_emission)
 add_test(NAME genseq_example_save_combo COMMAND genseq_example_save_combo)
 
 # ---------------------------------------------------------------------------
+# Example test: canonical MIDI channel conversion and validation (task 2.1).
+#
+# A standalone example (not property-based) validating Requirements 5.1 and 5.9:
+# one canonical internal protocol channel (0..15) covering all 16 channels with
+# no aliases, lossless 1..16 user-channel conversion, removal of the old channel
+# 0/1 alias, and common::Pattern's canonical-channel accessor.
+#
+# It includes only the SDK-free common/MidiChannel.h and common/pattern.h and
+# links genseq_emission for the Pattern/common symbols; NO Pico SDK libs and NO
+# RapidCheck, so it builds host-side unconditionally.
+#
+# Its own main() means it MUST be excluded from the property-test glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_CANONICAL_CHANNEL_SRC "${TEST_DIR}/example_canonical_channel.cpp")
+
+add_executable(genseq_example_canonical_channel "${EXAMPLE_CANONICAL_CHANNEL_SRC}")
+target_include_directories(genseq_example_canonical_channel PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_canonical_channel PRIVATE genseq_emission)
+add_test(NAME genseq_example_canonical_channel COMMAND genseq_example_canonical_channel)
+
+# ---------------------------------------------------------------------------
+# Example test: supported Time Signature ranges (task 3.1).
+#
+# A standalone example (not property-based) validating Requirements 1.3 and 1.7:
+# bounded numerator (1..32) and the power-of-two denominator set {1,2,4,8,16,32}
+# whose every member divides 96 exactly at PPQN 24, exact beat/bar tick
+# derivation, and rejection (not rounding) of unsupported values.
+#
+# It includes only the SDK-free common/TimeSignature.h — header-only, so it needs
+# no library link at all, but links genseq_emission for consistency with the
+# sibling examples; NO Pico SDK libs and NO RapidCheck, so it builds host-side
+# unconditionally. Its own main() means it MUST be excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_TIME_SIGNATURE_SRC "${TEST_DIR}/example_time_signature.cpp")
+
+add_executable(genseq_example_time_signature "${EXAMPLE_TIME_SIGNATURE_SRC}")
+target_include_directories(genseq_example_time_signature PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_time_signature PRIVATE genseq_emission)
+add_test(NAME genseq_example_time_signature COMMAND genseq_example_time_signature)
+
+# ---------------------------------------------------------------------------
+# Example test: stable PatternId runtime identity (task 2.2).
+#
+# A standalone example (not property-based) validating Requirements 5.1, 6.9,
+# 7.8: a PatternId stays stable when another pattern is removed/reordered, a
+# reused slot gets a higher generation so a stale reference is rejected, and the
+# allocator is fixed-capacity and allocation-free.
+#
+# It includes only the SDK-free header-only common/PatternId.h; links
+# genseq_emission for consistency with the sibling examples (no symbols actually
+# needed); NO Pico SDK libs and NO RapidCheck, so it builds host-side
+# unconditionally. Its own main() means it MUST be excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_PATTERN_ID_SRC "${TEST_DIR}/example_pattern_id.cpp")
+
+add_executable(genseq_example_pattern_id "${EXAMPLE_PATTERN_ID_SRC}")
+target_include_directories(genseq_example_pattern_id PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_pattern_id PRIVATE genseq_emission)
+add_test(NAME genseq_example_pattern_id COMMAND genseq_example_pattern_id)
+
+# ---------------------------------------------------------------------------
 # Property-test executable.
 #
 # The property tests (task 6.3+) live in test/*.cpp. They are auto-discovered
@@ -448,6 +509,15 @@ if(RAPIDCHECK_AVAILABLE)
     # own main() (it compiles Reducer.cpp + commands:: seams); exclude it from the
     # shared runner so the two main()s do not collide.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SAVE_COMBO_SRC}")
+    # The canonical-channel example (task 2.1) is its own dedicated target with
+    # its own main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_CANONICAL_CHANNEL_SRC}")
+    # The time-signature example (task 3.1) is its own dedicated target with its
+    # own main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_TIME_SIGNATURE_SRC}")
+    # The pattern-id example (task 2.2) is its own dedicated target with its own
+    # main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_PATTERN_ID_SRC}")
 
     if(NOT TEST_SOURCES)
         message(STATUS

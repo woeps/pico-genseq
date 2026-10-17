@@ -59,8 +59,8 @@ private:
                                common::PlayingOrder order,
                                const std::vector<uint8_t>& velocities);
 
-    void sendMidiNoteOn(uint8_t channel, uint8_t note, uint8_t velocity);
-    void sendMidiNoteOff(uint8_t channel, uint8_t note);
+    void sendMidiNoteOn(common::MidiChannel channel, uint8_t note, uint8_t velocity);
+    void sendMidiNoteOff(common::MidiChannel channel, uint8_t note);
     void sendMidiByte(uint8_t byte);
     bool canApplyCommand(const commands::CommandMessage& msg) const;
 };
