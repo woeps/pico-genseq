@@ -36,16 +36,18 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 
 # Find all source files in the sequencer, commands, and UI directories
-file(GLOB_RECURSE SEQUENCER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/sequencer/*.cpp")
-file(GLOB_RECURSE COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/common/*.cpp")
-file(GLOB_RECURSE COMMANDS_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/commands/*.cpp")
-file(GLOB_RECURSE UI_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.c")
+file(GLOB_RECURSE SEQUENCER_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/sequencer/*.cpp")
+file(GLOB_RECURSE COMMON_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/common/*.cpp")
+file(GLOB_RECURSE COMMANDS_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/commands/*.cpp")
+file(GLOB_RECURSE UI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.c")
+file(GLOB_RECURSE PERSISTENCE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/persistence/*.cpp")
 
 # Print the found source files for debugging
 message(STATUS "Sequencer sources: ${SEQUENCER_SOURCES}")
 message(STATUS "Common sources: ${COMMON_SOURCES}")
 message(STATUS "Commands sources: ${COMMANDS_SOURCES}")
 message(STATUS "UI sources: ${UI_SOURCES}")
+message(STATUS "Persistence sources: ${PERSISTENCE_SOURCES}")
 
 # Add source files for the sequencer, commands, and UI components
 add_executable(genseq 
@@ -54,6 +56,7 @@ add_executable(genseq
     ${COMMON_SOURCES}
     ${COMMANDS_SOURCES}
     ${UI_SOURCES}
+    ${PERSISTENCE_SOURCES}
 )
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/src/generated)
@@ -75,17 +78,45 @@ target_link_libraries(genseq
     pico_multicore
     hardware_pio
     hardware_uart
-    hardware_adc
     hardware_gpio
     hardware_i2c
     hardware_dma
+    hardware_flash
+    hardware_sync
+    tinyusb_host
+    tinyusb_board
 )
 
 # Add the standard include files to the build
 target_include_directories(genseq PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/src
+        ${CMAKE_CURRENT_LIST_DIR}/src/config
         ${CMAKE_CURRENT_LIST_DIR}/src/generated
+        ${CMAKE_CURRENT_LIST_DIR}/src/persistence
 )
 
+# Optional logic-analyzer instrumentation. Tracing and every individual pin are
+# disabled by default; configure only GPIOs that are free on the actual hardware.
+option(GENSEQ_PERFORMANCE_TRACE_ENABLED
+       "Enable performance trace GPIOs" OFF)
+set(GENSEQ_TRACE_TICK_PIN -1 CACHE STRING
+    "GPIO driven high while a logical tick is processed")
+set(GENSEQ_TRACE_MIDI_PIN -1 CACHE STRING
+    "GPIO pulsed around each MIDI byte dispatch")
+set(GENSEQ_TRACE_OPERATION_PIN -1 CACHE STRING
+    "GPIO driven high while a sequencer operation is applied")
+set(GENSEQ_TRACE_SAVE_PIN -1 CACHE STRING
+    "GPIO driven high while a save is in progress")
+set(GENSEQ_TRACE_FAULT_PIN -1 CACHE STRING
+    "GPIO held high while a performance fault is latched")
+
+target_compile_definitions(genseq PRIVATE
+    GENSEQ_PERFORMANCE_TRACE_ENABLED=$<BOOL:${GENSEQ_PERFORMANCE_TRACE_ENABLED}>
+    GENSEQ_TRACE_TICK_PIN=${GENSEQ_TRACE_TICK_PIN}
+    GENSEQ_TRACE_MIDI_PIN=${GENSEQ_TRACE_MIDI_PIN}
+    GENSEQ_TRACE_OPERATION_PIN=${GENSEQ_TRACE_OPERATION_PIN}
+    GENSEQ_TRACE_SAVE_PIN=${GENSEQ_TRACE_SAVE_PIN}
+    GENSEQ_TRACE_FAULT_PIN=${GENSEQ_TRACE_FAULT_PIN}
+)
 
 pico_add_extra_outputs(genseq)

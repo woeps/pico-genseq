@@ -23,15 +23,7 @@ int main()
     sleep_ms(100);
 
     // Start the UI task on core 0
-    const uint8_t buttonPins[6] = {
-        BUTTON_A_PIN, BUTTON_B_PIN, BUTTON_C_PIN,
-        BUTTON_D_PIN, BUTTON_E_PIN, BUTTON_F_PIN
-    };
-    ui::createUITask(
-        buttonPins,
-        LED_PIN,
-        LED_MATRIX_PIN,
-        POT_PIN);
+    ui::createUITask(LED_PIN, LED_MATRIX_PIN);
 
     // This should never be reached
     printf("GenSeq MIDI Sequencer ended.\n");

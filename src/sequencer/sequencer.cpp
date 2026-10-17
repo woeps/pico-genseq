@@ -1,82 +1,86 @@
 #include "sequencer.h"
 #include "midi_messages.h"
-#include "pico/multicore.h"
-#include "hardware/gpio.h"
 #include "../common/pitch_set.h"
 #include "../common/velocity_set.h"
 #include "../common/gate_set.h"
 #include "../common/const.h"
 #include "../common/pattern.h"
-#include <cstdio>
+#include "../instrumentation/PerformanceTrace.h"
 
 namespace sequencer {
 
-    // Global variables for multicore communication
-    static Sequencer* globalSequencer = nullptr;
+Sequencer::Sequencer(IMidiOutput& output, IMonotonicClock& clock)
+    : output(output),
+      clock(clock),
+      patterns({common::Pattern()}),
+      bpm(120),
+      playing(false),
+      lastTickTime(clock.nowMicros()),
+      midiClockEnabled(true) {
+    // MIDI transport and monotonic time are injected; no hardware setup here.
+}
 
-    // Multicore FIFO for command passing
-    static void sequencer_task(uart_inst_t* uart);
+void Sequencer::init() {
+    // TODO: reset values to default
+}
 
-    // Sequencer implementation
-    Sequencer::Sequencer(uart_inst_t* uart, uint txPin, uint rxPin) :
-        uart(uart),
-        bpm(120),
-        playing(false),
-        lastTickTime(get_absolute_time()),
-        midiClockEnabled(true),
-        patterns({ common::Pattern() }) {
-        // Initialize UART for MIDI
-        uart_init(uart, MIDI_BAUD_RATE);
+void Sequencer::update() {
+    if (!playing) return;
 
-        // Configure UART pins (assuming UART1 uses GPIO 4 and 5)
-        gpio_set_function(txPin, GPIO_FUNC_UART);
-        gpio_set_function(rxPin, GPIO_FUNC_UART);
-    }
+    // Calculate time for one tick based on BPM.
+    const uint64_t tickDurationUs = 60ULL * 1000ULL * 1000ULL / (bpm * PPQN);
 
-    void Sequencer::init() {
-        // TODO: reset values to default
-    }
+    // Advance from the ideal prior deadline so ordinary polling jitter does not
+    // shift the phase. Milestone 2's later Scheduler work will replace this
+    // one-tick service behavior with bounded reconciliation and fault handling.
+    const uint64_t currentTime = clock.nowMicros();
+    const uint64_t dueTime = lastTickTime + tickDurationUs;
+    if (currentTime >= dueTime) {
+        const uint64_t latenessUs = currentTime - dueTime;
+        const uint64_t missedTickCount = latenessUs / tickDurationUs;
+        metrics.observeSchedulerTick(latenessUs, missedTickCount);
+        lastTickTime = dueTime;
 
-    void Sequencer::update() {
-        if (!playing) return;
+        instrumentation::PerformanceTrace::tickBegin();
 
-        // Calculate time for one tick based on BPM
-        uint32_t tickDurationUs = 60 * 1000 * 1000 / (bpm * PPQN);
+        // Process all active patterns.
+        for (auto& pattern : patterns) {
+            if (!pattern.isActive()) continue;
 
-        // Check if it's time for the next tick
-        absolute_time_t currentTime = get_absolute_time();
-        if (absolute_time_diff_us(lastTickTime, currentTime) >= tickDurationUs) {
-            lastTickTime = currentTime;
+            common::GateSet& gateSet = pattern.getGateSet();
+            common::PitchSet& pitchSet = pattern.getPitchSet();
+            common::VelocitySet& velocitySet = pattern.getVelocitySet();
 
-            // Process all active patterns
-            for (auto& pattern : patterns) {
-                if (!pattern.isActive()) continue;
-
-                // Get non-const references to the pattern components
-                common::GateSet& gateSet = const_cast<common::GateSet&>(pattern.getGateSet());
-                common::PitchSet& pitchSet = const_cast<common::PitchSet&>(pattern.getPitchSet());
-                common::VelocitySet& velocitySet = const_cast<common::VelocitySet&>(pattern.getVelocitySet());
-
-                if (pitchSet.getPitches().empty() || velocitySet.getVelocities().empty() || gateSet.getGates().empty()) continue;
-
-                common::Flank flank = gateSet.getFlank();
-
-                if (flank == common::RISING) {
-                    sendMidiNoteOn(pattern.getMidiChannel(), pitchSet.getPitch(), velocitySet.getVelocity());
-                }
-                else if (flank == common::FALLING) {
-                    sendMidiNoteOff(pattern.getMidiChannel(), pitchSet.getPitch());
-                    pitchSet.setPosition(pitchSet.getPosition() + 1);
-                    velocitySet.setPosition(velocitySet.getPosition() + 1);
-                }
-                int nextGatePosition = gateSet.getPosition() + 1;
-                gateSet.setPosition(nextGatePosition);
+            if (pitchSet.getPitches().empty() || velocitySet.getVelocities().empty() ||
+                gateSet.getGates().empty()) {
+                continue;
             }
-        }
-    }
 
-    void Sequencer::processCommand(commands::CommandMessage msg) {
-        switch (msg.cmd) {
+            const common::Flank flank = gateSet.getFlank();
+
+            if (flank == common::RISING) {
+                sendMidiNoteOn(pattern.getMidiChannel(), pitchSet.getPitch(),
+                               velocitySet.getVelocity());
+            } else if (flank == common::FALLING) {
+                sendMidiNoteOff(pattern.getMidiChannel(), pitchSet.getPitch());
+                pitchSet.advance();
+                velocitySet.advance();
+            }
+            const uint32_t nextGatePosition = static_cast<uint32_t>(
+                (gateSet.getPosition() + 1) % gateSet.getGates().size());
+            gateSet.setPosition(nextGatePosition);
+        }
+
+        instrumentation::PerformanceTrace::tickEnd();
+    }
+}
+
+void Sequencer::processCommand(commands::CommandMessage msg) {
+    if (!canApplyCommand(msg)) return;
+
+    instrumentation::PerformanceTrace::operationApplyBegin();
+
+    switch (msg.cmd) {
         case commands::Command::PLAY:
             play();
             break;
@@ -92,132 +96,177 @@ namespace sequencer {
         case commands::Command::PATTERN_DEACTIVATE:
             deactivatePattern(msg.param1);
             break;
-            // Add more command handlers as needed
-        case commands::Command::PATTERN_EUCLIDEAN_SET_LENGTH:
-            patternSetEuclideanLength(msg.param1, msg.param2);
-        }
+        case commands::Command::PATTERN_GATE_SET:
+            setPatternGateSet(msg.param1, msg.gates);
+            break;
+        case commands::Command::PATTERN_PITCH_SET:
+            setPatternPitchSet(msg.param1, msg.pitchCount, msg.pitchOrder, msg.pitches);
+            break;
+        case commands::Command::PATTERN_VELOCITY_SET:
+            setPatternVelocitySet(msg.param1, msg.velocityCount, msg.velocityOrder,
+                                  msg.velocities);
+            break;
+        case commands::Command::PATTERN_ADD:
+            addPattern(common::Pattern());
+            break;
+        case commands::Command::PATTERN_REMOVE:
+            removePattern(msg.param1);
+            break;
+        default:
+            break;
     }
 
-    void Sequencer::play() {
-        // Send MIDI Start message if MIDI clock is enabled
-        if (midiClockEnabled) {
-            sendMidiByte(midi::SystemRealTimeMessage::START);
-        }
-        
-        // Set playing state and initialize timing
-        playing = true;
-        lastTickTime = get_absolute_time();
-        
-        // Clear pattern notes tracking to start fresh
-        patternNotes.clear();
+    ++metrics.operationsApplied;
+    instrumentation::PerformanceTrace::operationApplyEnd();
+}
+
+bool Sequencer::canApplyCommand(const commands::CommandMessage& msg) const {
+    switch (msg.cmd) {
+        case commands::Command::PLAY:
+        case commands::Command::STOP:
+        case commands::Command::BPM_SET:
+        case commands::Command::PATTERN_ADD:
+            return true;
+        case commands::Command::PATTERN_ACTIVATE:
+        case commands::Command::PATTERN_DEACTIVATE:
+        case commands::Command::PATTERN_GATE_SET:
+            return msg.param1 < patterns.size();
+        case commands::Command::PATTERN_PITCH_SET:
+            return msg.param1 < patterns.size() && msg.pitchCount <= msg.pitches.size();
+        case commands::Command::PATTERN_VELOCITY_SET:
+            return msg.param1 < patterns.size() &&
+                   msg.velocityCount <= msg.velocities.size();
+        case commands::Command::PATTERN_REMOVE:
+            return patterns.size() > 1 && msg.param1 < patterns.size();
+        case commands::Command::NOOP:
+        default:
+            return false;
+    }
+}
+
+void Sequencer::resetPerformanceMetrics() {
+    metrics = PerformanceMetrics{};
+}
+
+void Sequencer::play() {
+    // Send MIDI Start message if MIDI clock is enabled.
+    if (midiClockEnabled) {
+        sendMidiByte(midi::SystemRealTimeMessage::START);
     }
 
-    void Sequencer::stop() {
-        playing = false;
+    // Set playing state and initialize timing.
+    playing = true;
+    lastTickTime = clock.nowMicros();
 
-        // Send note off only for active notes
-        for (uint8_t channel = 0; channel < 16; channel++) {
-            for (uint8_t note = 0; note < 128; note++) {
-                if (activeNotes[channel][note]) {
-                    sendMidiNoteOff(channel, note);
-                }
-            }
-        }
+    // Clear pattern notes tracking to start fresh.
+    patternNotes.clear();
+}
 
-        // set all sets in all paterns to position 0
-        for (auto& pattern : patterns) {
-            pattern.getGateSet().reset();
-            pattern.getPitchSet().reset();
-            pattern.getVelocitySet().reset();
-        }
-    }
+void Sequencer::stop() {
+    playing = false;
 
-    void Sequencer::setBPM(uint16_t bpm) {
-        this->bpm = bpm;
-    }
-
-    void Sequencer::addPattern(const common::Pattern& pattern) {
-        patterns.push_back(pattern);
-    }
-
-    void Sequencer::activatePattern(size_t index) {
-        if (index < patterns.size()) {
-            patterns[index].setActive(true);
-        }
-    }
-
-    void Sequencer::deactivatePattern(size_t index) {
-        if (index < patterns.size()) {
-            patterns[index].setActive(false);
-        }
-    }
-
-    void Sequencer::patternSetEuclideanLength(size_t patternIndex, size_t length) {
-        printf("TODO: patternSetEuclideanLength: %d, %d\n", patternIndex, length);
-        // if (patternIndex < patterns.size()) {
-        //     patterns[patternIndex].setEuclideanLength(length);
-        // }
-    }
-
-    void Sequencer::sendMidiNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) {
-        // Ensure channel and note are within valid ranges
-        channel = channel & 0x0F;  // Limit to 0-15
-        note = note & 0x7F;       // Limit to 0-127
-        
-        // Track this note as active
-        activeNotes[channel][note] = true;
-        
-        // MIDI Note On: status byte + channel, note, velocity
-        // MIDI channels are 1-based in the API but 0-based in the protocol
-        uint8_t channelIndex = (channel > 0) ? (channel - 1) : 0;
-        sendMidiByte(midi::ChannelVoiceMessage::NOTE_ON | (channelIndex & 0x0F));
-        sendMidiByte(note & 0x7F);
-        sendMidiByte(velocity & 0x7F);
-    }
-
-    void Sequencer::sendMidiNoteOff(uint8_t channel, uint8_t note) {
-        // Ensure channel and note are within valid ranges
-        channel = channel & 0x0F;  // Limit to 0-15
-        note = note & 0x7F;       // Limit to 0-127
-        
-        // Mark this note as inactive
-        activeNotes[channel][note] = false;
-        
-        // MIDI Note Off: status byte + channel, note, velocity (0)
-        // MIDI channels are 1-based in the API but 0-based in the protocol
-        uint8_t channelIndex = (channel > 0) ? (channel - 1) : 0;
-        sendMidiByte(midi::ChannelVoiceMessage::NOTE_OFF | (channelIndex & 0x0F));
-        sendMidiByte(note & 0x7F);
-        sendMidiByte(0); // velocity 0
-    }
-
-    void Sequencer::sendMidiByte(uint8_t byte) {
-        uart_putc_raw(uart, byte);
-    }
-
-    // Sequencer task for second core
-    static void sequencer_task() {
-        // Make sure the global sequencer is initialized
-        if (globalSequencer) {
-            while (true) {
-                // Check for commands from the UI core
-                commands::CommandMessage msg = commands::receiveCommand();
-                globalSequencer->processCommand(msg);
-
-                // Update the sequencer
-                globalSequencer->update();
+    // Send note off only for active notes.
+    for (uint8_t channel = 0; channel < 16; channel++) {
+        for (uint8_t note = 0; note < 128; note++) {
+            if (activeNotes[channel][note]) {
+                sendMidiNoteOff(channel, note);
             }
         }
     }
 
-    void createSequencerTask(uart_inst_t* uart, uint txPin, uint rxPin) {
-        // Create a global sequencer instance
-        static Sequencer sequencer(uart, txPin, rxPin);
-        globalSequencer = &sequencer;
-        globalSequencer->init();
-
-        // Launch the sequencer task on the second core
-        multicore_launch_core1(sequencer_task);
+    // Set all sets in all patterns to position 0.
+    for (auto& pattern : patterns) {
+        pattern.getGateSet().reset();
+        pattern.getPitchSet().reset();
+        pattern.getVelocitySet().reset();
     }
+}
 
-} // namespace sequencer
+void Sequencer::setBPM(uint16_t bpm) {
+    this->bpm = bpm;
+}
+
+void Sequencer::addPattern(const common::Pattern& pattern) {
+    patterns.push_back(pattern);
+}
+
+void Sequencer::removePattern(size_t index) {
+    if (patterns.size() <= 1 || index >= patterns.size()) return;
+    patterns.erase(patterns.begin() + index);
+}
+
+void Sequencer::activatePattern(size_t index) {
+    if (index < patterns.size()) {
+        patterns[index].setActive(true);
+    }
+}
+
+void Sequencer::deactivatePattern(size_t index) {
+    if (index < patterns.size()) {
+        patterns[index].setActive(false);
+    }
+}
+
+void Sequencer::setPatternGateSet(size_t patternIndex,
+                                  const std::vector<bool>& gates) {
+    if (patternIndex < patterns.size()) {
+        patterns[patternIndex].setGateSet(common::GateSet(gates));
+    }
+}
+
+void Sequencer::setPatternPitchSet(size_t patternIndex, uint8_t count,
+                                   common::PlayingOrder order,
+                                   const std::vector<uint8_t>& pitches) {
+    if (patternIndex >= patterns.size()) return;
+    std::vector<uint8_t> activePitches(pitches.begin(), pitches.begin() + count);
+    common::PitchSet pitchSet(activePitches, order);
+    patterns[patternIndex].setPitchSet(pitchSet);
+}
+
+void Sequencer::setPatternVelocitySet(size_t patternIndex, uint8_t count,
+                                      common::PlayingOrder order,
+                                      const std::vector<uint8_t>& velocities) {
+    if (patternIndex >= patterns.size()) return;
+    std::vector<uint8_t> activeVelocities(velocities.begin(), velocities.begin() + count);
+    common::VelocitySet velocitySet(activeVelocities, order);
+    patterns[patternIndex].setVelocitySet(velocitySet);
+}
+
+void Sequencer::sendMidiNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) {
+    // Ensure channel and note are within valid ranges.
+    channel = channel & 0x0F;  // Limit to 0-15
+    note = note & 0x7F;        // Limit to 0-127
+
+    // Track this note as active.
+    activeNotes[channel][note] = true;
+
+    // MIDI channels are 1-based in the API but 0-based in the protocol.
+    const uint8_t channelIndex = (channel > 0) ? (channel - 1) : 0;
+    sendMidiByte(midi::ChannelVoiceMessage::NOTE_ON | (channelIndex & 0x0F));
+    sendMidiByte(note & 0x7F);
+    sendMidiByte(velocity & 0x7F);
+}
+
+void Sequencer::sendMidiNoteOff(uint8_t channel, uint8_t note) {
+    // Ensure channel and note are within valid ranges.
+    channel = channel & 0x0F;  // Limit to 0-15
+    note = note & 0x7F;        // Limit to 0-127
+
+    // Mark this note as inactive.
+    activeNotes[channel][note] = false;
+
+    // MIDI channels are 1-based in the API but 0-based in the protocol.
+    const uint8_t channelIndex = (channel > 0) ? (channel - 1) : 0;
+    sendMidiByte(midi::ChannelVoiceMessage::NOTE_OFF | (channelIndex & 0x0F));
+    sendMidiByte(note & 0x7F);
+    sendMidiByte(0);
+}
+
+void Sequencer::sendMidiByte(uint8_t byte) {
+    instrumentation::PerformanceTrace::midiDispatchBegin();
+    output.write(byte);
+    instrumentation::PerformanceTrace::midiDispatchEnd();
+    ++metrics.midiBytesDispatched;
+}
+
+}  // namespace sequencer

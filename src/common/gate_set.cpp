@@ -1,6 +1,5 @@
 #include "gate_set.h"
 #include <algorithm>
-#include <cstdio>
 #include <map>
 
 namespace common {
@@ -24,10 +23,6 @@ namespace common {
         previousPosition(0),
         flank(getInitFlank(gates))
     {
-        printf("|");
-        for (auto gate : gates) {
-            printf("%s", gate ? "-" : "_");
-        }
     }
 
     const std::vector<bool>& GateSet::getGates() const {
@@ -42,10 +37,7 @@ namespace common {
         return gates.size();
     }
 
-    void GateSet::setPosition(uint8_t position) {
-        if (position >= gates.size()) {
-            printf("GateSet::setPosition: position %d is out of bounds for gate set of size %d\n", position, gates.size());
-        }
+    void GateSet::setPosition(uint32_t position) {
         this->previousPosition = this->position;
         this->position = position % gates.size();
 
@@ -66,7 +58,7 @@ namespace common {
         }
     }
 
-    uint8_t GateSet::getPosition() const {
+    uint32_t GateSet::getPosition() const {
         return position;
     }
 
@@ -86,7 +78,6 @@ namespace common {
 
     Flank getInitFlank(std::vector<bool> gates) {
         if (gates.size() == 0) {
-            printf("GateSet::getInitFlank: no gates\n");
             return LOW;
         }
         else {
@@ -95,8 +86,10 @@ namespace common {
         }
     }
 
-    GateSet GateSet::createEuclidean(uint8_t numSteps, uint8_t numPulses, uint8_t rotation, uint32_t patternLength) {
+    GateSet GateSet::createEuclidean(uint8_t numSteps, uint8_t numPulses, uint8_t rotation,
+                                     uint8_t stepLength, uint8_t gateLength) {
         // Euclidean algorithm implementation (Bjorklund's algorithm)
+        if (numSteps == 0 || stepLength == 0) return GateSet();
         std::vector<bool> pattern(numSteps, false);
 
         if (numPulses >= numSteps) {
@@ -115,12 +108,23 @@ namespace common {
             }
         }
 
-        // Expand the pattern to fill the requested pattern length
+        const uint32_t patternLength = static_cast<uint32_t>(numSteps) * stepLength;
         std::vector<bool> expandedPattern(patternLength, false);
-        if (!pattern.empty()) {
-            uint32_t stepSize = patternLength / numSteps;
-            for (uint32_t i = 0; i < patternLength; i++) {
-                expandedPattern[i] = pattern[(i / stepSize) % numSteps];
+        std::vector<uint32_t> pulsePositions;
+        for (uint8_t step = 0; step < numSteps; step++) {
+            if (pattern[step]) pulsePositions.push_back(static_cast<uint32_t>(step) * stepLength);
+        }
+
+        gateLength = std::min<uint8_t>(gateLength, 100);
+        for (size_t i = 0; i < pulsePositions.size(); i++) {
+            const uint32_t start = pulsePositions[i];
+            const uint32_t next = pulsePositions[(i + 1) % pulsePositions.size()];
+            const uint32_t interval = next > start ? next - start : patternLength - start + next;
+            const uint32_t scaled = (interval * gateLength + 99) / 100;
+            const uint32_t highTicks = std::max<uint32_t>(
+                1, std::min<uint32_t>(interval - 1, scaled));
+            for (uint32_t tick = 0; tick < highTicks; tick++) {
+                expandedPattern[(start + tick) % patternLength] = true;
             }
         }
 

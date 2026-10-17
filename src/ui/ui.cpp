@@ -5,18 +5,8 @@
 namespace ui
 {
     // UI facade implementation
-    UI::UI(
-        const uint8_t (&buttonPins)[6],
-        uint8_t ledPin,
-        uint8_t ledMatrixPin,
-        uint8_t potPin) :
-        config{
-            {buttonPins[0], buttonPins[1], buttonPins[2],
-             buttonPins[3], buttonPins[4], buttonPins[5]},
-            ledPin,
-            ledMatrixPin,
-            potPin
-        }
+    UI::UI(uint8_t ledPin, uint8_t ledMatrixPin) :
+        config{ledPin, ledMatrixPin}
     {
         controller = std::make_unique<UIController>(config);
     }
@@ -33,19 +23,11 @@ namespace ui
         controller->update();
     }
 
-    void createUITask(
-        const uint8_t (&buttonPins)[6],
-        uint8_t ledPin,
-        uint8_t ledMatrixPin,
-        uint8_t potPin)
+    void createUITask(uint8_t ledPin, uint8_t ledMatrixPin)
     {
         printf("constructing UI facade\n");
         // Create and initialize UI with pin assignments
-        UI ui(
-            buttonPins,
-            ledPin,
-            ledMatrixPin,
-            potPin);
+        UI ui(ledPin, ledMatrixPin);
         printf("initializing UI facade\n");
         ui.init();
 
