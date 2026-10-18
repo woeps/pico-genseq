@@ -99,8 +99,18 @@ sequencer never notices → transparent save within the ≤1 ms MIDI budget.
 
 ## Deferred debt (not blocking)
 
-- [ ] **6.4 firmware cutover:** the allocation-free `PatternSnapshot` component
-      exists and is tested, but the live firmware `receiveCommand()` in
-      `src/.../command.cpp` still decodes into `std::vector`. Cut the core1
-      decode path over to `PatternSnapshot` + the `CommandInbox`. Ripples through
-      the `CommandMessage` API (~13 files); do it as its own change.
+- [x] **6.4 firmware cutover:** DONE. The core1 receive loop no longer decodes
+      into `std::vector` via `receiveCommand()`. It now calls
+      `commands::receiveCommandInto(snapshot)`, which decodes each multiword
+      pattern-set payload into a reused, function-static fixed-capacity
+      `sequencer::PatternSnapshot` (allocated once, never on the per-command
+      path — Req 7.9), and `Sequencer::processCommand(msg, snapshot)` applies the
+      three set commands from that snapshot. The public `CommandMessage` API and
+      the legacy scalar `receiveCommand()`/`processCommand(msg)` are left intact
+      (host tests + UI producers unchanged), so the big `CommandMessage`-API
+      ripple was avoided — the cutover added an allocation-free sibling path
+      rather than rewriting the transport. `example_command_snapshot_path.cpp`
+      proves the snapshot path emits the identical MIDI stream as the scalar
+      path; host suite 31/31 green and clean under ASan+UBSan; firmware links.
+      (Full `CommandInbox` SPSC-ring transport remains a separate 6.1/6.2
+      integration, distinct from this 6.4 allocation fix.)

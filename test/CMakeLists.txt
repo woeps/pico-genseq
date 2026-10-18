@@ -561,6 +561,21 @@ target_link_libraries(genseq_example_sequencer_integration PRIVATE genseq_emissi
 add_test(NAME genseq_example_sequencer_integration COMMAND genseq_example_sequencer_integration)
 
 # ---------------------------------------------------------------------------
+# Example test: allocation-free core1 command path (task 6.4).
+#
+# Proves Sequencer::processCommand(msg, snapshot) — the application half of the
+# core1 cut-over to commands::receiveCommandInto — is behaviorally equivalent to
+# the legacy scalar (CommandMessage-vector) path, and validates set commands
+# against the PatternSnapshot's counts. SDK-free (Sequencer + PatternSnapshot).
+# ---------------------------------------------------------------------------
+set(EXAMPLE_COMMAND_SNAPSHOT_PATH_SRC "${TEST_DIR}/example_command_snapshot_path.cpp")
+
+add_executable(genseq_example_command_snapshot_path "${EXAMPLE_COMMAND_SNAPSHOT_PATH_SRC}")
+target_include_directories(genseq_example_command_snapshot_path PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_command_snapshot_path PRIVATE genseq_emission)
+add_test(NAME genseq_example_command_snapshot_path COMMAND genseq_example_command_snapshot_path)
+
+# ---------------------------------------------------------------------------
 # Example test: fixed-capacity MIDI event queue (task 4.2).
 #
 # A standalone example validating Requirements 4.1, 4.2, 4.5, 4.7: deterministic
@@ -848,6 +863,9 @@ if(RAPIDCHECK_AVAILABLE)
     # The Sequencer integration example (tasks 2.4/2.5/3.3/4.1) is its own target
     # with its own main(); exclude it from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SEQUENCER_INTEGRATION_SRC}")
+    # The allocation-free command-path example (6.4) is its own target with its
+    # own main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_COMMAND_SNAPSHOT_PATH_SRC}")
     # The MIDI event queue (4.2) and Scheduler (5.1) examples are their own
     # targets with their own main(); exclude them from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_MIDI_EVENT_QUEUE_SRC}")

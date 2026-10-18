@@ -16,6 +16,8 @@
 
 namespace sequencer {
 
+class PatternSnapshot;  // fwd (task 6.4 allocation-free receive path)
+
 // Instrumented MIDI output adapter: forwards every byte to the real transport
 // while counting it and firing the dispatch trace markers. ALL MIDI emission —
 // transport bytes via sendMidiByte and note bytes via NoteLifecycle — goes
@@ -41,6 +43,14 @@ public:
     void init();
     void update();
     void processCommand(commands::CommandMessage msg);
+
+    // Allocation-free command application for the core1 timing path (task 6.4,
+    // Req 7.9). The multiword pattern-set payloads are read from `snapshot`
+    // (filled by commands::receiveCommandInto) instead of from heap-backed
+    // CommandMessage vectors. Non-set commands behave exactly like
+    // processCommand(msg); set commands apply from the snapshot's fixed buffers.
+    void processCommand(const commands::CommandMessage& msg,
+                        const sequencer::PatternSnapshot& snapshot);
 
     const PerformanceMetrics& performanceMetrics() const { return metrics; }
     void resetPerformanceMetrics();
@@ -86,6 +96,18 @@ private:
     void setPatternVelocitySet(size_t patternIndex, uint8_t count,
                                common::PlayingOrder order,
                                const std::vector<uint8_t>& velocities);
+
+    // Snapshot-reading appliers (task 6.4): construct the replacement set from
+    // the fixed-capacity PatternSnapshot buffers, so no CommandMessage vector is
+    // populated on the core1 receive path. Each replaces ONLY its own set,
+    // preserving the pattern's other material (the wire sends gate/pitch/velocity
+    // as separate commands).
+    void setPatternGateSetFromSnapshot(size_t patternIndex,
+                                       const sequencer::PatternSnapshot& snap);
+    void setPatternPitchSetFromSnapshot(size_t patternIndex,
+                                        const sequencer::PatternSnapshot& snap);
+    void setPatternVelocitySetFromSnapshot(size_t patternIndex,
+                                           const sequencer::PatternSnapshot& snap);
 
     // Advance one logical tick. When reconcileOnly is true the tick is a MISSED
     // tick being reconciled (task 5.2): pattern phase advances and crossed

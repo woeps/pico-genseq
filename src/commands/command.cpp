@@ -1,6 +1,7 @@
 #include <algorithm>
 #include "command.h"
 #include "pico/multicore.h"
+#include "../sequencer/PatternSnapshot.h"
 
 namespace commands {
 
@@ -128,6 +129,72 @@ namespace commands {
                         if (velIndex < msg.velocityCount) {
                             msg.velocities[velIndex] = (word >> (byte * 8)) & 0xFF;
                         }
+                    }
+                }
+            }
+        }
+        return msg;
+    }
+
+    CommandMessage receiveCommandInto(sequencer::PatternSnapshot& snapshot) {
+        // Allocation-free sibling of receiveCommand() for the core1 timing path
+        // (task 6.4, Req 7.9): identical FIFO decode, but multiword payloads land
+        // in the reused `snapshot` instead of the heap-backed vector members. The
+        // returned message carries only scalar fields; its vectors stay empty.
+        commands::CommandMessage msg;
+        snapshot.clear();
+        if (!multicore_fifo_rvalid()) return msg;
+
+        const uint32_t raw_cmd = multicore_fifo_pop_blocking();
+        msg.cmd = static_cast<commands::Command>(raw_cmd & 0xFF);
+        msg.param1 = (raw_cmd >> 8) & 0xFF;
+        msg.param2 = (raw_cmd >> 16) & 0xFF;
+
+        if (msg.cmd == Command::PATTERN_GATE_SET) {
+            const uint16_t receivedGateCount = raw_cmd >> 16;
+            msg.gateCount = std::min(receivedGateCount, MAX_GATE_SET_LENGTH);
+            snapshot.setGateCount(msg.gateCount);
+            const uint16_t wordCount = (receivedGateCount + 31) / 32;
+            for (uint16_t i = 0; i < wordCount; i++) {
+                const uint32_t word = multicore_fifo_pop_blocking();
+                for (uint8_t bit = 0; bit < 32; bit++) {
+                    const size_t gateIndex = static_cast<size_t>(i) * 32 + bit;
+                    if (gateIndex < msg.gateCount) {
+                        snapshot.setGate(static_cast<uint16_t>(gateIndex), word & (1u << bit));
+                    }
+                }
+            }
+        } else if (msg.cmd == Command::PATTERN_PITCH_SET) {
+            const uint8_t receivedPitchCount = (raw_cmd >> 16) & 0xFF;
+            msg.pitchCount = std::min(receivedPitchCount, MAX_PITCH_SET_LENGTH);
+            msg.pitchOrder = static_cast<common::PlayingOrder>((raw_cmd >> 24) & 0xFF);
+            snapshot.setPitchCount(msg.pitchCount);
+            snapshot.setPitchOrder(msg.pitchOrder);
+            const uint8_t wordCount = (msg.pitchCount + 3) / 4;
+            for (uint8_t i = 0; i < wordCount; i++) {
+                const uint32_t word = multicore_fifo_pop_blocking();
+                for (uint8_t byte = 0; byte < 4; byte++) {
+                    const size_t pitchIndex = static_cast<size_t>(i) * 4 + byte;
+                    if (pitchIndex < msg.pitchCount) {
+                        snapshot.setPitch(static_cast<uint8_t>(pitchIndex),
+                                          (word >> (byte * 8)) & 0xFF);
+                    }
+                }
+            }
+        } else if (msg.cmd == Command::PATTERN_VELOCITY_SET) {
+            const uint8_t receivedVelCount = (raw_cmd >> 16) & 0xFF;
+            msg.velocityCount = std::min(receivedVelCount, MAX_PITCH_SET_LENGTH);
+            msg.velocityOrder = static_cast<common::PlayingOrder>((raw_cmd >> 24) & 0xFF);
+            snapshot.setVelocityCount(msg.velocityCount);
+            snapshot.setVelocityOrder(msg.velocityOrder);
+            const uint8_t wordCount = (msg.velocityCount + 3) / 4;
+            for (uint8_t i = 0; i < wordCount; i++) {
+                const uint32_t word = multicore_fifo_pop_blocking();
+                for (uint8_t byte = 0; byte < 4; byte++) {
+                    const size_t velIndex = static_cast<size_t>(i) * 4 + byte;
+                    if (velIndex < msg.velocityCount) {
+                        snapshot.setVelocity(static_cast<uint8_t>(velIndex),
+                                             (word >> (byte * 8)) & 0xFF);
                     }
                 }
             }

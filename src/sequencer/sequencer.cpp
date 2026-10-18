@@ -1,6 +1,7 @@
 #include "sequencer.h"
 #include "midi_messages.h"
 #include "Scheduler.h"
+#include "PatternSnapshot.h"
 #include "../common/pitch_set.h"
 #include "../common/velocity_set.h"
 #include "../common/gate_set.h"
@@ -212,6 +213,85 @@ bool Sequencer::canApplyCommand(const commands::CommandMessage& msg) const {
         default:
             return false;
     }
+}
+
+void Sequencer::processCommand(const commands::CommandMessage& msg,
+                               const sequencer::PatternSnapshot& snapshot) {
+    // Allocation-free core1 path (task 6.4, Req 7.9). Validation and metrics are
+    // identical to processCommand(msg); only the three multiword pattern-set
+    // commands read their payload from `snapshot` instead of CommandMessage's
+    // (now-empty) vectors. canApplyCommand checks `count <= vector.size()` for
+    // set commands, which is vacuously false here (empty vectors) — so validate
+    // those against the snapshot's counts instead.
+    bool applicable;
+    switch (msg.cmd) {
+        case commands::Command::PATTERN_GATE_SET:
+            applicable = msg.param1 < patterns.size();
+            break;
+        case commands::Command::PATTERN_PITCH_SET:
+            applicable = msg.param1 < patterns.size() &&
+                         msg.pitchCount <= snapshot.pitchCount();
+            break;
+        case commands::Command::PATTERN_VELOCITY_SET:
+            applicable = msg.param1 < patterns.size() &&
+                         msg.velocityCount <= snapshot.velocityCount();
+            break;
+        default:
+            // Non-set commands carry no vector payload; the scalar path validates
+            // them correctly.
+            applicable = canApplyCommand(msg);
+            break;
+    }
+    if (!applicable) return;
+
+    instrumentation::PerformanceTrace::operationApplyBegin();
+
+    switch (msg.cmd) {
+        case commands::Command::PATTERN_GATE_SET:
+            setPatternGateSetFromSnapshot(msg.param1, snapshot);
+            break;
+        case commands::Command::PATTERN_PITCH_SET:
+            setPatternPitchSetFromSnapshot(msg.param1, snapshot);
+            break;
+        case commands::Command::PATTERN_VELOCITY_SET:
+            setPatternVelocitySetFromSnapshot(msg.param1, snapshot);
+            break;
+        case commands::Command::PLAY:            play(); break;
+        case commands::Command::STOP:            stop(); break;
+        case commands::Command::BPM_SET:         setBPM(msg.param1); break;
+        case commands::Command::PATTERN_ACTIVATE:   activatePattern(msg.param1); break;
+        case commands::Command::PATTERN_DEACTIVATE: deactivatePattern(msg.param1); break;
+        case commands::Command::PATTERN_ADD:     addPattern(common::Pattern()); break;
+        case commands::Command::PATTERN_REMOVE:  removePattern(msg.param1); break;
+        default: break;
+    }
+
+    ++metrics.operationsApplied;
+    instrumentation::PerformanceTrace::operationApplyEnd();
+}
+
+void Sequencer::setPatternGateSetFromSnapshot(size_t patternIndex,
+                                              const sequencer::PatternSnapshot& snap) {
+    if (patternIndex >= patterns.size()) return;
+    std::vector<bool> gates(snap.gateCount());
+    for (uint16_t i = 0; i < snap.gateCount(); ++i) gates[i] = snap.gate(i);
+    patterns[patternIndex].setGateSet(common::GateSet(gates));
+}
+
+void Sequencer::setPatternPitchSetFromSnapshot(size_t patternIndex,
+                                               const sequencer::PatternSnapshot& snap) {
+    if (patternIndex >= patterns.size()) return;
+    std::vector<uint8_t> pitches(snap.pitchCount());
+    for (uint8_t i = 0; i < snap.pitchCount(); ++i) pitches[i] = snap.pitch(i);
+    patterns[patternIndex].setPitchSet(common::PitchSet(pitches, snap.pitchOrder()));
+}
+
+void Sequencer::setPatternVelocitySetFromSnapshot(size_t patternIndex,
+                                                  const sequencer::PatternSnapshot& snap) {
+    if (patternIndex >= patterns.size()) return;
+    std::vector<uint8_t> velocities(snap.velocityCount());
+    for (uint8_t i = 0; i < snap.velocityCount(); ++i) velocities[i] = snap.velocity(i);
+    patterns[patternIndex].setVelocitySet(common::VelocitySet(velocities, snap.velocityOrder()));
 }
 
 void Sequencer::resetPerformanceMetrics() {
