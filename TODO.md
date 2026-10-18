@@ -29,25 +29,71 @@ sequencer never notices → transparent save within the ≤1 ms MIDI budget.
 
 ### 1. Wiring (bench)
 
-- [ ] Mount the FRAM breakout on **SPI1** (keep it off the QSPI/XIP bus — the
-      whole point is XIP stays up during writes). SPI0 default pins collide with
-      the LED matrix on GP16.
-- [ ] Proposed pins (CONFIRM against the LCD I2C SDA/SCL pins in
-      `src/ui/hardware/Display.cpp` before soldering/wiring — those are passed at
-      runtime and must not clash):
+Mount the FRAM breakout on **SPI1** (keep it off the QSPI/XIP bus — the whole
+point is XIP stays up during writes). SPI0 default pins collide with the LED
+matrix on GP16, so SPI1 on GP10–13 is the clean, conflict-free choice.
 
-      | FRAM pin | Pico GPIO | SPI1 function |
-      |---|---|---|
-      | SCK  | GP10 | SPI1 SCK  |
-      | MOSI | GP11 | SPI1 TX   |
-      | MISO | GP12 | SPI1 RX   |
-      | CS   | GP13 | SW-driven CS (GPIO) |
-      | VCC  | 3V3  | — |
-      | GND  | GND  | — |
-      | WP/HOLD | 3V3 (tie inactive) | — |
+**Pin-clash check (VERIFIED 2026-10-18):** the only GPIOs actually claimed in the
+live build are GP8/GP9 (MIDI UART1), GP16 (LED matrix) and GP25 (onboard LED).
+The LCD `Display` class takes its I2C SDA/SCL pins as constructor arguments and
+is **not instantiated** in the live build (`src/ui/UIController.cpp` notes the
+LCD is not wired and `pins.h` defines no I2C pins), so there is **no LCD pin to
+clash with today**. GP10–13 are free. Re-check if the LCD is ever wired in.
 
-- [ ] Confirmed-used pins to avoid: GP8/9 (MIDI UART1), GP16 (LED matrix),
-      GP25 (onboard LED), GP2–6 (trace build), and the LCD I2C pins (TBD).
+These default pins are baked into `src/persistence/Mb85rsFramSpi.h`
+(`Pins{ instance=spi1, sck=10, mosi=11, miso=12, cs=13, baud=8 MHz }`).
+
+| FRAM breakout pin | Pico GPIO | Physical pin | Function / notes |
+|---|---|---|---|
+| SCK      | GP10 | 14 | SPI1 SCK (clock) |
+| MOSI     | GP11 | 15 | SPI1 TX → FRAM SI |
+| MISO     | GP12 | 16 | FRAM SO → SPI1 RX |
+| CS       | GP13 | 17 | Software-driven CS (GPIO, active-low, idles high) |
+| VIN/VCC  | 3V3  | 36 | 3V3(OUT); breakout has onboard regulator + level shift |
+| GND      | GND  | 23 | Common ground (nearest to the signal pins) |
+| WP       | 3V3  | —  | Write-protect, active-low. Breakout pulls high → may leave floating; tie to 3V3 if writes are flaky |
+| HOLD     | 3V3  | —  | Hold, active-low. Driver never uses it; same as WP |
+
+> **Pin-number gotcha:** "GP10" is the GPIO number the firmware uses; it is
+> **physical pin 14** on the board. Count physical pins 1–40 down the board edge;
+> the silkscreen shows the `GPnn` numbers.
+
+**Clock speed:** the driver starts conservative at **8 MHz** (`Pins::baud`). The
+MB85RS2MTA supports up to 40 MHz — raise `baud` later for a faster save once
+reads/writes verify. 8 MHz is plenty for a config record and more tolerant of
+breadboard wiring.
+
+```
+   Adafruit MB85RS2MTA FRAM breakout            Raspberry Pi Pico (USB at top)
+  ┌───────────────────────────────┐           ┌───────────────┬───┬───────────────┐
+  │                               │           │ GP0        1 ●─┤USB├─● 40  VBUS     │
+  │   VIN  GND  WP  SCK  MISO     │           │ GP1        2 ●─┤   ├─● 39  VSYS     │
+  │   HOLD CS   MOSI              │           │ GND        3 ●─┤   ├─● 38  GND      │
+  │    │   │    │    │    │       │           │ GP2        4 ●─┤   ├─● 37  3V3_EN   │
+  └────┼───┼────┼────┼────┼───────┘           │ GP3        5 ●─┤   ├─● 36  3V3(OUT) │◀── VIN, WP, HOLD
+       │   │    │    │    │                   │ GP4        6 ●─┤   ├─● 35  ADC_VREF │
+       │   │    │    │    └── MISO ───────────┼─● GP12   16 ───┤   ├─● 34  GP28     │
+       │   │    │    └─────── SCK  ───────────┼─● GP10   14 ───┤   ├─● 33  GND      │
+       │   │    └──────────── MOSI ───────────┼─● GP11   15 ───┤   ├─● 32  GP27     │
+       │   └───────────────── CS   ───────────┼─● GP13   17 ───┤   ├─● 31  GP26     │
+       │                                       │ GP8  (MIDI TX) ┤   ├  ...          │  ◀ GP8/9 = MIDI, leave
+       └── VIN/WP/HOLD → 3V3(OUT) pin 36        │ GP9  (MIDI RX) ┤   ├               │
+           GND         → GND     pin 23         │ GND       23 ●─┤   ├               │◀── GND
+                                                └───────────────┴───┴───────────────┘
+
+  Signal pins used:  GP10=SCK(14)  GP11=MOSI(15)  GP12=MISO(16)  GP13=CS(17)
+  Power:             VIN/WP/HOLD → 3V3(OUT) pin 36,  GND → pin 23
+  (Breakout silkscreen pin order varies by revision — match by LABEL, not position.)
+```
+
+**Bring-up order (before any measurement):** power on → `Mb85rsFramSpi::init()`
+→ **RDID (0x9F)**. A healthy MB85RS2M returns manufacturer `0x04` (Fujitsu) + the
+2 Mbit density/product code. `0x00` or `0xFF` ⇒ wiring fault — almost always
+MISO/MOSI swapped or CS not reaching GP13. This is exactly what
+`example_fram_driver` exercises, so it is the first on-target check.
+
+Confirmed-used pins to avoid: GP8/9 (MIDI UART1), GP16 (LED matrix),
+GP25 (onboard LED), GP2–6 (trace build only).
 
 ### 2. Firmware driver
 
