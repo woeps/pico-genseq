@@ -173,6 +173,38 @@ void test_remove_releases() {
     check(firstNoteOffNote(h.out.record()) == 60, "remove releases the owned note");
 }
 
+// init() resets runtime transport to the defined baseline: stops playback,
+// releases owned notes, and leaves the sequencer quiescent until an explicit
+// Play. Idempotent.
+void test_init_resets_to_baseline() {
+    Harness h;
+    h.setPitch({60});
+    h.setGate({true, true});  // note sounds and is held
+    h.play();
+    h.tick(1);  // NoteOn(60) held
+    h.out.clear();
+
+    h.seq.init();  // reset
+    check(firstNoteOffNote(h.out.record()) == 60,
+          "init() releases the held note (NoteOff 60)");
+
+    // After init() the sequencer is stopped: servicing a tick emits nothing.
+    h.out.clear();
+    h.tick(2);
+    check(h.out.record().empty(), "init() leaves playback stopped (no emission on tick)");
+
+    // Idempotent: a second init() with nothing sounding emits nothing.
+    h.out.clear();
+    h.seq.init();
+    check(h.out.record().empty(), "init() is idempotent (no emission when already baseline)");
+
+    // Play still works after init() — one Start, then a tick emits Clock+NoteOn.
+    h.out.clear();
+    h.play();
+    check(countByte(h.out.record(), midi::SystemRealTimeMessage::START) == 1,
+          "Play after init() emits exactly one Start");
+}
+
 }  // namespace
 
 int main() {
@@ -182,6 +214,7 @@ int main() {
     test_repeated_play_noop();
     test_mute_releases();
     test_remove_releases();
+    test_init_resets_to_baseline();
 
     if (failures == 0) {
         std::printf("example_sequencer_integration: all checks passed\n");

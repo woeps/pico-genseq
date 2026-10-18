@@ -35,7 +35,30 @@ void MeteredMidiOutput::write(uint8_t byte) {
 }
 
 void Sequencer::init() {
-    // TODO: reset values to default
+    // Reset runtime transport state to the defined power-on baseline. Idempotent
+    // and safe to call on an already-constructed Sequencer (createSequencerTask
+    // calls it once after construction; a future re-init path can call it again).
+    //
+    // Working State is preserved except for runtime positions: the pattern slots
+    // and their identities are kept (no vector churn / reallocation), but every
+    // pattern's gate/pitch/velocity runtime position is reset to its defined
+    // start, playback is stopped, all note ownership is released, any latched
+    // Timing Fault is acknowledged, and the default tempo is restored.
+    fault.acknowledge();
+    instrumentation::PerformanceTrace::setFault(false);
+
+    playing = false;
+    timeline.stop();
+    noteLifecycle.releaseAll();
+
+    midiClockEnabled = true;
+    timeline.setBpm(120);
+
+    for (auto& pattern : patterns) {
+        pattern.getGateSet().reset();
+        pattern.getPitchSet().reset();
+        pattern.getVelocitySet().reset();
+    }
 }
 
 void Sequencer::update() {
