@@ -231,7 +231,7 @@ of this plan.
     - Pin dependencies or provide always-available deterministic generated traces
     - Run sanitizer builds where supported
     - _Requirements: 11.1–11.4_
-  - [ ] 12.2 Run the firmware and host build gates
+  - [x] 12.2 Run the firmware and host build gates
     - Build firmware and run all required host suites with zero failures
     - Confirm zero steady-state real-time allocation and documented queue budgets
     - _Requirements: 3.3, 7.2, 7.4, 7.9, 11.2–11.4_

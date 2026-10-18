@@ -14,7 +14,7 @@ namespace common {
         return flankStringMap[flank];
     }
 
-    Flank getInitFlank(std::vector<bool> gates);
+    Flank getInitFlank(const std::vector<bool>& gates);
 
     // GateSet implementation
     GateSet::GateSet(const std::vector<bool>& gates) :
@@ -76,7 +76,7 @@ namespace common {
         return gates[position];
     }
 
-    Flank getInitFlank(std::vector<bool> gates) {
+    Flank getInitFlank(const std::vector<bool>& gates) {
         if (gates.size() == 0) {
             return LOW;
         }

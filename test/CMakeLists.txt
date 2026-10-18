@@ -576,6 +576,21 @@ target_link_libraries(genseq_example_command_snapshot_path PRIVATE genseq_emissi
 add_test(NAME genseq_example_command_snapshot_path COMMAND genseq_example_command_snapshot_path)
 
 # ---------------------------------------------------------------------------
+# Example test: steady-state zero-allocation gate (task 12.2 / Req 7.9).
+#
+# Overrides global operator new to count allocations and asserts the per-tick
+# scheduling+emission path and the allocation-free command-decode path perform
+# zero heap allocations after warm-up. Documents (does not assert zero) the
+# set-application allocation and the fixed queue budgets. SDK-free.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_STEADY_STATE_ALLOCATION_SRC "${TEST_DIR}/example_steady_state_allocation.cpp")
+
+add_executable(genseq_example_steady_state_allocation "${EXAMPLE_STEADY_STATE_ALLOCATION_SRC}")
+target_include_directories(genseq_example_steady_state_allocation PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_steady_state_allocation PRIVATE genseq_emission)
+add_test(NAME genseq_example_steady_state_allocation COMMAND genseq_example_steady_state_allocation)
+
+# ---------------------------------------------------------------------------
 # Example test: fixed-capacity MIDI event queue (task 4.2).
 #
 # A standalone example validating Requirements 4.1, 4.2, 4.5, 4.7: deterministic
@@ -866,6 +881,9 @@ if(RAPIDCHECK_AVAILABLE)
     # The allocation-free command-path example (6.4) is its own target with its
     # own main(); exclude it from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_COMMAND_SNAPSHOT_PATH_SRC}")
+    # The steady-state allocation gate (12.2) overrides global operator new and
+    # has its own main(); it MUST be its own target, never in the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_STEADY_STATE_ALLOCATION_SRC}")
     # The MIDI event queue (4.2) and Scheduler (5.1) examples are their own
     # targets with their own main(); exclude them from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_MIDI_EVENT_QUEUE_SRC}")
