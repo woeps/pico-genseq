@@ -96,6 +96,12 @@ Measured on L5 (GP8), the real UART line:
 
 ### Load: 8 patterns @ 120 BPM
 
+> **Note (corrected during task 9.2):** the live-load captures in this task-1.4
+> section were taken with **8** patterns active. The later 9.2 captures (below)
+> use **10** patterns — the true worst-case load the device supports. Pattern
+> count affects only wire-burst length, not scheduler jitter, so the task-1.4
+> conclusions stand; the 9.2 section is the authoritative worst-case load.
+
 | Metric | Value | Capture |
 |---|---|---|
 | Tick period | 20,834 µs (±1 sample) → 120.00 BPM | `captures/tick_L0_8pat_120bpm.npy` |
@@ -123,6 +129,98 @@ XIP is disabled, so **both cores stall and MIDI output ceases for ~33 ms** — o
 a full beat at 120 BPM, at the one-beat fault threshold. This is the empirical
 justification for Milestone 2's transparent-save work (RAM-resident execution
 path, or an external nonvolatile backend per Req 9.4).
+
+---
+
+# Task 9.2 — Internal flash save under worst-case live load
+
+Task 1.4 (above) established the save pause with a single pattern on the
+**pre-Milestone-2** firmware (`b94a627`). Task 9.2 re-measures the save under
+**worst-case live load on the current `agents` branch**, which has the hardened
+fail-closed pause protocol from task 9.1, and answers the two questions the 1.4
+baseline could not: *(a)* does the hardened pause still freeze both cores, and
+*(b)* does the freeze endanger a note that is sounding when the save lands
+(stuck-note / note-duration safety for Req 9.2 and later 12.4)?
+
+### Evidence provenance (9.2)
+
+| Item | Value |
+|---|---|
+| Firmware commit | `9f992fb` (`agents` branch, all host-implementable Milestone 2 work) — includes the task-9.1 hardened `core_pause` + fail-closed `FlashStore` |
+| Firmware image | `build-trace/genseq.elf` rebuilt on `agents` with the trace CMake flags |
+| Live load | **10 patterns active with gates on, transport running, MIDI wire saturated** |
+| Save trigger | Ctrl+S from a USB keyboard on the GenSeq host port (`Reducer::isSaveCombo`, global) |
+| Analyzer / driver | same BS05U + scopething as task 1.4 |
+| Capture harness | `capture_coincident_save.py` (hardware trigger on L3, dict trigger `{3:1}`) |
+| Raw captures | `captures/save_live_120bpm_10pat.npy`, `captures/save_live_255bpm_10pat.npy`, `captures/save_coincident_255bpm_10pat.npy` |
+
+### Results — freeze across tempos
+
+| Metric | 120 BPM | 255 BPM | Req 9.3 budget | Verdict |
+|---|---|---|---|---|
+| Save pause (contiguous) | 34.94 ms | 37.03 ms | — | one flash erase+program+verify |
+| Beat length | 500 ms | 235 ms | — | — |
+| Save as % of one beat | 7.0% | **15.8%** | — | — |
+| Ticks serviced during save | 1\* (exp. 1.68) | **0** (exp. 3.78) | — | 🔴 scheduler parked |
+| MIDI wire active during save | 5.66%\* | **0.0%** | ≤ 1 ms interruption | 🔴 **~37× over** |
+
+\* The 120 BPM capture used a free-run window that happened to include the
+release-boundary tick/wire resume. The 255 BPM capture is hardware-triggered on
+L3 at 5 µs resolution with the pulse fully contained, and shows the interior
+cleanly: **zero ticks, zero MIDI bits for the entire 37 ms.**
+
+**RAM-resident path audit:** the task-9.1-hardened save path still freezes both
+cores for ~37 ms. The RAM-resident `doFlashWrite` + `corePauseSpin` correctly
+prevent an XIP-down crash, but by design they *park* core1 rather than keep it
+sequencing — so during the write there is **no tick advance and no MIDI
+dispatch at all**. Sequencing does **not** continue while XIP is unavailable.
+
+### Results — coincident-burst (note-safety)
+
+Capture: `captures/save_coincident_255bpm_10pat.npy`, 255 BPM, 10 patterns,
+Ctrl+S landing while patterns fire together.
+
+| Measurement | Value | Meaning |
+|---|---|---|
+| Save pause | 35.73 ms | total freeze |
+| Ticks / wire edges during save | 0 / 0 | both cores dark |
+| Last wire activity **before** save | −0.85 ms | a note byte was on the wire as the save began |
+| First wire activity **after** release | +0.09 ms | wire resumes immediately on release |
+| **Wire silence gap** | **36.67 ms** | a note sounding at the freeze has its note-off deferred this long |
+| Post-release burst | 324 edges in **5.50 ms** | the deferred backlog floods out at once |
+| Min / median edge spacing | 30 µs / 60 µs | at the 31,250-baud bit floor (32 µs) — well-formed |
+| Sub-30 µs edges | 0 real (27 are 1-sample quantization) | **no corruption, no dropped bytes** |
+
+**Note-safety conclusion:** the blocking save does **not** corrupt or drop MIDI
+— the backlog serializes out cleanly once XIP returns. But a note that is
+sounding when the save lands has its **note-off deferred by the full ~37 ms**
+(≈ 15% of a beat at 255 BPM stretched onto that note), after which the whole
+queued backlog bursts out compressed into ~5.5 ms. The defect is **timing
+(note-duration stretch + burst compression), not data integrity.**
+
+### Conclusion for the 9.4 backend decision
+
+Internal flash **cannot** meet the ≤1 ms transparent-MIDI bound, and no amount
+of pause-protocol hardening changes that — the ~37 ms XIP-down window is
+intrinsic to erasing/programming internal flash while executing from it. DMA
+does not help the internal-flash case (a DMA channel cannot read flash while XIP
+is down either, and the latency is the NOR die's erase time). The paths to a
+transparent save are:
+
+1. **A fully RAM-resident execution path** that keeps *both* cores sequencing
+   through the write — no new BOM, but every hot-path instruction and ISR must
+   be `__not_in_flash_func`, and the writing core still eats the flash erase
+   latency.
+2. **An external nonvolatile backend (FRAM over SPI)** — writes over SPI with
+   XIP never disabled, no erase cycle (byte-writable), ~10¹²–10¹⁴ endurance, and
+   the SPI write can be DMA-driven for a fully CPU-free save. This is the leading
+   option task 9.3 prototypes. The backend-neutral `RecordStore` (task 10.1) was
+   built so the A/B transactional commit (10.2) ports to it cleanly.
+
+Task 9.3 (external FRAM evaluation) requires acquiring an FRAM part and is the
+remaining input to the 9.4 checkpoint.
+
+---
 
 ## Interpretation (logical jitter vs wire skew, Req 11.7)
 

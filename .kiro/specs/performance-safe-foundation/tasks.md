@@ -187,7 +187,7 @@ of this plan.
     - Return positive acknowledgement/failure
     - Prohibit erase/program after timeout
     - _Requirements: 8.8, 9.8_
-  - [ ] 9.2 Benchmark internal flash under worst-case live load
+  - [x] 9.2 Benchmark internal flash under worst-case live load
     - Measure scheduler jitter, MIDI continuity, UI/input gaps, pause, erase, program, and verify
     - Audit the complete RAM-resident path if sequencing continues while XIP is unavailable
     - _Requirements: 8.5–8.7, 9.2–9.4, 11.6, 11.7_
