@@ -796,6 +796,24 @@ target_link_libraries(genseq_example_record_store PRIVATE genseq_persistence)
 add_test(NAME genseq_example_record_store COMMAND genseq_example_record_store)
 
 # ---------------------------------------------------------------------------
+# Example test: MB85RS2MTA FRAM driver protocol (task 9.3 prep).
+#
+# Proves the SDK-free Mb85rsFram IFlashStore driver against a host device model
+# (FakeFramSpi): round-trip, 3-byte addressing beyond 64 KB, WREN sequencing,
+# read-back verify, device-id, and RecordStore backend-neutrality over FRAM.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_FRAM_DRIVER_SRC "${TEST_DIR}/example_fram_driver.cpp")
+
+add_executable(genseq_example_fram_driver "${EXAMPLE_FRAM_DRIVER_SRC}")
+target_include_directories(genseq_example_fram_driver PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/persistence"
+    "${TEST_DIR}/persistence"
+)
+target_link_libraries(genseq_example_fram_driver PRIVATE genseq_persistence)
+add_test(NAME genseq_example_fram_driver COMMAND genseq_example_fram_driver)
+
+# ---------------------------------------------------------------------------
 # Example test: persistent fault indication + explicit-Play ack (tasks 11.2/11.3).
 #
 # Validates Req 10.4/10.5/10.6: the fault matrix color is distinct and takes
@@ -907,6 +925,7 @@ if(RAPIDCHECK_AVAILABLE)
     # Wave-9 host examples (10.1 record-store, 11.2/11.3 fault-indication, 8.3
     # save-coordination) are their own targets with their own main().
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_RECORD_STORE_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_FRAM_DRIVER_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_FAULT_INDICATION_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SAVE_COORDINATION_SRC}")
 
