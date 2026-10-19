@@ -15,7 +15,7 @@ of this plan.
 
 ## Tasks
 
-- [ ] 1. Establish deterministic host time and baseline instrumentation
+- [x] 1. Establish deterministic host time and baseline instrumentation
   - [x] 1.1 Define an SDK-free `IMonotonicClock` and firmware `PicoMonotonicClock`
     - Express time as monotonic 64-bit microseconds
     - Inject the clock into the scheduler/sequencer without changing MIDI transport ownership
@@ -35,7 +35,7 @@ of this plan.
     - Store commands, analyzer configuration, captures, and observed maxima
     - _Requirements: 9.2, 9.3, 11.6, 11.7_
 
-- [ ] 2. Implement canonical channels and per-pattern note ownership
+- [x] 2. Implement canonical channels and per-pattern note ownership
   - [x] 2.1 Define canonical MIDI channel conversion and validation
     - Represent protocol channels as 0..15 internally and user channels as 1..16 only at boundaries
     - Remove the current channel 0/1 alias and cover all 16 channels
@@ -64,7 +64,7 @@ of this plan.
     - Assert every generated trace ending in Stop/fault has zero ownership
     - _Requirements: 5.1–5.10, 11.2, 11.3_
 
-- [ ] 3. Implement the global Transport Timeline and meter
+- [x] 3. Implement the global Transport Timeline and meter
   - [x] 3.1 Define supported Time Signature ranges
     - Choose bounded numerator and denominator sets exactly representable at the selected PPQN
     - Reject unsupported values rather than rounding boundaries
@@ -82,7 +82,7 @@ of this plan.
     - Cover each supported denominator/numerator, BPM 40/120/255, and long-run phase
     - _Requirements: 1.1–1.7, 11.2_
 
-- [ ] 4. Complete MIDI transport and bounded output serialization
+- [x] 4. Complete MIDI transport and bounded output serialization
   - [x] 4.1 Implement the unified MIDI Clock Output setting
     - Enabled: exactly one Start, 24 Clock messages per quarter note, exactly one Stop
     - Disabled: no Start/Clock/Stop while notes continue normally
@@ -103,7 +103,7 @@ of this plan.
     - Keep logical scheduling assertions separate from modeled wire skew
     - _Requirements: 2.1–2.6, 4.1–4.7, 11.2_
 
-- [ ] 5. Implement deterministic scheduler recovery and Timing Fault
+- [x] 5. Implement deterministic scheduler recovery and Timing Fault
   - [x] 5.1 Refactor sequencing behind `Scheduler::service(now)`
     - Give every tick an intended timestamp and documented per-service work budget
     - Prioritize immediate safety work before ordinary edits
@@ -122,7 +122,7 @@ of this plan.
     - Verify no catch-up bursts and explicit Play restart from the beginning
     - _Requirements: 3.1–3.8, 10.1–10.7, 11.1–11.3_
 
-- [ ] 6. Replace blocking cross-core payload transfer
+- [x] 6. Replace blocking cross-core payload transfer
   - [x] 6.1 Design a fixed-capacity shared-SRAM `CommandInbox`
     - Define slot ownership, synchronization, memory bound, and compact notification strategy
     - Keep core1 independent of blocking multiword FIFO payload reads
@@ -145,7 +145,7 @@ of this plan.
     - Assert complete payload visibility and bounded service work
     - _Requirements: 7.1–7.11, 11.2_
 
-- [ ] 7. Add immediate, beat, and bar operation application
+- [x] 7. Add immediate, beat, and bar operation application
   - [x] 7.1 Implement `TimingPolicy` and effective-tick calculation
     - Resolve Immediate, Next Beat, and Next Bar from the Transport Timeline
     - _Requirements: 6.1, 6.8_
@@ -165,7 +165,7 @@ of this plan.
     - Assert zero logical-tick application error
     - _Requirements: 6.1–6.9, 11.2_
 
-- [ ] 8. Make save capture consistent and nonblocking
+- [x] 8. Make save capture consistent and nonblocking
   - [x] 8.1 Define Save Snapshot semantics in code
     - Capture accepted Working State atomically on core0
     - Include accepted quantized changes and exclude unkept drafts
@@ -181,7 +181,7 @@ of this plan.
     - Assert unsafe coordination performs zero destructive writes
     - _Requirements: 8.1–8.9, 11.2_
 
-- [ ] 9. Storage benchmark and backend decision checkpoint
+- [x] 9. Storage benchmark and backend decision checkpoint
   - [x] 9.1 Harden the existing internal-flash pause protocol before benchmarking
     - Use explicit synchronization and absolute-time timeout
     - Return positive acknowledgement/failure
@@ -191,30 +191,47 @@ of this plan.
     - Measure scheduler jitter, MIDI continuity, UI/input gaps, pause, erase, program, and verify
     - Audit the complete RAM-resident path if sequencing continues while XIP is unavailable
     - _Requirements: 8.5–8.7, 9.2–9.4, 11.6, 11.7_
-  - [ ] 9.3 Evaluate external nonvolatile storage
+  - [x] 9.3 Evaluate external nonvolatile storage
     - Include FRAM and document capacity, latency, endurance, bus/pin use, cost, and complexity
     - Prototype enough of the leading option to measure worst-case behavior
     - _Requirements: 9.1, 9.4, 9.5_
-  - [ ] 9.4 Decision checkpoint: select the v1 backend
+    - DONE: MB85RS2MTA (2 Mbit SPI FRAM) brought up on real silicon (RDID
+      0x04 7F 48 03, 3-byte addressing verified; fram_bringup, commit d3cb4d9).
+      Driver Mb85rsFram + Mb85rsFramSpi; transparency measured — a ~1.8 ms config
+      save vs internal flash's ~37 ms freeze (commit eaea421; docs baseline
+      README Task 9.3, capacity/latency/endurance/pins/cost documented).
+  - [x] 9.4 Decision checkpoint: select the v1 backend
     - Compare measured results with the approved 1 ms and 100 ms limits
     - Record the chosen backend and rejected alternatives
     - Obtain user approval before committing final hardware-specific integration
     - _Requirements: 9.2–9.5, 9.9_
+    - DONE: external FRAM selected (user-approved); internal flash rejected (~37 ms
+      freeze exceeds the save-gap limit), RAM-resident deferred. FRAM save is
+      transparent at every tempo (task 12.3/12.4 soak). ROADMAP records the choice.
 
-- [ ] 10. Implement transactional persistence on the selected backend
+- [x] 10. Implement transactional persistence on the selected backend
   - [x] 10.1 Define backend-neutral record-store operations
     - Keep serialization/orchestration independent from internal flash or external hardware
     - _Requirements: 9.1_
-  - [ ] 10.2 Implement A/B slots or equivalent transactional commit
+  - [x] 10.2 Implement A/B slots or equivalent transactional commit
     - Keep the previous record valid until the new record is written and verified
     - Use generation and commit state sufficient for deterministic boot selection
     - _Requirements: 9.6, 9.7_
-  - [ ] 10.3 Integrate and validate the selected backend
+    - DONE: RecordStore A/B slot commit on FRAM (allocation-free programAt write of
+      only the target slot; generation + committed flag; interrupted-commit falls
+      back to the previous record). Host-tested (example_record_store incl.
+      injected-failure fallback); commits e4e0632, 0a853ad.
+  - [x] 10.3 Integrate and validate the selected backend
     - Meet transparent MIDI and UI bounds during repeated saves
     - Preserve the previous record under timeout, injected failure, and interrupted commit
     - _Requirements: 8.5–8.9, 9.6–9.9_
+    - DONE: FRAM is the sole live backend (UIController composition root; flash
+      path removed), commit e4e0632. Two cross-core crash bugs found via SWD and
+      fixed (0a853ad). Transparent-save + endurance (20× save+reboot, config
+      survives) + boot-load round-trip all verified on hardware (tasks 12.3/12.4,
+      test/bench/).
 
-- [ ] 11. Integrate persistent matrix fault feedback
+- [x] 11. Integrate persistent matrix fault feedback
   - [x] 11.1 Add a distinct latched Timing Fault state to UI state
     - Preserve Working State and distinguish it from save/load feedback
     - _Requirements: 10.3, 10.4, 10.7_
