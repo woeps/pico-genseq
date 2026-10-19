@@ -242,7 +242,7 @@ of this plan.
     - Clear the fault, reset runtime positions/pending invalid operations, start a new timeline
     - _Requirements: 10.5, 10.6_
 
-- [x] 12. Final automated and hardware validation
+- [ ] 12. Final automated and hardware validation
   - [x] 12.1 Make required host tests reproducible
     - Register all required suites with CTest
     - Pin dependencies or provide always-available deterministic generated traces
@@ -252,24 +252,26 @@ of this plan.
     - Build firmware and run all required host suites with zero failures
     - Confirm zero steady-state real-time allocation and documented queue budgets
     - _Requirements: 3.3, 7.2, 7.4, 7.9, 11.2–11.4_
-  - [x] 12.3 Run RP2040 timing and MIDI validation
+  - [ ] 12.3 Run RP2040 timing and MIDI validation
     - BPM 40/120/255, supported meters, minimum/maximum Pattern load, edit storms, and overload
     - Confirm logical jitter <=1 ms; report wire skew separately
     - Confirm normal UI gaps <=50 ms and save-time gaps <=100 ms
     - _Requirements: 3.2, 4.1–4.6, 8.5–8.7, 11.5–11.7_
-    - DONE (FRAM backend, autonomous soak test/bench/soak_12_3_12_4.py gate A+B):
-      save-time transparency confirmed at ALL of 40/120/255 BPM — the max
-      inter-tick interval DURING live saves equals the quiet baseline equals the
-      nominal period (62.52 / 20.88 / 9.84 ms), i.e. logical jitter is below the
-      tick-pulse measurement floor at every tempo. Edit-storm (200 synthesized
-      edit keys + saves): channel stays live, timingFault never latches. Wire
-      skew reported separately in the task-1.4 baseline. PROXY NOTE: UI-gap and
-      save-gap are evidenced by the device's own timingFault staying 0 (the
-      scheduler latches a fault if a tick is a full beat late) and by continuous
-      tick cadence, rather than a direct SaveService::maxServiceGapMicros dump
-      (SaveService is not on the live RecordStore path). Overload/meter-variant
-      injection not separately scripted; the 255 BPM + 15-pattern dense-gate load
-      is the worst case exercised.
+    - MOSTLY DONE, one gate FAILS. LITERAL metrics now measured (H:dump:
+      D:lastSaveUs / D:maxUiGapUs, commit 14af66e), not proxies:
+      - Save-time gap: 10.5–10.6 ms across 8 saves — PASS (<=100 ms).
+      - Logical jitter: below the tick-pulse floor at 40/120/255 BPM (max
+        inter-tick DURING saves == baseline == nominal 62.52/20.88/9.84 ms;
+        autonomous soak gate A). Wire skew reported separately (task-1.4).
+      - Edit storm (200 synth keys + saves): channel live, timingFault=0.
+      - **UI gap: FAIL — a recurring ~501 ms stall in the core0 UI loop even in
+        pure idle playback, measured directly (maxUiGapUs=501139), well over the
+        <=50 ms limit. NOT the save (clean 10.6 ms) and invisible to the core1
+        timingFault. Pre-existing defect the literal metric surfaced; prime
+        suspect tuh_task USB-host polling on the update() path. Needs its own
+        root-cause before 12.3 can pass.**
+      - Overload/meter-variant injection not separately scripted (255 BPM +
+        15-pattern dense gate is the worst case exercised).
   - [x] 12.4 Run note-safety and endurance validation
     - Exercise mute/remove/edit/Stop/fault/save and overlapping notes
     - Run long-duration playback and repeated save/power-cycle tests
@@ -281,13 +283,13 @@ of this plan.
       live-save note-safety = ticks + a MIDI dispatch continue through a real
       Ctrl+S with no cadence disruption (docs baseline README Task 12.4, capture
       fram_live_save_255bpm.npy). No unexplained resets or invalid writes (every
-      reboot re-loaded a valid record; A/B commit verified). PROXY NOTE: the
-      stuck-note / ownership-leak check rests on timingFault=0 (fail-closed
-      releases all ownership on fault) + MIDI returning silent after Stop, not a
-      direct NoteLifecycle::ownershipEmpty dump (core1 state, not exposed over
-      host-control); the full mute/remove/edit/Stop/fault+overlap matrix is
+      reboot re-loaded a valid record; A/B commit verified). STUCK-NOTE now
+      LITERAL (commit 14af66e): D:soundingNotes is the direct NoteLifecycle
+      sounding-note count published cross-core — MEASURED 2 under load -> 0 after
+      Stop, so Stop's releaseAll() leaves zero owned notes (no stuck note, no
+      ownership leak). The full mute/remove/edit/Stop/fault+overlap matrix is
       exercised as an edit storm rather than enumerated case-by-case.
-  - [x] 12.5 Retain evidence and reconcile documentation
+  - [ ] 12.5 Retain evidence and reconcile documentation
     - Check in procedures, captures/results, counter dumps, storage decision, and known limits
     - Update README and technical docs to match measured behavior
     - Link evidence from ROADMAP.md and mark Milestone 2 complete only when every gate passes
