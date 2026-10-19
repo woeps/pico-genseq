@@ -26,6 +26,17 @@
 
 #if GENSEQ_PERFORMANCE_TRACE_ENABLED
 #include "hardware/gpio.h"
+#include "pico/time.h"
+#endif
+
+// Optional: widen the Tick pulse (GP2) by holding it high this many extra
+// microseconds in tickEnd(), so a logic analyzer sampling at tens of us/sample
+// reliably latches the otherwise ~5.5 us serviceTick pulse. Trace-build only;
+// defaults to 0 (no change). The RISING edge still marks the true tick
+// boundary and the hold stays << the tick period, so cadence is unaffected —
+// this is a measurement aid for the task-12.4 live-save capture, nothing more.
+#ifndef GENSEQ_TRACE_TICK_WIDEN_US
+#define GENSEQ_TRACE_TICK_WIDEN_US 0
 #endif
 
 namespace instrumentation {
@@ -74,6 +85,10 @@ public:
 
     static void tickEnd() {
 #if GENSEQ_PERFORMANCE_TRACE_ENABLED && GENSEQ_TRACE_TICK_PIN >= 0
+#if GENSEQ_TRACE_TICK_WIDEN_US > 0
+        // Measurement aid: keep GP2 high long enough to be sampled, then drop.
+        busy_wait_us(GENSEQ_TRACE_TICK_WIDEN_US);
+#endif
         gpio_put(GENSEQ_TRACE_TICK_PIN, 0);
 #endif
     }

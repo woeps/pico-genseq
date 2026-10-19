@@ -209,6 +209,34 @@ void HostControl::dispatchLine(const char* raw) {
         return;
     }
 
+    if (strcasecmp(verb, "testload") == 0) {
+        // Give the selected pattern a DENSE gate set (pulses == steps) so the
+        // sequencer emits a note on every step — a near-continuous MIDI load for
+        // the task-12.4 live-save transparency capture. Drives the real gate
+        // editor through synthesized keys (never pokes state): F3 -> ENTER opens
+        // the GATE_SET editor (property resets to ALGORITHM), RIGHT,RIGHT walks
+        // ALGORITHM->STEPS->PULSES, UP (coarse) raises pulses to the ceiling
+        // (clamped to steps), ENTER commits. Reads gateSetDraft.pulses back to
+        // guard the loop.
+        auto& sm = ui::state::getStateManager();
+        tapKey(KeyId::F3, ui::mod::NONE);     // PATTERNS view
+        tapKey(KeyId::ENTER, ui::mod::NONE);  // enter GATE_SET editor
+        tapKey(KeyId::RIGHT, ui::mod::NONE);  // ALGORITHM -> STEPS
+        tapKey(KeyId::RIGHT, ui::mod::NONE);  // STEPS -> PULSES
+        int prev = -1, guard = 0;
+        while (guard++ < 80) {
+            const int p = static_cast<int>(sm.getState().gateSetDraft.pulses);
+            if (p == prev) break;             // clamped at the ceiling (== steps)
+            prev = p;
+            tapKey(KeyId::UP, ui::mod::SHIFT); // coarse +10 toward the ceiling
+        }
+        tapKey(KeyId::ENTER, ui::mod::NONE);  // commit the gate set
+        printf("H:ok testload pulses=%u (verify via dump)\n",
+               static_cast<unsigned>(sm.getState().gateSetConfigs[
+                   sm.getState().selectedPattern].pulses));
+        return;
+    }
+
     if (strcasecmp(verb, "reset") == 0) {
         // Autonomous "power-cycle": arm the watchdog with a short timeout and
         // spin. The chip reboots and re-runs main(), re-loading config from the

@@ -110,6 +110,8 @@ set(GENSEQ_TRACE_SAVE_PIN -1 CACHE STRING
     "GPIO driven high while a save is in progress")
 set(GENSEQ_TRACE_FAULT_PIN -1 CACHE STRING
     "GPIO held high while a performance fault is latched")
+set(GENSEQ_TRACE_TICK_WIDEN_US 0 CACHE STRING
+    "Extra us to hold the Tick trace pin high (measurement aid; 0 = off)")
 
 # Host-control command channel (autonomous bench testing). When ON, the live
 # genseq firmware reads newline-framed "H:" commands from stdin (the UART0 /
@@ -127,6 +129,7 @@ target_compile_definitions(genseq PRIVATE
     GENSEQ_TRACE_OPERATION_PIN=${GENSEQ_TRACE_OPERATION_PIN}
     GENSEQ_TRACE_SAVE_PIN=${GENSEQ_TRACE_SAVE_PIN}
     GENSEQ_TRACE_FAULT_PIN=${GENSEQ_TRACE_FAULT_PIN}
+    GENSEQ_TRACE_TICK_WIDEN_US=${GENSEQ_TRACE_TICK_WIDEN_US}
     GENSEQ_HOST_CONTROL=$<BOOL:${GENSEQ_HOST_CONTROL}>
     # Make malloc/free thread-safe across cores. The FRAM save runs on core0
     # concurrently with core1 (no core-park, unlike the old flash path); this

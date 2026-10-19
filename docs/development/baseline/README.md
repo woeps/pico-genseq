@@ -354,3 +354,56 @@ sequencing straight through it — eliminating the 9.2 note-stretch / burst-defe
 defect entirely. The cost is one SPI breakout + 4 GPIO (SPI1 GP10–13) and the
 10.3 integration work. This is the external-backend evidence feeding the 9.4
 decision (internal flash vs external FRAM vs RAM-resident).
+
+---
+
+## Task 12.4 — LIVE-load save transparency (real Ctrl+S on the FRAM backend)
+
+Task 9.3 proved the FRAM *driver* is transparent in isolation (a synthetic write
+on one core while another emitted a tick waveform). Task 12.4 proves the same for
+the **real live save path**: `UIController::drainSaveRequest` → the A/B
+`RecordStore::commit` onto FRAM on core0, while core1 runs the actual `Sequencer`
+emitting real MIDI. Trigger is a genuine Ctrl+S.
+
+### Autonomous rig (no keypress, no human power-cycle)
+
+- Firmware: `genseq` with `-DGENSEQ_PERFORMANCE_TRACE_ENABLED=ON`, trace pins
+  `Tick=GP2/L0`, `MIDI=GP3/L1`, `Save=GP5/L3` (the live `PerformanceTrace`
+  hooks: `tickBegin/End` round `serviceTick`, `midiDispatchBegin/End` per MIDI
+  byte, `saveBegin/End` round the live save), plus `-DGENSEQ_HOST_CONTROL=ON`.
+- Driven over the host-control UART channel: `H:bpm 255`, `H:testload` (fills the
+  selected pattern's gate set to a dense pulse count for a MIDI load), then
+  repeated `H:save` while the BS05U captures.
+- Flash + reset is hands-off: flash over SWD **without** OpenOCD's own reset
+  (which wedges this RP2040 — the multidrop quirk), then force the chip's own
+  watchdog to full-reset via register writes (`WATCHDOG_CTRL`/`LOAD` +
+  `PSM_WDSEL`), the same mechanism firmware `H:reset` uses.
+
+### Measurement-artifact caught and corrected
+
+The first captures appeared to show the inter-tick interval DOUBLING during a
+save (9.8 → 19.6 ms), suggesting a stall. It was an **undersampling artifact**:
+the `serviceTick` pulse is only ~5.5 µs wide (task 1.4), and the capture sampled
+at 20–60 µs/sample, so roughly half the tick edges were missed, faking a 2×
+spacing. Static analysis had already found no cross-core coupling (the save path
+disables no interrupts, takes no lock, shares no bus with core1; `corePause` is
+dead code; core1's command read is non-blocking), and the device's own
+`timingFault` never latched. Adding a trace-build-only
+`GENSEQ_TRACE_TICK_WIDEN_US` (holds GP2 high ~200 µs in `tickEnd`, a measurement
+aid that never shifts the rising edge or the cadence) made the edges reliably
+sampleable.
+
+### Result (widened tick pulse, 255 BPM, dense gates)
+
+| Inter-tick interval | Value |
+|---|---|
+| Baseline (no save) | 9.78–9.84 ms (= 255 BPM × 24 PPQN) |
+| **Across a ~10.4–10.8 ms live save** | **9.78–9.84 ms — identical** |
+
+Ticks fire straight through the live save at exact cadence; a MIDI dispatch also
+lands inside the save window with no cadence disruption. The live FRAM save is
+**transparent** — the same conclusion as 9.3, now on the real firmware. Contrast
+internal flash (task 9.2): ~37 ms with zero ticks and zero MIDI.
+
+Capture: `captures/fram_live_save_255bpm.npy` (tick, midi, save columns).
+Harness: [`test/bench/capture_12_4_live.py`](../../../test/bench/capture_12_4_live.py).
