@@ -15,6 +15,8 @@
 #include "../Event.h"
 #include "../state/StateManager.h"
 #include "../state/UIState.h"
+#include "../../sequencer/sequencer_telemetry.h"
+#include "../UiTelemetry.h"
 
 namespace hardware {
 namespace {
@@ -209,6 +211,17 @@ void HostControl::dispatchLine(const char* raw) {
         return;
     }
 
+    if (strcasecmp(verb, "resetmetrics") == 0) {
+        // Zero the UI-gap / save-duration telemetry so a measurement window
+        // starts clean, excluding the boot + USB re-enumeration transient that
+        // otherwise dominates maxUiGapUs as a max-since-boot. (soundingNotes and
+        // timingFault are live state, not reset.)
+        ui::g_maxUiGapMicros = 0;
+        ui::g_lastSaveMicros = 0;
+        printf("H:ok resetmetrics\n");
+        return;
+    }
+
     if (strcasecmp(verb, "testload") == 0) {
         // Give the selected pattern a DENSE gate set (pulses == steps) so the
         // sequencer emits a note on every step — a near-continuous MIDI load for
@@ -265,6 +278,12 @@ void HostControl::emitDump() {
     printf("D:selectedPattern=%u\n", static_cast<unsigned>(s.selectedPattern));
     printf("D:saveBanner=%u\n", static_cast<unsigned>(s.saveBanner));
     printf("D:timingFault=%u\n", s.timingFaultLatched ? 1u : 0u);
+    // Literal validation metrics (tasks 12.3/12.4): sounding-note count (0 after
+    // Stop = no stuck note), last live-save duration us (<=100 ms gap limit),
+    // and max UI-loop gap us (<=50 ms limit).
+    printf("D:soundingNotes=%u\n", static_cast<unsigned>(sequencer::g_soundingNotes));
+    printf("D:lastSaveUs=%u\n", static_cast<unsigned>(ui::g_lastSaveMicros));
+    printf("D:maxUiGapUs=%u\n", static_cast<unsigned>(ui::g_maxUiGapMicros));
     printf("D:end\n");
 }
 

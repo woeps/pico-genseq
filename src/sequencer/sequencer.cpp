@@ -1,6 +1,7 @@
 #include "sequencer.h"
 #include "midi_messages.h"
 #include "Scheduler.h"
+#include "sequencer_telemetry.h"
 #include "PatternSnapshot.h"
 #include "../common/pitch_set.h"
 #include "../common/velocity_set.h"
@@ -12,6 +13,10 @@
 #include <utility>
 
 namespace sequencer {
+
+// Cross-core stuck-note telemetry (task 12.4). Written by core1 in update();
+// read lock-free by core0 for H:dump.
+volatile uint32_t g_soundingNotes = 0;
 
 Sequencer::Sequencer(IMidiOutput& output, IMonotonicClock& clock)
     : output(output),
@@ -62,6 +67,12 @@ void Sequencer::init() {
 }
 
 void Sequencer::update() {
+    // Publish the sounding-note count every call — BEFORE the not-playing early
+    // return — so it reflects Stop's releaseAll() (0 after Stop) rather than
+    // freezing at the last played value. Single aligned 32-bit store, read
+    // lock-free by core0 (task 12.4 literal stuck-note metric).
+    g_soundingNotes = noteLifecycle.soundingCount();
+
     if (!playing) return;
 
     // All musical time advances through Scheduler::service(now) (tasks 5.1-5.3,

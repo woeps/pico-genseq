@@ -116,6 +116,17 @@ public:
         return aggregate_[channel.value][note & 0x7F];
     }
 
+    // Number of patterns currently holding a sounding note. Zero after Stop /
+    // fault (the post-Stop invariant). Published cross-core for the literal
+    // stuck-note validation metric (task 12.4).
+    uint8_t soundingCount() const {
+        uint8_t c = 0;
+        for (uint8_t i = 0; i < common::PATTERN_CAPACITY; ++i) {
+            if (owned_[i].sounding) ++c;
+        }
+        return c;
+    }
+
     // True only when NO per-pattern note and NO aggregate count remain. The
     // post-Stop / post-fault invariant (Req 5.8).
     bool ownershipEmpty() const {

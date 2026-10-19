@@ -72,6 +72,16 @@ private:
     // core0. Only ever touched on core0 in drainSaveRequest().
     persistence::PersistableConfig framConfig_{};
 
+    // --- Literal timing metrics (task 12.3/12.4) -----------------------------
+    // Measured directly on the live path so H:dump can report real numbers
+    // instead of a proxy. lastSaveMicros_ is the wall-clock duration of the most
+    // recent live RecordStore::commit (the save-time gap, vs the <=100 ms
+    // limit). maxUiGapMicros_ is the longest observed interval between UI-loop
+    // update() calls (the UI responsiveness gap, vs the <=50 ms limit).
+    uint32_t lastSaveMicros_ = 0;
+    uint32_t maxUiGapMicros_ = 0;
+    uint64_t lastUpdateMicros_ = 0;
+
     // --- Save-request draining / feedback timing (persist-settings, task 7.2) ---
     // Guards against a duplicate/re-entrant save being launched while one is
     // already running (Req 1.4). Because save() is synchronous on this

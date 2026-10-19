@@ -1,4 +1,5 @@
 #include "UIController.h"
+#include "UiTelemetry.h"
 #include "state/Reducer.h"
 #include "state/StateManager.h"
 #include "state/PersistMapping.h"
@@ -42,6 +43,12 @@ constexpr uint32_t BANNER_COLOR_NOT_LOADED = 0x00FFFF00; // amber (green+red)
 } // namespace
 
 namespace ui {
+
+// Live UI timing telemetry read by HostControl's H:dump (task 12.3 literal
+// metrics). Written only here on core0.
+uint32_t g_lastSaveMicros = 0;
+uint32_t g_maxUiGapMicros = 0;
+
 
 UIController::UIController(const HardwareConfig& config)
     : config(config), activeView(nullptr) {}
@@ -215,7 +222,11 @@ void UIController::drainSaveRequest()
     // with no XIP-disable and the commit is allocation-free, so this neither
     // parks the cores nor touches the shared heap (task 9.3).
     instrumentation::PerformanceTrace::saveBegin();
+    const uint64_t saveT0 = to_us_since_boot(get_absolute_time());
     const persistence::CommitResult commit = recordStore->commit(framConfig_);
+    lastSaveMicros_ = static_cast<uint32_t>(
+        to_us_since_boot(get_absolute_time()) - saveT0);  // literal save-time gap
+    g_lastSaveMicros = lastSaveMicros_;
     instrumentation::PerformanceTrace::saveEnd();
 
     const persistence::SaveOutcome outcome =
@@ -330,6 +341,17 @@ void UIController::updateSaveBanner()
 
 void UIController::update()
 {
+    // Track the UI-loop service gap (task 12.3 literal metric): the interval
+    // since the previous update(). A save that blocked the loop too long would
+    // show here as a gap approaching the 100 ms save limit / 50 ms UI limit.
+    const uint64_t nowUs = to_us_since_boot(get_absolute_time());
+    if (lastUpdateMicros_ != 0) {
+        const uint64_t gap = nowUs - lastUpdateMicros_;
+        if (gap > maxUiGapMicros_) maxUiGapMicros_ = static_cast<uint32_t>(gap);
+        g_maxUiGapMicros = maxUiGapMicros_;
+    }
+    lastUpdateMicros_ = nowUs;
+
     keyboard->update();
 
     // Host-control channel: apply at most one pending "H:" command per tick,
