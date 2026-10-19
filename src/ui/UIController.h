@@ -14,8 +14,9 @@
 #include "views/PitchSetView.h"
 #include "views/VelocitySetView.h"
 #include "state/UIState.h"
-#include "../persistence/FlashStore.h"
-#include "../persistence/PersistenceManager.h"
+#include "../persistence/Mb85rsFram.h"
+#include "../persistence/Mb85rsFramSpi.h"
+#include "../persistence/RecordStore.h"
 
 namespace ui {
 
@@ -45,12 +46,17 @@ private:
     std::array<IView*, state::VIEW_COUNT> views{};
     IView* activeView;
 
-    // Durable settings persistence (persist-settings feature). The FlashStore
-    // owns the reserved flash region; the PersistenceManager orchestrates the
-    // boot load and Ctrl+S save over it. Constructed in initialize() so the
-    // manager can bind to the store by reference in a well-defined order.
-    std::unique_ptr<persistence::FlashStore> flashStore;
-    std::unique_ptr<persistence::PersistenceManager> persistenceManager;
+    // Durable settings persistence (persist-settings feature). The v1 backend
+    // is an external SPI FRAM (MB85RS2MTA, task 9.3/9.4): Mb85rsFramSpi is the
+    // SPI1 transport, Mb85rsFram is the byte-addressed IFlashStore over it, and
+    // RecordStore adds the A/B transactional-commit layer (task 10.1/10.2) used
+    // for both the boot load and the Ctrl+S save. Constructed in initialize()
+    // in dependency order so each binds its predecessor by reference. FRAM is
+    // byte-writable with no erase and no XIP-disable, so a save never parks the
+    // cores (the transparency proven in task 9.3).
+    std::unique_ptr<persistence::Mb85rsFramSpi> framSpi;
+    std::unique_ptr<persistence::Mb85rsFram> framStore;
+    std::unique_ptr<persistence::RecordStore> recordStore;
 
     // --- Save-request draining / feedback timing (persist-settings, task 7.2) ---
     // Guards against a duplicate/re-entrant save being launched while one is

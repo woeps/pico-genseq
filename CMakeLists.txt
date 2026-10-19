@@ -80,8 +80,8 @@ target_link_libraries(genseq
     hardware_uart
     hardware_gpio
     hardware_i2c
+    hardware_spi
     hardware_dma
-    hardware_flash
     hardware_sync
     tinyusb_host
     tinyusb_board

@@ -4,6 +4,8 @@
 #include "state/PersistMapping.h"
 #include "../persistence/PersistableConfig.h"
 #include "../persistence/BootBannerPolicy.h"
+#include "../persistence/PersistenceManager.h"  // SaveOutcome enum (banner vocabulary)
+#include "../config/pins.h"
 #include "../instrumentation/PerformanceTrace.h"
 #include "pico/time.h"
 #include <cstdio>
@@ -88,12 +90,27 @@ void UIController::initialize()
     // load and the sync-command replay always complete before any PLAY can be
     // dispatched and before the sequencer produces any MIDI. We must not
     // dispatch PLAY here.
-    flashStore = std::make_unique<persistence::FlashStore>();
-    persistenceManager =
-        std::make_unique<persistence::PersistenceManager>(*flashStore);
+    // Construct the v1 persistence backend: external SPI FRAM behind the A/B
+    // transactional RecordStore (task 9.4 decision). Dependency order:
+    // transport -> byte store -> record layer. The FRAM region is 8192 bytes
+    // (two 4096-byte A/B slots), matching the storage geometry the host suite
+    // validates. init() brings up SPI1 + the software CS.
+    {
+        persistence::Mb85rsFramSpi::Pins pins{};
+        pins.instance = FRAM_SPI;
+        pins.sck = FRAM_SPI_PIN_SCK;
+        pins.mosi = FRAM_SPI_PIN_MOSI;
+        pins.miso = FRAM_SPI_PIN_MISO;
+        pins.cs = FRAM_SPI_PIN_CS;
+        framSpi = std::make_unique<persistence::Mb85rsFramSpi>(pins);
+    }
+    framSpi->init();
+    framStore =
+        std::make_unique<persistence::Mb85rsFram>(*framSpi, /*regionSize=*/8192);
+    recordStore = std::make_unique<persistence::RecordStore>(*framStore);
 
     persistence::PersistableConfig cfg{};
-    const persistence::LoadStatus status = persistenceManager->load(cfg);
+    const persistence::LoadStatus status = recordStore->load(cfg);
 
     // Start from the StateManager's current (default) UIState.
     state::UIState bootState = state::getStateManager().getState();
@@ -199,8 +216,21 @@ void UIController::drainSaveRequest()
     const persistence::PersistableConfig cfg =
         state::toPersistableConfig(snapshot);
     instrumentation::PerformanceTrace::saveBegin();
-    const persistence::SaveOutcome outcome = persistenceManager->save(cfg);
+    // A/B transactional commit onto the FRAM backend (task 10.2): writes the
+    // record to the slot NOT holding the newest valid record, so an interrupted
+    // commit falls back to the previous one (Req 9.6/9.7). FRAM is byte-writable
+    // with no XIP-disable, so this does NOT park the cores (task 9.3).
+    const persistence::CommitResult commit = recordStore->commit(cfg);
     instrumentation::PerformanceTrace::saveEnd();
+
+    // Map the A/B commit result onto the existing SaveOutcome taxonomy the
+    // banner logic consumes. OK -> SUCCESS; capacity overflow -> FAIL_CAPACITY;
+    // a failed/verify-mismatched write -> FAIL_FLASH.
+    const persistence::SaveOutcome outcome =
+        commit == persistence::CommitResult::OK ? persistence::SaveOutcome::SUCCESS
+        : commit == persistence::CommitResult::FAIL_CAPACITY
+            ? persistence::SaveOutcome::FAIL_CAPACITY
+            : persistence::SaveOutcome::FAIL_FLASH;
 
     const uint32_t endMs = to_ms_since_boot(get_absolute_time());
     saveInProgress = false;
