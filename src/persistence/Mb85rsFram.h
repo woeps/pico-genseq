@@ -119,6 +119,40 @@ class Mb85rsFram : public IFlashStore {
         return FlashResult::OK;
     }
 
+    // Allocation-free, OFFSET-addressed write + read-back verify. Writes `len`
+    // bytes at region `offset` WITHOUT buffering or rewriting the rest of the
+    // region (FRAM is byte-writable with no erase, so a single A/B slot can be
+    // updated in place). This is the path the live save uses: it performs no
+    // heap allocation on the calling core, so a save on core0 cannot corrupt a
+    // concurrent allocation on core1. Returns OK only if the read-back matches.
+    FlashResult programAt(std::size_t offset, const uint8_t* data,
+                          std::size_t len) {
+        if (data == nullptr || len == 0) return FlashResult::PROGRAM_FAILED;
+        if (offset + len > regionSize_) return FlashResult::PROGRAM_FAILED;
+        if (!writeEnable()) return FlashResult::PROGRAM_FAILED;
+
+        uint8_t header[1 + mb85rs::kAddressBytes];
+        header[0] = mb85rs::WRITE;
+        putAddress(&header[1], static_cast<uint32_t>(offset));
+
+        spi_.select();
+        spi_.transfer(header, nullptr, sizeof(header));  // opcode + 24-bit addr
+        spi_.transfer(data, nullptr, len);               // stream the bytes
+        spi_.deselect();
+
+        // Read-back verify in bounded chunks (no allocation).
+        uint8_t chunk[64];
+        for (std::size_t off = 0; off < len; off += sizeof(chunk)) {
+            const std::size_t n =
+                (len - off) < sizeof(chunk) ? (len - off) : sizeof(chunk);
+            read(offset + off, chunk, n);
+            for (std::size_t i = 0; i < n; ++i) {
+                if (chunk[i] != data[off + i]) return FlashResult::VERIFY_MISMATCH;
+            }
+        }
+        return FlashResult::OK;
+    }
+
     // Read the device id (manufacturer + product). Not part of IFlashStore;
     // used by firmware bring-up to confirm the right part is wired before trust-
     // ing it as the backend. Returns the first `len` id bytes into `id`.

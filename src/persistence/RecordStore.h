@@ -141,24 +141,18 @@ private:
 
     // IFlashStore::eraseAndProgram writes from the region BASE, so to write a
     // single slot without disturbing the other we read the whole region, patch
-    // the target slot, and write it back. (A backend with independent sector
-    // erase — the 10.2 integration — refines this; the neutral logic here keeps
-    // the A/B semantics correct on any IFlashStore.)
+    // Write ONLY the target slot, in place, via programAt(). FRAM is byte-
+    // writable with no erase, so the other slot is left physically untouched
+    // and the previous record survives (Req 9.6) without reading or rewriting
+    // the whole region. This performs NO large heap allocation on the calling
+    // core (the old read-whole-region-into-a-vector path allocated the entire
+    // region each save, which, running on core0 concurrently with core1,
+    // collided on the shared allocator and double-faulted core1).
     bool writeSlotRegion(uint8_t slot, const std::vector<uint8_t>& slotBytes) {
-        const std::size_t cap = store_.capacity();
-        const std::size_t half = cap / 2;
+        const std::size_t half = store_.capacity() / 2;
         if (slotBytes.size() > half) return false;
-
-        std::vector<uint8_t> region(cap, 0xFF);
-        // Preserve the OTHER slot's existing contents so the previous record
-        // survives (Req 9.6).
-        store_.read(0, region.data(), cap);
-        const std::size_t off = slotOffset(slot);
-        // Clear the target slot then patch in the new bytes.
-        for (std::size_t i = 0; i < half; ++i) region[off + i] = 0xFF;
-        for (std::size_t i = 0; i < slotBytes.size(); ++i) region[off + i] = slotBytes[i];
-
-        return store_.eraseAndProgram(region.data(), region.size()) == FlashResult::OK;
+        return store_.programAt(slotOffset(slot), slotBytes.data(),
+                                slotBytes.size()) == FlashResult::OK;
     }
 
     LoadStatus readRecord(uint8_t slot, PersistableConfig& out) const {

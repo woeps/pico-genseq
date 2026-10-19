@@ -37,6 +37,23 @@ class FakeFlashStore : public persistence::IFlashStore {
         return persistence::FlashResult::OK;
     }
 
+    // In-place offset write (models FRAM: byte-writable, no erase). Writes only
+    // [off, off+len), leaving the rest of the region untouched. Shares the
+    // single-shot fault injection with eraseAndProgram.
+    persistence::FlashResult programAt(std::size_t off, const uint8_t* data,
+                                       std::size_t len) override {
+        if (off + len > cap_) {
+            return persistence::FlashResult::PROGRAM_FAILED;
+        }
+        if (failNext_) {  // single-shot fault injection
+            failNext_ = false;
+            return injected_;
+        }
+        writeCount_++;
+        std::memcpy(bytes_.data() + off, data, len);  // in-place, no erase
+        return persistence::FlashResult::OK;
+    }
+
     // Test helpers.
     int writeCount() const { return writeCount_; }
     void injectFailure(persistence::FlashResult r) {

@@ -29,6 +29,17 @@ class IFlashStore {
     // Returns OK only if erase, program, and read-back verify all succeed.
     virtual FlashResult eraseAndProgram(const uint8_t* data,
                                         std::size_t len) = 0;
+
+    // Program `len` bytes at region `offset`, leaving the rest of the region
+    // untouched, then read-back verify. Unlike eraseAndProgram (which writes
+    // from the region base and, on NOR flash, must erase whole sectors), this
+    // updates a sub-range in place. Backends that can do this without buffering
+    // the whole region (FRAM: byte-writable, no erase) implement it allocation-
+    // free, so the live A/B commit performs NO heap allocation on the calling
+    // core — critical when a save on one core runs concurrently with the other
+    // core (a shared-heap collision double-faulted core1 before this existed).
+    virtual FlashResult programAt(std::size_t offset, const uint8_t* data,
+                                  std::size_t len) = 0;
 };
 
 }  // namespace persistence

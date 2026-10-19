@@ -58,6 +58,13 @@ private:
     std::unique_ptr<persistence::Mb85rsFram> framStore;
     std::unique_ptr<persistence::RecordStore> recordStore;
 
+    // Scratch for the save path's serialized config (~666 bytes). Held as a
+    // member, NOT a stack local: core0's stack is 2 KB and the save runs deep
+    // in the TinyUSB->keyboard->dispatch call chain, where a large stack local
+    // (alongside the UIState copies) overflowed the stack and double-faulted
+    // core0. Only ever touched on core0 in drainSaveRequest().
+    persistence::PersistableConfig framConfig_{};
+
     // --- Save-request draining / feedback timing (persist-settings, task 7.2) ---
     // Guards against a duplicate/re-entrant save being launched while one is
     // already running (Req 1.4). Because save() is synchronous on this

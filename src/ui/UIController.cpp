@@ -180,52 +180,44 @@ void UIController::onStateChanged(const state::UIState& newState)
 
 void UIController::drainSaveRequest()
 {
-    const state::UIState& state = state::getStateManager().getState();
-
     // Only act on a pending request, and never launch a second save while one
-    // is already running (in-progress debounce, Req 1.4). Because save() below
-    // is synchronous, saveInProgress is only ever observed true here if a
-    // re-entrant call somehow occurred; it is otherwise cleared before update()
-    // returns.
-    if (!state.saveRequested || saveInProgress) {
+    // is already running (in-progress debounce, Req 1.4).
+    if (!state::getStateManager().getState().saveRequested || saveInProgress) {
         return;
     }
 
-    // Snapshot the current UIState BEFORE clearing the flag so the save
-    // operates on a consistent copy (Req 2.1, 2.2). The UI loop is
-    // single-threaded, so this copy is never torn.
-    state::UIState snapshot = state;
-
-    // Clear saveRequested first (via a mutable copy + setState) so the same
-    // request is not re-run on the next tick even if the save fails (Req 1.4).
-    // We install the cleared flag now and update the banner after the save
-    // completes.
-    state::UIState next = state;
-    next.saveRequested = false;
-    state::getStateManager().setState(next);
-
-    // Map the snapshot to the durable persistence config and perform the save.
-    // save() is synchronous/blocking: it parks core1 and performs the flash
-    // erase+program on this core, returning an outcome directly. We mark
-    // saveInProgress around the call so any re-entrant Ctrl+S during the (brief)
-    // window is ignored; since the call returns synchronously it is effectively
-    // cleared immediately after (Req 1.4).
+    // STACK DISCIPLINE: UIState is ~700 bytes and core0's stack is 2 KB, reached
+    // here through a deep TinyUSB -> keyboard -> dispatch call chain. Holding
+    // several whole-UIState copies alive at once overflows the stack and double-
+    // faults core0. So we keep AT MOST ONE large object live at a time: the
+    // persistence config is serialized into a member (framConfig_, off-stack),
+    // and each UIState read/copy is confined to its own block scope so its
+    // destructor frees the stack before the next step.
     saveInProgress = true;
     const uint32_t startMs = to_ms_since_boot(get_absolute_time());
 
-    const persistence::PersistableConfig cfg =
-        state::toPersistableConfig(snapshot);
-    instrumentation::PerformanceTrace::saveBegin();
-    // A/B transactional commit onto the FRAM backend (task 10.2): writes the
-    // record to the slot NOT holding the newest valid record, so an interrupted
+    // Step 1: map the (consistent, single-threaded) live state to the durable
+    // config in the off-stack member. The UI loop is single-threaded, so the
+    // live reference is never torn (Req 2.1, 2.2).
+    framConfig_ = state::toPersistableConfig(state::getStateManager().getState());
+
+    // Step 2: clear saveRequested so the same request is not re-run next tick
+    // even if the save fails (Req 1.4). Confined to its own scope.
+    {
+        state::UIState next = state::getStateManager().getState();
+        next.saveRequested = false;
+        state::getStateManager().setState(next);
+    }
+
+    // Step 3: the A/B transactional commit onto the FRAM backend (task 10.2).
+    // Writes the slot NOT holding the newest valid record so an interrupted
     // commit falls back to the previous one (Req 9.6/9.7). FRAM is byte-writable
-    // with no XIP-disable, so this does NOT park the cores (task 9.3).
-    const persistence::CommitResult commit = recordStore->commit(cfg);
+    // with no XIP-disable and the commit is allocation-free, so this neither
+    // parks the cores nor touches the shared heap (task 9.3).
+    instrumentation::PerformanceTrace::saveBegin();
+    const persistence::CommitResult commit = recordStore->commit(framConfig_);
     instrumentation::PerformanceTrace::saveEnd();
 
-    // Map the A/B commit result onto the existing SaveOutcome taxonomy the
-    // banner logic consumes. OK -> SUCCESS; capacity overflow -> FAIL_CAPACITY;
-    // a failed/verify-mismatched write -> FAIL_FLASH.
     const persistence::SaveOutcome outcome =
         commit == persistence::CommitResult::OK ? persistence::SaveOutcome::SUCCESS
         : commit == persistence::CommitResult::FAIL_CAPACITY
@@ -236,24 +228,22 @@ void UIController::drainSaveRequest()
     saveInProgress = false;
 
     // Map the outcome to a banner. Any failure variant collapses to FAILURE
-    // (Req 1.5, 1.6, 7.1, 7.2). As a defensive watchdog (Req 1.1, 7.5), if the
-    // synchronous write somehow exceeded the completion bound, force FAILURE
-    // even on a reported success.
-    state::SaveBanner banner;
-    if (outcome == persistence::SaveOutcome::SUCCESS &&
-        (endMs - startMs) <= SAVE_COMPLETION_LIMIT_MS) {
-        banner = state::SaveBanner::SUCCESS;
-    } else {
-        banner = state::SaveBanner::FAILURE;
-    }
+    // (Req 1.5, 1.6, 7.1, 7.2). Defensive watchdog (Req 1.1, 7.5): if the write
+    // somehow exceeded the completion bound, force FAILURE even on success.
+    const state::SaveBanner banner =
+        (outcome == persistence::SaveOutcome::SUCCESS &&
+         (endMs - startMs) <= SAVE_COMPLETION_LIMIT_MS)
+            ? state::SaveBanner::SUCCESS
+            : state::SaveBanner::FAILURE;
 
-    // Write the banner into the UIState so task 7.3 renders it, and record the
-    // timestamp so 7.3 can auto-dismiss it after 1-2 s (Req 7.3). Re-read the
-    // current state (rather than reusing `next`) so we do not clobber any state
-    // change a listener may have applied during the save.
-    state::UIState afterSave = state::getStateManager().getState();
-    afterSave.saveBanner = banner;
-    state::getStateManager().setState(afterSave);
+    // Step 4: latch the banner into state. Re-read current state (a listener may
+    // have changed it during the save) in its own scope so no earlier copy is
+    // still alive here.
+    {
+        state::UIState afterSave = state::getStateManager().getState();
+        afterSave.saveBanner = banner;
+        state::getStateManager().setState(afterSave);
+    }
 
     bannerActive = true;
     bannerSetMs = to_ms_since_boot(get_absolute_time());

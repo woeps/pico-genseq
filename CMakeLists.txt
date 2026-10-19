@@ -117,6 +117,11 @@ target_compile_definitions(genseq PRIVATE
     GENSEQ_TRACE_OPERATION_PIN=${GENSEQ_TRACE_OPERATION_PIN}
     GENSEQ_TRACE_SAVE_PIN=${GENSEQ_TRACE_SAVE_PIN}
     GENSEQ_TRACE_FAULT_PIN=${GENSEQ_TRACE_FAULT_PIN}
+    # Make malloc/free thread-safe across cores. The FRAM save runs on core0
+    # concurrently with core1 (no core-park, unlike the old flash path); this
+    # guards the shared allocator so a save can never corrupt a core1 heap op.
+    # Defense-in-depth: the live A/B commit is already allocation-free.
+    PICO_USE_MALLOC_MUTEX=1
 )
 
 pico_add_extra_outputs(genseq)
