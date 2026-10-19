@@ -332,6 +332,12 @@ void UIController::update()
 {
     keyboard->update();
 
+    // Host-control channel: apply at most one pending "H:" command per tick,
+    // synthesized into the same dispatch() seam as the keyboard. No-op (and
+    // compiled away) unless GENSEQ_HOST_CONTROL is set. Runs right after the
+    // real keyboard so host and human input share identical ordering.
+    hostControl.poll();
+
     // Drain any pending Ctrl+S save request. The save() call is synchronous but
     // bounded by the flash write time, so keyboard/display updates simply
     // resume on the next tick (Req 7.4). Task 7.3 owns clearing the banner

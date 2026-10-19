@@ -6,6 +6,7 @@
 #include "hardware/Led.h"
 #include "hardware/LedMatrix.h"
 #include "hardware/UsbKeyboard.h"
+#include "hardware/HostControl.h"
 #include "views/IView.h"
 #include "views/InitView.h"
 #include "views/SettingsView.h"
@@ -35,6 +36,12 @@ private:
     std::unique_ptr<hardware::Led> led;
     std::unique_ptr<hardware::LedMatrix> ledMatrix;
     std::unique_ptr<hardware::UsbKeyboard> keyboard;
+
+    // Host-control command channel for autonomous bench testing (OFF unless
+    // GENSEQ_HOST_CONTROL). Reads "H:" lines from stdin and synthesizes the
+    // same ui::events::Event values a keypress would, through the identical
+    // dispatch() seam. Zero-cost when the flag is 0 (poll() compiles away).
+    hardware::HostControl hostControl;
 
     // Views (heap-allocated but fixed at initialization, no dynamic allocation after)
     std::unique_ptr<InitView> initView;

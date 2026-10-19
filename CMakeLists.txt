@@ -83,6 +83,7 @@ target_link_libraries(genseq
     hardware_spi
     hardware_dma
     hardware_sync
+    hardware_watchdog
     tinyusb_host
     tinyusb_board
 )
@@ -110,6 +111,15 @@ set(GENSEQ_TRACE_SAVE_PIN -1 CACHE STRING
 set(GENSEQ_TRACE_FAULT_PIN -1 CACHE STRING
     "GPIO held high while a performance fault is latched")
 
+# Host-control command channel (autonomous bench testing). When ON, the live
+# genseq firmware reads newline-framed "H:" commands from stdin (the UART0 /
+# picoprobe bridge) and synthesizes the same UI events a keypress would, so a
+# host/agent can drive GenSeq (set BPM/patterns, trigger a save, dump state,
+# self-reset) with no physical keyboard. OFF by default so the shipping and
+# timing builds are byte-identical to a build without it.
+option(GENSEQ_HOST_CONTROL
+       "Enable the host-control serial command channel for bench testing" OFF)
+
 target_compile_definitions(genseq PRIVATE
     GENSEQ_PERFORMANCE_TRACE_ENABLED=$<BOOL:${GENSEQ_PERFORMANCE_TRACE_ENABLED}>
     GENSEQ_TRACE_TICK_PIN=${GENSEQ_TRACE_TICK_PIN}
@@ -117,6 +127,7 @@ target_compile_definitions(genseq PRIVATE
     GENSEQ_TRACE_OPERATION_PIN=${GENSEQ_TRACE_OPERATION_PIN}
     GENSEQ_TRACE_SAVE_PIN=${GENSEQ_TRACE_SAVE_PIN}
     GENSEQ_TRACE_FAULT_PIN=${GENSEQ_TRACE_FAULT_PIN}
+    GENSEQ_HOST_CONTROL=$<BOOL:${GENSEQ_HOST_CONTROL}>
     # Make malloc/free thread-safe across cores. The FRAM save runs on core0
     # concurrently with core1 (no core-park, unlike the old flash path); this
     # guards the shared allocator so a save can never corrupt a core1 heap op.
