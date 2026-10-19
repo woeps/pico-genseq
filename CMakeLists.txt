@@ -120,3 +120,35 @@ target_compile_definitions(genseq PRIVATE
 )
 
 pico_add_extra_outputs(genseq)
+
+# ---------------------------------------------------------------------------
+# Optional standalone FRAM bring-up / wiring-check firmware (task 9.3).
+# Separate executable; built only when GENSEQ_BUILD_FRAM_BRINGUP=ON so it never
+# affects the default genseq build. Emits on UART0 (GP0/GP1, reaches a
+# picoprobe UART bridge) and USB-CDC (/dev/ttyACM when the target USB is cabled).
+#   cmake -B build-fram -DGENSEQ_BUILD_FRAM_BRINGUP=ON
+#   cmake --build build-fram --target fram_bringup
+# ---------------------------------------------------------------------------
+option(GENSEQ_BUILD_FRAM_BRINGUP
+       "Build the standalone MB85RS2MTA FRAM bring-up firmware" OFF)
+
+if(GENSEQ_BUILD_FRAM_BRINGUP)
+    add_executable(fram_bringup src/tools/fram_bringup.cpp)
+    pico_set_program_name(fram_bringup "GenSeq FRAM bring-up")
+    pico_set_program_description(fram_bringup "MB85RS2MTA RDID + 3-byte addressing check")
+    # Emit on BOTH transports: UART0 (GP0/GP1) reaches the picoprobe's UART
+    # bridge (/dev/ttyACM provided by the Debugprobe), and USB-CDC works when
+    # the target's own USB is cabled. Picoprobe-only rigs rely on the UART path.
+    pico_enable_stdio_uart(fram_bringup 1)
+    pico_enable_stdio_usb(fram_bringup 1)
+    target_link_libraries(fram_bringup
+        pico_stdlib
+        hardware_spi
+        hardware_gpio
+    )
+    target_include_directories(fram_bringup PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/src
+        ${CMAKE_CURRENT_LIST_DIR}/src/persistence
+    )
+    pico_add_extra_outputs(fram_bringup)
+endif()
