@@ -240,16 +240,35 @@ of this plan.
     - Confirm logical jitter <=1 ms; report wire skew separately
     - Confirm normal UI gaps <=50 ms and save-time gaps <=100 ms
     - _Requirements: 3.2, 4.1–4.6, 8.5–8.7, 11.5–11.7_
+    - PARTIAL (on FRAM backend, autonomous bench rig test/bench/): save-time
+      transparency verified at 255 BPM (task 12.4 doc) — ticks hold 9.8 ms
+      cadence through a ~10 ms live save, no stall. OUTSTANDING: full BPM sweep
+      (40/120), meter variants, edit storms, overload injection, and explicit
+      logical-jitter + UI-gap (<=50 ms) / save-gap (<=100 ms) number capture.
   - [ ] 12.4 Run note-safety and endurance validation
     - Exercise mute/remove/edit/Stop/fault/save and overlapping notes
     - Run long-duration playback and repeated save/power-cycle tests
     - Confirm zero stuck notes, unexplained resets, invalid writes, or ownership leaks
     - _Requirements: 5.1–5.10, 9.6–9.9, 11.8_
+    - PARTIAL: live-save note-safety verified on FRAM — ticks + a MIDI dispatch
+      continue through a real Ctrl+S with no cadence disruption and the device's
+      timingFault never latches (docs/development/baseline README Task 12.4,
+      capture fram_live_save_255bpm.npy); repeated save+watchdog-reboot verified
+      3x (task 12.3 round-trip, test/bench/roundtrip_12_3.py). OUTSTANDING: the
+      full event matrix (mute/remove/edit/Stop/fault with overlapping notes),
+      long-duration playback, and an endurance/power-cycle soak with an explicit
+      stuck-note / ownership-leak audit.
   - [ ] 12.5 Retain evidence and reconcile documentation
     - Check in procedures, captures/results, counter dumps, storage decision, and known limits
     - Update README and technical docs to match measured behavior
     - Link evidence from ROADMAP.md and mark Milestone 2 complete only when every gate passes
     - _Requirements: 11.5–11.8_
+    - PARTIAL: evidence checked in for 9.2/9.3/12.4 (docs/development/baseline
+      README + captures/) and the autonomous bench rig (test/bench/ + its
+      README). Storage decision (9.4 = external FRAM) documented. BLOCKED on the
+      12.3/12.4 outstanding gates above — per the rule, Milestone 2 is marked
+      complete ONLY when every gate passes; ROADMAP link + final sign-off pend
+      those runs.
 
 ## Checkpoints
 
