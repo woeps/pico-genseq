@@ -48,6 +48,9 @@ namespace ui {
 // metrics). Written only here on core0.
 uint32_t g_lastSaveMicros = 0;
 uint32_t g_maxUiGapMicros = 0;
+uint32_t g_lastKbUs = 0;
+uint32_t g_lastHcUs = 0;
+uint32_t g_maxKbUs = 0;
 
 
 UIController::UIController(const HardwareConfig& config)
@@ -352,13 +355,15 @@ void UIController::update()
     }
     lastUpdateMicros_ = nowUs;
 
+    const uint64_t t_kb0 = to_us_since_boot(get_absolute_time());
     keyboard->update();
-
-    // Host-control channel: apply at most one pending "H:" command per tick,
-    // synthesized into the same dispatch() seam as the keyboard. No-op (and
-    // compiled away) unless GENSEQ_HOST_CONTROL is set. Runs right after the
-    // real keyboard so host and human input share identical ordering.
+    const uint64_t t_kb1 = to_us_since_boot(get_absolute_time());
     hostControl.poll();
+    const uint64_t t_hc1 = to_us_since_boot(get_absolute_time());
+    // Publish per-section durations so the ~501 ms stall is pinned to a call.
+    g_lastKbUs = static_cast<uint32_t>(t_kb1 - t_kb0);
+    g_lastHcUs = static_cast<uint32_t>(t_hc1 - t_kb1);
+    if (g_lastKbUs > g_maxKbUs) g_maxKbUs = g_lastKbUs;
 
     // Drain any pending Ctrl+S save request. The save() call is synchronous but
     // bounded by the flash write time, so keyboard/display updates simply

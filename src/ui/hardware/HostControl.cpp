@@ -284,6 +284,9 @@ void HostControl::emitDump() {
     printf("D:soundingNotes=%u\n", static_cast<unsigned>(sequencer::g_soundingNotes));
     printf("D:lastSaveUs=%u\n", static_cast<unsigned>(ui::g_lastSaveMicros));
     printf("D:maxUiGapUs=%u\n", static_cast<unsigned>(ui::g_maxUiGapMicros));
+    printf("D:maxKbUs=%u\n", static_cast<unsigned>(ui::g_maxKbUs));
+    printf("D:lastKbUs=%u\n", static_cast<unsigned>(ui::g_lastKbUs));
+    printf("D:lastHcUs=%u\n", static_cast<unsigned>(ui::g_lastHcUs));
     printf("D:end\n");
 }
 

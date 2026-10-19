@@ -17,4 +17,10 @@ extern uint32_t g_lastSaveMicros;
 // responsiveness gap, to compare against the <=50 ms limit.
 extern uint32_t g_maxUiGapMicros;
 
+// Diagnostic breakdown (temporary, UI-stall root-cause): per-update duration of
+// keyboard->update() and hostControl.poll(), plus the max keyboard duration.
+extern uint32_t g_lastKbUs;
+extern uint32_t g_lastHcUs;
+extern uint32_t g_maxKbUs;
+
 }  // namespace ui
