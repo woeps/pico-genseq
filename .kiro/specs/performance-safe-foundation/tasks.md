@@ -267,9 +267,20 @@ of this plan.
       - **UI gap: FAIL — a recurring ~501 ms stall in the core0 UI loop even in
         pure idle playback, measured directly (maxUiGapUs=501139), well over the
         <=50 ms limit. NOT the save (clean 10.6 ms) and invisible to the core1
-        timingFault. Pre-existing defect the literal metric surfaced; prime
-        suspect tuh_task USB-host polling on the update() path. Needs its own
-        root-cause before 12.3 can pass.**
+        timingFault. ROOT CAUSE (SWD + per-section H:dump timing, commit
+        ab4491e): the entire stall is inside keyboard->update() -> tuh_task()
+        (maxKbUs=500108, lastKbUs normally ~3 us). It is TinyUSB's blocking
+        enumeration delay ENUM_RESET_DELAY_MS(50) + ENUM_DEBOUNCING_DELAY_MS(450)
+        = 500 ms (host/usbh.c), which recurs (~every 2 s) because the host keeps
+        (re-)attempting enumeration — with NO "Keyboard mounted" on the UART,
+        i.e. a device/hub that never enumerates cleanly or a bouncing/absent
+        connection on this picoprobe-driven bench rig (CFG_TUH_HUB=1). tuh_task
+        runs inline on the core0 UI loop, so that 500 ms blocks rendering/input.
+        FIX OPTIONS (not the save; a pre-existing USB-host-integration issue):
+        (a) drive tuh_task off the UI-critical path (own cadence/core) so a USB
+        delay cannot stall the UI; (b) confirm the physical USB setup — a real,
+        stable keyboard directly on the native port may remove the recurring
+        re-enumeration entirely. Needs a bench USB check before 12.3 can pass.**
       - Overload/meter-variant injection not separately scripted (255 BPM +
         15-pattern dense gate is the worst case exercised).
   - [x] 12.4 Run note-safety and endurance validation
