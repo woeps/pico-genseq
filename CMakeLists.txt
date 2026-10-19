@@ -152,3 +152,37 @@ if(GENSEQ_BUILD_FRAM_BRINGUP)
     )
     pico_add_extra_outputs(fram_bringup)
 endif()
+
+# ---------------------------------------------------------------------------
+# FRAM save-path transparency trace harness (task 9.3, Route A).
+# Drives a real FRAM eraseAndProgram while core1 emits 255 BPM Tick+MIDI
+# on the 9.2 trace pins, so the BitScope shows whether ticks/MIDI keep
+# flowing during a FRAM write (the transparency question).
+#   cmake -B build-fram -DGENSEQ_BUILD_FRAM_SAVE_TRACE=ON
+#   cmake --build build-fram --target fram_save_trace
+# ---------------------------------------------------------------------------
+option(GENSEQ_BUILD_FRAM_SAVE_TRACE
+       "Build the FRAM save-path transparency trace harness" OFF)
+
+if(GENSEQ_BUILD_FRAM_SAVE_TRACE)
+    add_executable(fram_save_trace
+        src/tools/fram_save_trace.cpp
+        src/persistence/SaveRecord.cpp    # real codec (serialize)
+    )
+    pico_set_program_name(fram_save_trace "GenSeq FRAM save trace")
+    pico_set_program_description(fram_save_trace
+        "9.3 transparency: FRAM write under worst-case sequencing load")
+    pico_enable_stdio_uart(fram_save_trace 1)
+    pico_enable_stdio_usb(fram_save_trace 1)
+    target_link_libraries(fram_save_trace
+        pico_stdlib
+        pico_multicore
+        hardware_spi
+        hardware_gpio
+    )
+    target_include_directories(fram_save_trace PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/src
+        ${CMAKE_CURRENT_LIST_DIR}/src/persistence
+    )
+    pico_add_extra_outputs(fram_save_trace)
+endif()

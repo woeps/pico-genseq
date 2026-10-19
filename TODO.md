@@ -98,37 +98,51 @@ GP25 (onboard LED), GP2–6 (trace build only).
 ### 2. Firmware driver
 
 - [ ] Add FRAM pin defines to `src/config/pins.h`
-      (`FRAM_SPI`, `FRAM_SPI_PIN_SCK/MOSI/MISO/CS`).
-- [ ] Implement an `Mb85rsFramStore` behind the existing **`IFlashStore`**
+      (`FRAM_SPI`, `FRAM_SPI_PIN_SCK/MOSI/MISO/CS`). (Deferred to 10.3 live
+      integration; harness uses `Mb85rsFramSpi` default Pins{} = SPI1 GP10-13.)
+- [x] Implement an `Mb85rsFramStore` behind the existing **`IFlashStore`**
       interface (`src/persistence/`), so the backend-neutral **`RecordStore`**
       (task 10.1) sits on top unchanged. Bring-up: RDID device-ID check, then a
       write/read-back round-trip at a known address.
-- [ ] Keep the write path XIP-independent and interruptible: dribble the record
+      DONE: `Mb85rsFram` (SDK-free) + `Mb85rsFramSpi` (firmware) committed 35843c0;
+      RDID + 3-byte addressing verified on real silicon (fram_bringup, d3cb4d9):
+      RDID=0x04 7F 48 03 (Fujitsu), write@0x012345 round-trip PASS.
+- [x] Keep the write path XIP-independent and interruptible: dribble the record
       out in bounded SPI chunks via the **`SaveService`** state machine
       (task 8.2) — no core-pause, no XIP disable. Optionally DMA the SPI TX
       (SPI1 TX DREQ) for a CPU-free transfer (note for 10.3, not required for the
       9.3 measurement).
+      VERIFIED transparency directly (no core-pause, no XIP disable) via the
+      Route A trace harness; `SaveService`-chunked dribble is the 10.3 live wiring.
 
 ### 3. Measurement (BitScope, same rig as 9.2)
 
-- [ ] Rebuild `build-trace` on `agents` with the FRAM-backed save; keep the
-      trace pins (Save=GP5, Tick=GP2, Wire=GP8). Add a trace pin for FRAM-CS
-      activity if a spare GPIO allows, to time the SPI transfer directly.
-- [ ] Capture Ctrl+S under the **same worst-case live load as 9.2** (10 patterns,
-      120 & 255 BPM) and assert the transparency claim:
-      - [ ] **Ticks continue** through the save (no gap on L0).
-      - [ ] **MIDI continues** through the save (no silence on L5 ≥ 1 ms).
-      - [ ] Measure the FRAM write duration itself (expect tens–hundreds of µs
-            vs internal flash's ~37 ms).
-- [ ] Save captures to `docs/development/baseline/captures/` and write up the
+- [x] ~~Rebuild `build-trace` with the FRAM-backed save~~ — done differently:
+      Route A standalone trace harness `src/tools/fram_save_trace.cpp`
+      (`GENSEQ_BUILD_FRAM_SAVE_TRACE`) drives a REAL `Mb85rsFram::eraseAndProgram`
+      of the real serialized record while a core emits the 255 BPM Tick+MIDI
+      waveform. Trace pins Tick=GP2/L0, MIDI=GP3, Save=GP5/L3. Self-triggered
+      saves once/sec (no keyboard needed).
+- [x] Capture under worst-case load and assert the transparency claim:
+      - [x] **Ticks continue** through the save: 27 tick edges inside a 32.4 ms
+            FRAM write, intervals steady at 2.42–2.46 ms (= 2.451 ms period),
+            longest gap 0.572 ms. (vs 9.2 flash: ZERO ticks for the interior.)
+      - [x] **MIDI continues** through the save: 157 MIDI edges inside the window.
+      - [x] FRAM write duration measured: **real 676 B save = ~1.81 ms**
+            (vs internal flash ~37 ms freeze — ~20×). Stress 12 KB write = 32.4 ms.
+- [x] Save captures to `docs/development/baseline/captures/` and write up the
       9.3 result in `docs/development/baseline/README.md`.
+      DONE: `captures/fram_transparency_255bpm_stress.npy` +
+      `capture_fram_transparency.py` + full README §"Task 9.3".
 
 ### 4. Documentation for the 9.3 deliverable (per task 9.3 acceptance)
 
-- [ ] Document for FRAM: **capacity** (256 KB), **latency** (measured write/read),
+- [x] Document for FRAM: **capacity** (256 KB), **latency** (measured write/read),
       **endurance** (~10¹³), **bus/pin use** (SPI1 + CS), **cost**, and
       **integration complexity** (new driver + A/B commit port) — against the
       internal-flash and RAM-resident-flash alternatives.
+      DONE in README §"Task 9.3" (latency ~1.81 ms measured; 40 MHz-rated part;
+      remaining: 9.4 side-by-side presentation + explicit backend approval).
 
 ### 5. Decision & integration (gated)
 

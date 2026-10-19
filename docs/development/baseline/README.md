@@ -261,3 +261,96 @@ python3 capture_baseline.py tickwidth   # tick service duration
 python3 capture_baseline.py midi        # dispatch vs wire
 python3 capture_baseline.py save        # Ctrl+S pause (arm, then press Ctrl+S)
 ```
+
+---
+
+## Task 9.3 — External FRAM save-path transparency (MB85RS2MTA)
+
+The 9.2 result above established that the internal-flash save is a **blocking
+freeze**: both cores dark for ~33–37 ms, zero ticks and zero MIDI for the whole
+interior. Task 9.3 evaluates an **external SPI FRAM** (Adafruit **MB85RS2MTA**,
+2 Mbit / 256 KB, Fujitsu) as the alternative backend, because FRAM is plain SPI
+with **no erase, no XIP-disable, and no core-park** — so a save should be
+*transparent*: sequencing continues straight through the write.
+
+### Bring-up (wiring + driver on real silicon)
+
+| Check | Result |
+|---|---|
+| RDID | `0x04 7F 48 03` → **Fujitsu MB85RS2MTA**, SPI1 GP10–13 wiring correct |
+| 3-byte (24-bit) addressing | write @`0x012345` read back exact; 2-byte alias @`0x2345` read `0x00` (negative control) → **PASS** |
+
+The RDID + addressing check is the firmware [`fram_bringup`](../../../src/tools/fram_bringup.cpp)
+tool. This was the first on-target execution of the `Mb85rsFramSpi` SDK
+transport (previously only syntax-checked).
+
+### Transparency measurement
+
+Harness: [`src/tools/fram_save_trace.cpp`](../../../src/tools/fram_save_trace.cpp)
+(gated behind `GENSEQ_BUILD_FRAM_SAVE_TRACE`). One core runs a fixed-cadence
+**255 BPM worst-case** Tick + MIDI emitter on the same trace pins the 9.2 rig
+used (Tick = GP2/L0, MIDI = GP3, Save = GP5/L3); the other core performs a
+**real `Mb85rsFram::eraseAndProgram`** of the actual serialized `SaveRecord`,
+bracketed by the Save pin. The save is self-triggered once per second — no
+keyboard, no sequencer transport needed.
+
+| Write | Bytes | Duration | Result |
+|---|---|---|---|
+| **Real config save** (15 patterns, full sets) | 676 | **~1.81 ms** | OK |
+| Internal flash (task 9.2, for comparison) | — | ~33–37 ms (freeze) | — |
+| Stress write (scope visualization only) | 12,288 | ~32.4 ms | OK |
+
+A full worst-case config save to FRAM is **~1.81 ms vs the ~37 ms flash freeze —
+roughly 20× faster**, and (the real point) it does not stall the cores.
+
+**Transparency capture** (`captures/fram_transparency_255bpm_stress.npy`,
+trigger on GP5 rising, 44 ms window). The stress write was used here precisely
+*because* a 1.81 ms real save is shorter than one 2.451 ms tick period, so it
+cannot visually show continuity; the ~32 ms stress write spans ~13 tick periods
+— essentially the same duration as the 9.2 flash freeze, an apples-to-apples
+comparison:
+
+| During the 32.4 ms FRAM write | FRAM (9.3) | Internal flash (9.2) |
+|---|---|---|
+| Tick edges inside the window | **27** | 0 |
+| MIDI edges inside the window | **157** | 0 |
+| Longest Tick-low gap | **0.572 ms** (< 1 tick period) | whole interior |
+| Inter-tick interval inside window | **2.42–2.464 ms** (steady, = 2.451 ms period) | n/a (no ticks) |
+
+The sequencer never notices the save is happening: 14 consecutive ticks inside
+the write window, every interval on the normal grid, no stretch and no gap. This
+is the exact inverse of the flash freeze.
+
+### Honest scope of this evidence
+
+- The harness drives the **real FRAM write path** (`Mb85rsFram` over the real
+  `Mb85rsFramSpi` SPI1 transport) with the **real serialized record** — so the
+  ~1.81 ms latency and the transparency are genuine properties of the write.
+- It is **not** the full live integration. The core0 emitter is a fixed-cadence
+  **proxy** for the sequencer waveform, not the real `Sequencer`, and the FRAM
+  is **not yet wired into the live `SaveService`** (that is the decision-gated
+  10.3 work). The final integrated save also serializes the record and runs the
+  `SaveService` state machine, both already covered by the host suite.
+- SPI1 @ 8 MHz. The write is WREN → WRITE (opcode + 24-bit addr) → stream →
+  read-back verify; the ~1.81 ms for 676 B ≈ 0.68 ms clock-out + the verify read
+  + framing. Higher SPI clock (part rated 40 MHz) would reduce it further.
+
+### Provenance
+
+| Item | Value |
+|---|---|
+| Branch | `agents` |
+| Bring-up tool | [`src/tools/fram_bringup.cpp`](../../../src/tools/fram_bringup.cpp) (commit `d3cb4d9`) |
+| Save-trace harness | [`src/tools/fram_save_trace.cpp`](../../../src/tools/fram_save_trace.cpp) |
+| Capture harness | [`capture_fram_transparency.py`](capture_fram_transparency.py) |
+| Raw capture | [`captures/fram_transparency_255bpm_stress.npy`](captures/fram_transparency_255bpm_stress.npy) (tick, midi, save columns) |
+| Flash method | SWD via Raspberry Pi Debugprobe (CMSIS-DAP `2e8a:000c`), OpenOCD 0.12.0 |
+| Analyzer | BS05U on `/dev/ttyUSB0`, 44 ms window, trigger `{3: 1}` (GP5/L3 rising) |
+
+### Conclusion for the 9.4 backend decision
+
+FRAM delivers a **transparent, ~1.81 ms, verified** config save with the cores
+sequencing straight through it — eliminating the 9.2 note-stretch / burst-defer
+defect entirely. The cost is one SPI breakout + 4 GPIO (SPI1 GP10–13) and the
+10.3 integration work. This is the external-backend evidence feeding the 9.4
+decision (internal flash vs external FRAM vs RAM-resident).
