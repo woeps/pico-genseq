@@ -6,6 +6,7 @@
 #include "hardware/Led.h"
 #include "hardware/LedMatrix.h"
 #include "hardware/UsbKeyboard.h"
+#include "hardware/HostControl.h"
 #include "views/IView.h"
 #include "views/InitView.h"
 #include "views/SettingsView.h"
@@ -14,8 +15,9 @@
 #include "views/PitchSetView.h"
 #include "views/VelocitySetView.h"
 #include "state/UIState.h"
-#include "../persistence/FlashStore.h"
-#include "../persistence/PersistenceManager.h"
+#include "../persistence/Mb85rsFram.h"
+#include "../persistence/Mb85rsFramSpi.h"
+#include "../persistence/RecordStore.h"
 
 namespace ui {
 
@@ -27,6 +29,14 @@ public:
     void initialize();
     void update();
 
+    // Render-only UI pump (task 12.3): re-renders the active view + banner with
+    // NO keyboard/save/host-control servicing, so it is safe to call from inside
+    // TinyUSB's host delay (which is itself invoked from keyboard->update()).
+    // Registered as the ui::setUiPump callback so a 500 ms USB enum debounce
+    // cannot blank the UI past the Req 8.7 <=50 ms budget.
+    void pumpRender();
+    static void pumpTrampoline();
+
 private:
     const HardwareConfig& config;
 
@@ -34,6 +44,12 @@ private:
     std::unique_ptr<hardware::Led> led;
     std::unique_ptr<hardware::LedMatrix> ledMatrix;
     std::unique_ptr<hardware::UsbKeyboard> keyboard;
+
+    // Host-control command channel for autonomous bench testing (OFF unless
+    // GENSEQ_HOST_CONTROL). Reads "H:" lines from stdin and synthesizes the
+    // same ui::events::Event values a keypress would, through the identical
+    // dispatch() seam. Zero-cost when the flag is 0 (poll() compiles away).
+    hardware::HostControl hostControl;
 
     // Views (heap-allocated but fixed at initialization, no dynamic allocation after)
     std::unique_ptr<InitView> initView;
@@ -45,12 +61,34 @@ private:
     std::array<IView*, state::VIEW_COUNT> views{};
     IView* activeView;
 
-    // Durable settings persistence (persist-settings feature). The FlashStore
-    // owns the reserved flash region; the PersistenceManager orchestrates the
-    // boot load and Ctrl+S save over it. Constructed in initialize() so the
-    // manager can bind to the store by reference in a well-defined order.
-    std::unique_ptr<persistence::FlashStore> flashStore;
-    std::unique_ptr<persistence::PersistenceManager> persistenceManager;
+    // Durable settings persistence (persist-settings feature). The v1 backend
+    // is an external SPI FRAM (MB85RS2MTA, task 9.3/9.4): Mb85rsFramSpi is the
+    // SPI1 transport, Mb85rsFram is the byte-addressed IFlashStore over it, and
+    // RecordStore adds the A/B transactional-commit layer (task 10.1/10.2) used
+    // for both the boot load and the Ctrl+S save. Constructed in initialize()
+    // in dependency order so each binds its predecessor by reference. FRAM is
+    // byte-writable with no erase and no XIP-disable, so a save never parks the
+    // cores (the transparency proven in task 9.3).
+    std::unique_ptr<persistence::Mb85rsFramSpi> framSpi;
+    std::unique_ptr<persistence::Mb85rsFram> framStore;
+    std::unique_ptr<persistence::RecordStore> recordStore;
+
+    // Scratch for the save path's serialized config (~666 bytes). Held as a
+    // member, NOT a stack local: core0's stack is 2 KB and the save runs deep
+    // in the TinyUSB->keyboard->dispatch call chain, where a large stack local
+    // (alongside the UIState copies) overflowed the stack and double-faulted
+    // core0. Only ever touched on core0 in drainSaveRequest().
+    persistence::PersistableConfig framConfig_{};
+
+    // --- Literal timing metrics (task 12.3/12.4) -----------------------------
+    // Measured directly on the live path so H:dump can report real numbers
+    // instead of a proxy. lastSaveMicros_ is the wall-clock duration of the most
+    // recent live RecordStore::commit (the save-time gap, vs the <=100 ms
+    // limit). maxUiGapMicros_ is the longest observed interval between UI-loop
+    // update() calls (the UI responsiveness gap, vs the <=50 ms limit).
+    uint32_t lastSaveMicros_ = 0;
+    uint32_t maxUiGapMicros_ = 0;
+    uint64_t lastUpdateMicros_ = 0;
 
     // --- Save-request draining / feedback timing (persist-settings, task 7.2) ---
     // Guards against a duplicate/re-entrant save being launched while one is

@@ -3,6 +3,7 @@
 #include "pitch_set.h"
 #include "velocity_set.h"
 #include "gate_set.h"
+#include "MidiChannel.h"
 
 namespace common {
 
@@ -23,6 +24,11 @@ namespace common {
 
         int getMidiChannel() const;
         void setMidiChannel(int midiChannel);
+
+        // Canonical protocol channel (0..15) derived from the stored 1..16 user
+        // channel. Use this on the MIDI emission / note-ownership path so the
+        // channel is never aliased. See common/MidiChannel.h.
+        MidiChannel getCanonicalChannel() const;
 
         bool isActive() const;
         void setActive(bool active);

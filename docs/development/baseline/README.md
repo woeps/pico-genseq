@@ -96,6 +96,12 @@ Measured on L5 (GP8), the real UART line:
 
 ### Load: 8 patterns @ 120 BPM
 
+> **Note (corrected during task 9.2):** the live-load captures in this task-1.4
+> section were taken with **8** patterns active. The later 9.2 captures (below)
+> use **10** patterns — the true worst-case load the device supports. Pattern
+> count affects only wire-burst length, not scheduler jitter, so the task-1.4
+> conclusions stand; the 9.2 section is the authoritative worst-case load.
+
 | Metric | Value | Capture |
 |---|---|---|
 | Tick period | 20,834 µs (±1 sample) → 120.00 BPM | `captures/tick_L0_8pat_120bpm.npy` |
@@ -123,6 +129,98 @@ XIP is disabled, so **both cores stall and MIDI output ceases for ~33 ms** — o
 a full beat at 120 BPM, at the one-beat fault threshold. This is the empirical
 justification for Milestone 2's transparent-save work (RAM-resident execution
 path, or an external nonvolatile backend per Req 9.4).
+
+---
+
+# Task 9.2 — Internal flash save under worst-case live load
+
+Task 1.4 (above) established the save pause with a single pattern on the
+**pre-Milestone-2** firmware (`b94a627`). Task 9.2 re-measures the save under
+**worst-case live load on the current `agents` branch**, which has the hardened
+fail-closed pause protocol from task 9.1, and answers the two questions the 1.4
+baseline could not: *(a)* does the hardened pause still freeze both cores, and
+*(b)* does the freeze endanger a note that is sounding when the save lands
+(stuck-note / note-duration safety for Req 9.2 and later 12.4)?
+
+### Evidence provenance (9.2)
+
+| Item | Value |
+|---|---|
+| Firmware commit | `9f992fb` (`agents` branch, all host-implementable Milestone 2 work) — includes the task-9.1 hardened `core_pause` + fail-closed `FlashStore` |
+| Firmware image | `build-trace/genseq.elf` rebuilt on `agents` with the trace CMake flags |
+| Live load | **10 patterns active with gates on, transport running, MIDI wire saturated** |
+| Save trigger | Ctrl+S from a USB keyboard on the GenSeq host port (`Reducer::isSaveCombo`, global) |
+| Analyzer / driver | same BS05U + scopething as task 1.4 |
+| Capture harness | `capture_coincident_save.py` (hardware trigger on L3, dict trigger `{3:1}`) |
+| Raw captures | `captures/save_live_120bpm_10pat.npy`, `captures/save_live_255bpm_10pat.npy`, `captures/save_coincident_255bpm_10pat.npy` |
+
+### Results — freeze across tempos
+
+| Metric | 120 BPM | 255 BPM | Req 9.3 budget | Verdict |
+|---|---|---|---|---|
+| Save pause (contiguous) | 34.94 ms | 37.03 ms | — | one flash erase+program+verify |
+| Beat length | 500 ms | 235 ms | — | — |
+| Save as % of one beat | 7.0% | **15.8%** | — | — |
+| Ticks serviced during save | 1\* (exp. 1.68) | **0** (exp. 3.78) | — | 🔴 scheduler parked |
+| MIDI wire active during save | 5.66%\* | **0.0%** | ≤ 1 ms interruption | 🔴 **~37× over** |
+
+\* The 120 BPM capture used a free-run window that happened to include the
+release-boundary tick/wire resume. The 255 BPM capture is hardware-triggered on
+L3 at 5 µs resolution with the pulse fully contained, and shows the interior
+cleanly: **zero ticks, zero MIDI bits for the entire 37 ms.**
+
+**RAM-resident path audit:** the task-9.1-hardened save path still freezes both
+cores for ~37 ms. The RAM-resident `doFlashWrite` + `corePauseSpin` correctly
+prevent an XIP-down crash, but by design they *park* core1 rather than keep it
+sequencing — so during the write there is **no tick advance and no MIDI
+dispatch at all**. Sequencing does **not** continue while XIP is unavailable.
+
+### Results — coincident-burst (note-safety)
+
+Capture: `captures/save_coincident_255bpm_10pat.npy`, 255 BPM, 10 patterns,
+Ctrl+S landing while patterns fire together.
+
+| Measurement | Value | Meaning |
+|---|---|---|
+| Save pause | 35.73 ms | total freeze |
+| Ticks / wire edges during save | 0 / 0 | both cores dark |
+| Last wire activity **before** save | −0.85 ms | a note byte was on the wire as the save began |
+| First wire activity **after** release | +0.09 ms | wire resumes immediately on release |
+| **Wire silence gap** | **36.67 ms** | a note sounding at the freeze has its note-off deferred this long |
+| Post-release burst | 324 edges in **5.50 ms** | the deferred backlog floods out at once |
+| Min / median edge spacing | 30 µs / 60 µs | at the 31,250-baud bit floor (32 µs) — well-formed |
+| Sub-30 µs edges | 0 real (27 are 1-sample quantization) | **no corruption, no dropped bytes** |
+
+**Note-safety conclusion:** the blocking save does **not** corrupt or drop MIDI
+— the backlog serializes out cleanly once XIP returns. But a note that is
+sounding when the save lands has its **note-off deferred by the full ~37 ms**
+(≈ 15% of a beat at 255 BPM stretched onto that note), after which the whole
+queued backlog bursts out compressed into ~5.5 ms. The defect is **timing
+(note-duration stretch + burst compression), not data integrity.**
+
+### Conclusion for the 9.4 backend decision
+
+Internal flash **cannot** meet the ≤1 ms transparent-MIDI bound, and no amount
+of pause-protocol hardening changes that — the ~37 ms XIP-down window is
+intrinsic to erasing/programming internal flash while executing from it. DMA
+does not help the internal-flash case (a DMA channel cannot read flash while XIP
+is down either, and the latency is the NOR die's erase time). The paths to a
+transparent save are:
+
+1. **A fully RAM-resident execution path** that keeps *both* cores sequencing
+   through the write — no new BOM, but every hot-path instruction and ISR must
+   be `__not_in_flash_func`, and the writing core still eats the flash erase
+   latency.
+2. **An external nonvolatile backend (FRAM over SPI)** — writes over SPI with
+   XIP never disabled, no erase cycle (byte-writable), ~10¹²–10¹⁴ endurance, and
+   the SPI write can be DMA-driven for a fully CPU-free save. This is the leading
+   option task 9.3 prototypes. The backend-neutral `RecordStore` (task 10.1) was
+   built so the A/B transactional commit (10.2) ports to it cleanly.
+
+Task 9.3 (external FRAM evaluation) requires acquiring an FRAM part and is the
+remaining input to the 9.4 checkpoint.
+
+---
 
 ## Interpretation (logical jitter vs wire skew, Req 11.7)
 
@@ -163,3 +261,149 @@ python3 capture_baseline.py tickwidth   # tick service duration
 python3 capture_baseline.py midi        # dispatch vs wire
 python3 capture_baseline.py save        # Ctrl+S pause (arm, then press Ctrl+S)
 ```
+
+---
+
+## Task 9.3 — External FRAM save-path transparency (MB85RS2MTA)
+
+The 9.2 result above established that the internal-flash save is a **blocking
+freeze**: both cores dark for ~33–37 ms, zero ticks and zero MIDI for the whole
+interior. Task 9.3 evaluates an **external SPI FRAM** (Adafruit **MB85RS2MTA**,
+2 Mbit / 256 KB, Fujitsu) as the alternative backend, because FRAM is plain SPI
+with **no erase, no XIP-disable, and no core-park** — so a save should be
+*transparent*: sequencing continues straight through the write.
+
+### Bring-up (wiring + driver on real silicon)
+
+| Check | Result |
+|---|---|
+| RDID | `0x04 7F 48 03` → **Fujitsu MB85RS2MTA**, SPI1 GP10–13 wiring correct |
+| 3-byte (24-bit) addressing | write @`0x012345` read back exact; 2-byte alias @`0x2345` read `0x00` (negative control) → **PASS** |
+
+The RDID + addressing check is the firmware [`fram_bringup`](../../../src/tools/fram_bringup.cpp)
+tool. This was the first on-target execution of the `Mb85rsFramSpi` SDK
+transport (previously only syntax-checked).
+
+### Transparency measurement
+
+Harness: [`src/tools/fram_save_trace.cpp`](../../../src/tools/fram_save_trace.cpp)
+(gated behind `GENSEQ_BUILD_FRAM_SAVE_TRACE`). One core runs a fixed-cadence
+**255 BPM worst-case** Tick + MIDI emitter on the same trace pins the 9.2 rig
+used (Tick = GP2/L0, MIDI = GP3, Save = GP5/L3); the other core performs a
+**real `Mb85rsFram::eraseAndProgram`** of the actual serialized `SaveRecord`,
+bracketed by the Save pin. The save is self-triggered once per second — no
+keyboard, no sequencer transport needed.
+
+| Write | Bytes | Duration | Result |
+|---|---|---|---|
+| **Real config save** (15 patterns, full sets) | 676 | **~1.81 ms** | OK |
+| Internal flash (task 9.2, for comparison) | — | ~33–37 ms (freeze) | — |
+| Stress write (scope visualization only) | 12,288 | ~32.4 ms | OK |
+
+A full worst-case config save to FRAM is **~1.81 ms vs the ~37 ms flash freeze —
+roughly 20× faster**, and (the real point) it does not stall the cores.
+
+**Transparency capture** (`captures/fram_transparency_255bpm_stress.npy`,
+trigger on GP5 rising, 44 ms window). The stress write was used here precisely
+*because* a 1.81 ms real save is shorter than one 2.451 ms tick period, so it
+cannot visually show continuity; the ~32 ms stress write spans ~13 tick periods
+— essentially the same duration as the 9.2 flash freeze, an apples-to-apples
+comparison:
+
+| During the 32.4 ms FRAM write | FRAM (9.3) | Internal flash (9.2) |
+|---|---|---|
+| Tick edges inside the window | **27** | 0 |
+| MIDI edges inside the window | **157** | 0 |
+| Longest Tick-low gap | **0.572 ms** (< 1 tick period) | whole interior |
+| Inter-tick interval inside window | **2.42–2.464 ms** (steady, = 2.451 ms period) | n/a (no ticks) |
+
+The sequencer never notices the save is happening: 14 consecutive ticks inside
+the write window, every interval on the normal grid, no stretch and no gap. This
+is the exact inverse of the flash freeze.
+
+### Honest scope of this evidence
+
+- The harness drives the **real FRAM write path** (`Mb85rsFram` over the real
+  `Mb85rsFramSpi` SPI1 transport) with the **real serialized record** — so the
+  ~1.81 ms latency and the transparency are genuine properties of the write.
+- It is **not** the full live integration. The core0 emitter is a fixed-cadence
+  **proxy** for the sequencer waveform, not the real `Sequencer`, and the FRAM
+  is **not yet wired into the live `SaveService`** (that is the decision-gated
+  10.3 work). The final integrated save also serializes the record and runs the
+  `SaveService` state machine, both already covered by the host suite.
+- SPI1 @ 8 MHz. The write is WREN → WRITE (opcode + 24-bit addr) → stream →
+  read-back verify; the ~1.81 ms for 676 B ≈ 0.68 ms clock-out + the verify read
+  + framing. Higher SPI clock (part rated 40 MHz) would reduce it further.
+
+### Provenance
+
+| Item | Value |
+|---|---|
+| Branch | `agents` |
+| Bring-up tool | [`src/tools/fram_bringup.cpp`](../../../src/tools/fram_bringup.cpp) (commit `d3cb4d9`) |
+| Save-trace harness | [`src/tools/fram_save_trace.cpp`](../../../src/tools/fram_save_trace.cpp) |
+| Capture harness | [`capture_fram_transparency.py`](capture_fram_transparency.py) |
+| Raw capture | [`captures/fram_transparency_255bpm_stress.npy`](captures/fram_transparency_255bpm_stress.npy) (tick, midi, save columns) |
+| Flash method | SWD via Raspberry Pi Debugprobe (CMSIS-DAP `2e8a:000c`), OpenOCD 0.12.0 |
+| Analyzer | BS05U on `/dev/ttyUSB0`, 44 ms window, trigger `{3: 1}` (GP5/L3 rising) |
+
+### Conclusion for the 9.4 backend decision
+
+FRAM delivers a **transparent, ~1.81 ms, verified** config save with the cores
+sequencing straight through it — eliminating the 9.2 note-stretch / burst-defer
+defect entirely. The cost is one SPI breakout + 4 GPIO (SPI1 GP10–13) and the
+10.3 integration work. This is the external-backend evidence feeding the 9.4
+decision (internal flash vs external FRAM vs RAM-resident).
+
+---
+
+## Task 12.4 — LIVE-load save transparency (real Ctrl+S on the FRAM backend)
+
+Task 9.3 proved the FRAM *driver* is transparent in isolation (a synthetic write
+on one core while another emitted a tick waveform). Task 12.4 proves the same for
+the **real live save path**: `UIController::drainSaveRequest` → the A/B
+`RecordStore::commit` onto FRAM on core0, while core1 runs the actual `Sequencer`
+emitting real MIDI. Trigger is a genuine Ctrl+S.
+
+### Autonomous rig (no keypress, no human power-cycle)
+
+- Firmware: `genseq` with `-DGENSEQ_PERFORMANCE_TRACE_ENABLED=ON`, trace pins
+  `Tick=GP2/L0`, `MIDI=GP3/L1`, `Save=GP5/L3` (the live `PerformanceTrace`
+  hooks: `tickBegin/End` round `serviceTick`, `midiDispatchBegin/End` per MIDI
+  byte, `saveBegin/End` round the live save), plus `-DGENSEQ_HOST_CONTROL=ON`.
+- Driven over the host-control UART channel: `H:bpm 255`, `H:testload` (fills the
+  selected pattern's gate set to a dense pulse count for a MIDI load), then
+  repeated `H:save` while the BS05U captures.
+- Flash + reset is hands-off: flash over SWD **without** OpenOCD's own reset
+  (which wedges this RP2040 — the multidrop quirk), then force the chip's own
+  watchdog to full-reset via register writes (`WATCHDOG_CTRL`/`LOAD` +
+  `PSM_WDSEL`), the same mechanism firmware `H:reset` uses.
+
+### Measurement-artifact caught and corrected
+
+The first captures appeared to show the inter-tick interval DOUBLING during a
+save (9.8 → 19.6 ms), suggesting a stall. It was an **undersampling artifact**:
+the `serviceTick` pulse is only ~5.5 µs wide (task 1.4), and the capture sampled
+at 20–60 µs/sample, so roughly half the tick edges were missed, faking a 2×
+spacing. Static analysis had already found no cross-core coupling (the save path
+disables no interrupts, takes no lock, shares no bus with core1; `corePause` is
+dead code; core1's command read is non-blocking), and the device's own
+`timingFault` never latched. Adding a trace-build-only
+`GENSEQ_TRACE_TICK_WIDEN_US` (holds GP2 high ~200 µs in `tickEnd`, a measurement
+aid that never shifts the rising edge or the cadence) made the edges reliably
+sampleable.
+
+### Result (widened tick pulse, 255 BPM, dense gates)
+
+| Inter-tick interval | Value |
+|---|---|
+| Baseline (no save) | 9.78–9.84 ms (= 255 BPM × 24 PPQN) |
+| **Across a ~10.4–10.8 ms live save** | **9.78–9.84 ms — identical** |
+
+Ticks fire straight through the live save at exact cadence; a MIDI dispatch also
+lands inside the save window with no cadence disruption. The live FRAM save is
+**transparent** — the same conclusion as 9.3, now on the real firmware. Contrast
+internal flash (task 9.2): ~37 ms with zero ticks and zero MIDI.
+
+Capture: `captures/fram_live_save_255bpm.npy` (tick, midi, save columns).
+Harness: [`test/bench/capture_12_4_live.py`](../../../test/bench/capture_12_4_live.py).

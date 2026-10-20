@@ -80,9 +80,10 @@ target_link_libraries(genseq
     hardware_uart
     hardware_gpio
     hardware_i2c
+    hardware_spi
     hardware_dma
-    hardware_flash
     hardware_sync
+    hardware_watchdog
     tinyusb_host
     tinyusb_board
 )
@@ -109,6 +110,17 @@ set(GENSEQ_TRACE_SAVE_PIN -1 CACHE STRING
     "GPIO driven high while a save is in progress")
 set(GENSEQ_TRACE_FAULT_PIN -1 CACHE STRING
     "GPIO held high while a performance fault is latched")
+set(GENSEQ_TRACE_TICK_WIDEN_US 0 CACHE STRING
+    "Extra us to hold the Tick trace pin high (measurement aid; 0 = off)")
+
+# Host-control command channel (autonomous bench testing). When ON, the live
+# genseq firmware reads newline-framed "H:" commands from stdin (the UART0 /
+# picoprobe bridge) and synthesizes the same UI events a keypress would, so a
+# host/agent can drive GenSeq (set BPM/patterns, trigger a save, dump state,
+# self-reset) with no physical keyboard. OFF by default so the shipping and
+# timing builds are byte-identical to a build without it.
+option(GENSEQ_HOST_CONTROL
+       "Enable the host-control serial command channel for bench testing" OFF)
 
 target_compile_definitions(genseq PRIVATE
     GENSEQ_PERFORMANCE_TRACE_ENABLED=$<BOOL:${GENSEQ_PERFORMANCE_TRACE_ENABLED}>
@@ -117,6 +129,79 @@ target_compile_definitions(genseq PRIVATE
     GENSEQ_TRACE_OPERATION_PIN=${GENSEQ_TRACE_OPERATION_PIN}
     GENSEQ_TRACE_SAVE_PIN=${GENSEQ_TRACE_SAVE_PIN}
     GENSEQ_TRACE_FAULT_PIN=${GENSEQ_TRACE_FAULT_PIN}
+    GENSEQ_TRACE_TICK_WIDEN_US=${GENSEQ_TRACE_TICK_WIDEN_US}
+    GENSEQ_HOST_CONTROL=$<BOOL:${GENSEQ_HOST_CONTROL}>
+    # Make malloc/free thread-safe across cores. The FRAM save runs on core0
+    # concurrently with core1 (no core-park, unlike the old flash path); this
+    # guards the shared allocator so a save can never corrupt a core1 heap op.
+    # Defense-in-depth: the live A/B commit is already allocation-free.
+    PICO_USE_MALLOC_MUTEX=1
 )
 
 pico_add_extra_outputs(genseq)
+
+# ---------------------------------------------------------------------------
+# Optional standalone FRAM bring-up / wiring-check firmware (task 9.3).
+# Separate executable; built only when GENSEQ_BUILD_FRAM_BRINGUP=ON so it never
+# affects the default genseq build. Emits on UART0 (GP0/GP1, reaches a
+# picoprobe UART bridge) and USB-CDC (/dev/ttyACM when the target USB is cabled).
+#   cmake -B build-fram -DGENSEQ_BUILD_FRAM_BRINGUP=ON
+#   cmake --build build-fram --target fram_bringup
+# ---------------------------------------------------------------------------
+option(GENSEQ_BUILD_FRAM_BRINGUP
+       "Build the standalone MB85RS2MTA FRAM bring-up firmware" OFF)
+
+if(GENSEQ_BUILD_FRAM_BRINGUP)
+    add_executable(fram_bringup src/tools/fram_bringup.cpp)
+    pico_set_program_name(fram_bringup "GenSeq FRAM bring-up")
+    pico_set_program_description(fram_bringup "MB85RS2MTA RDID + 3-byte addressing check")
+    # Emit on BOTH transports: UART0 (GP0/GP1) reaches the picoprobe's UART
+    # bridge (/dev/ttyACM provided by the Debugprobe), and USB-CDC works when
+    # the target's own USB is cabled. Picoprobe-only rigs rely on the UART path.
+    pico_enable_stdio_uart(fram_bringup 1)
+    pico_enable_stdio_usb(fram_bringup 1)
+    target_link_libraries(fram_bringup
+        pico_stdlib
+        hardware_spi
+        hardware_gpio
+    )
+    target_include_directories(fram_bringup PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/src
+        ${CMAKE_CURRENT_LIST_DIR}/src/persistence
+    )
+    pico_add_extra_outputs(fram_bringup)
+endif()
+
+# ---------------------------------------------------------------------------
+# FRAM save-path transparency trace harness (task 9.3, Route A).
+# Drives a real FRAM eraseAndProgram while core1 emits 255 BPM Tick+MIDI
+# on the 9.2 trace pins, so the BitScope shows whether ticks/MIDI keep
+# flowing during a FRAM write (the transparency question).
+#   cmake -B build-fram -DGENSEQ_BUILD_FRAM_SAVE_TRACE=ON
+#   cmake --build build-fram --target fram_save_trace
+# ---------------------------------------------------------------------------
+option(GENSEQ_BUILD_FRAM_SAVE_TRACE
+       "Build the FRAM save-path transparency trace harness" OFF)
+
+if(GENSEQ_BUILD_FRAM_SAVE_TRACE)
+    add_executable(fram_save_trace
+        src/tools/fram_save_trace.cpp
+        src/persistence/SaveRecord.cpp    # real codec (serialize)
+    )
+    pico_set_program_name(fram_save_trace "GenSeq FRAM save trace")
+    pico_set_program_description(fram_save_trace
+        "9.3 transparency: FRAM write under worst-case sequencing load")
+    pico_enable_stdio_uart(fram_save_trace 1)
+    pico_enable_stdio_usb(fram_save_trace 1)
+    target_link_libraries(fram_save_trace
+        pico_stdlib
+        pico_multicore
+        hardware_spi
+        hardware_gpio
+    )
+    target_include_directories(fram_save_trace PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/src
+        ${CMAKE_CURRENT_LIST_DIR}/src/persistence
+    )
+    pico_add_extra_outputs(fram_save_trace)
+endif()

@@ -2,6 +2,7 @@
 
 #include "hardware/sync.h"
 #include "pico/platform.h"
+#include "pico/time.h"
 
 namespace sequencer {
 
@@ -15,11 +16,10 @@ volatile bool g_pauseRequested = false;
 // effect. Cleared by core1 when it leaves the busy-wait.
 volatile bool g_pauseAcked = false;
 
-// Bounded spin so core0 never hangs forever waiting for an acknowledgement that
-// cannot come (e.g. core1 not running yet). Generous relative to a flash sector
-// erase+program (a few ms); the loop below is a simple decrementing counter, not
-// wall-clock, so this is just an upper safety bound.
-constexpr uint32_t ACK_WAIT_SPINS = 50u * 1000u * 1000u;
+// Bounded wall-clock timeout for core1 to acknowledge the release so a new
+// request cannot race an in-progress spin. The ACK wait itself uses the
+// caller-supplied absolute-time timeout (task 9.1).
+constexpr uint32_t RELEASE_WAIT_MS = 50u;
 
 // core1's busy-wait. MUST live in RAM: while core0 erases/programs flash the XIP
 // interface is down, so any instruction fetched from flash would fault. Marked
@@ -45,20 +45,32 @@ void __not_in_flash_func(corePauseCheck)() {
     }
 }
 
-void corePauseRequestAndWait() {
+bool corePauseRequestAndWait(uint32_t timeoutMs) {
     g_pauseAcked = false;
     g_pauseRequested = true;
-    // Wait (bounded) for core1 to enter its RAM busy-wait and acknowledge.
-    for (uint32_t i = 0; i < ACK_WAIT_SPINS && !g_pauseAcked; ++i) {
+    // Wait for a POSITIVE acknowledgement using an ABSOLUTE-TIME deadline
+    // (task 9.1, Req 8.8/9.8): deterministic regardless of core clock. On
+    // timeout we return false WITHOUT having a confirmed pause, so the caller
+    // must abort the flash write (no destructive erase/program).
+    const absolute_time_t deadline = make_timeout_time_ms(timeoutMs);
+    while (!g_pauseAcked) {
+        if (time_reached(deadline)) {
+            // No positive ack within the deadline: clear the request so core1
+            // (if it wakes late) does not spin forever, and report failure.
+            g_pauseRequested = false;
+            return false;
+        }
         tight_loop_contents();
     }
+    return true;  // positive acknowledgement — safe to proceed with the write
 }
 
 void corePauseRelease() {
     g_pauseRequested = false;
-    // Wait (bounded) for core1 to observe the release and leave its busy-wait,
-    // so a subsequent request cannot race an in-progress spin.
-    for (uint32_t i = 0; i < ACK_WAIT_SPINS && g_pauseAcked; ++i) {
+    // Wait (bounded, absolute-time) for core1 to observe the release and leave
+    // its busy-wait, so a subsequent request cannot race an in-progress spin.
+    const absolute_time_t deadline = make_timeout_time_ms(RELEASE_WAIT_MS);
+    while (g_pauseAcked && !time_reached(deadline)) {
         tight_loop_contents();
     }
 }

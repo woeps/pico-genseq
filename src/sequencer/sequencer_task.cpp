@@ -1,6 +1,7 @@
 #include "sequencer.h"
 #include "PicoMonotonicClock.h"
 #include "UartMidiOutput.h"
+#include "PatternSnapshot.h"
 #include "pico/multicore.h"
 #include "core_pause.h"
 #include "../commands/command.h"
@@ -21,6 +22,11 @@ static void sequencer_task() {
     // Instead core0 pauses this core cooperatively for flash writes via
     // corePauseCheck() below (see core_pause.h), leaving the FIFO untouched.
     if (globalSequencer) {
+        // Reused fixed-capacity decode buffer (task 6.4, Req 7.9): allocated once
+        // here, never on the per-command path. receiveCommandInto() decodes each
+        // command's payload into this snapshot in place, so core1's steady-state
+        // receive loop performs no heap allocation.
+        static sequencer::PatternSnapshot commandSnapshot;
         while (true) {
             // Cooperative pause point: if core0 is about to write flash it
             // sets the pause request; we acknowledge and spin in RAM (IRQs
@@ -28,8 +34,8 @@ static void sequencer_task() {
             // (XIP) mid-erase/program (Req 4.4, 4.5).
             corePauseCheck();
 
-            commands::CommandMessage msg = commands::receiveCommand();
-            globalSequencer->processCommand(msg);
+            commands::CommandMessage msg = commands::receiveCommandInto(commandSnapshot);
+            globalSequencer->processCommand(msg, commandSnapshot);
             globalSequencer->update();
         }
     }

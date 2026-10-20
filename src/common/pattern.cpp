@@ -93,6 +93,10 @@ namespace common {
         this->midiChannel = midiChannel;
     }
 
+    MidiChannel Pattern::getCanonicalChannel() const {
+        return midi_channel::fromUserChannel(midiChannel);
+    }
+
     bool Pattern::isActive() const {
         return active;
     }

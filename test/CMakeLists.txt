@@ -22,6 +22,25 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 enable_testing()
 
 # ---------------------------------------------------------------------------
+# Sanitizer builds (performance-safe-foundation task 12.1, Req 11.4).
+#
+# Required host suites should run under AddressSanitizer + UndefinedBehavior-
+# Sanitizer where the toolchain supports them, to catch ownership and payload
+# lifetime bugs the fixed-capacity components rely on being absent. Opt in with
+#   cmake -B test/build -S test -DGENSEQ_SANITIZE=ON
+# and run ctest as usual; the flags apply to every target in this project. Off by
+# default so the normal build stays fast and dependency-free. GCC and Clang both
+# support these sanitizers; a toolchain that does not will simply reject the
+# flags at configure/compile time, which is the signal to build without them.
+# ---------------------------------------------------------------------------
+option(GENSEQ_SANITIZE "Build host tests with ASan + UBSan (task 12.1)" OFF)
+if(GENSEQ_SANITIZE)
+    message(STATUS "GENSEQ_SANITIZE=ON: building with -fsanitize=address,undefined")
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
+# ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 set(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
@@ -419,6 +438,419 @@ target_link_libraries(genseq_example_save_combo PRIVATE genseq_emission)
 add_test(NAME genseq_example_save_combo COMMAND genseq_example_save_combo)
 
 # ---------------------------------------------------------------------------
+# Example test: canonical MIDI channel conversion and validation (task 2.1).
+#
+# A standalone example (not property-based) validating Requirements 5.1 and 5.9:
+# one canonical internal protocol channel (0..15) covering all 16 channels with
+# no aliases, lossless 1..16 user-channel conversion, removal of the old channel
+# 0/1 alias, and common::Pattern's canonical-channel accessor.
+#
+# It includes only the SDK-free common/MidiChannel.h and common/pattern.h and
+# links genseq_emission for the Pattern/common symbols; NO Pico SDK libs and NO
+# RapidCheck, so it builds host-side unconditionally.
+#
+# Its own main() means it MUST be excluded from the property-test glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_CANONICAL_CHANNEL_SRC "${TEST_DIR}/example_canonical_channel.cpp")
+
+add_executable(genseq_example_canonical_channel "${EXAMPLE_CANONICAL_CHANNEL_SRC}")
+target_include_directories(genseq_example_canonical_channel PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_canonical_channel PRIVATE genseq_emission)
+add_test(NAME genseq_example_canonical_channel COMMAND genseq_example_canonical_channel)
+
+# ---------------------------------------------------------------------------
+# Example test: supported Time Signature ranges (task 3.1).
+#
+# A standalone example (not property-based) validating Requirements 1.3 and 1.7:
+# bounded numerator (1..32) and the power-of-two denominator set {1,2,4,8,16,32}
+# whose every member divides 96 exactly at PPQN 24, exact beat/bar tick
+# derivation, and rejection (not rounding) of unsupported values.
+#
+# It includes only the SDK-free common/TimeSignature.h — header-only, so it needs
+# no library link at all, but links genseq_emission for consistency with the
+# sibling examples; NO Pico SDK libs and NO RapidCheck, so it builds host-side
+# unconditionally. Its own main() means it MUST be excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_TIME_SIGNATURE_SRC "${TEST_DIR}/example_time_signature.cpp")
+
+add_executable(genseq_example_time_signature "${EXAMPLE_TIME_SIGNATURE_SRC}")
+target_include_directories(genseq_example_time_signature PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_time_signature PRIVATE genseq_emission)
+add_test(NAME genseq_example_time_signature COMMAND genseq_example_time_signature)
+
+# ---------------------------------------------------------------------------
+# Example test: stable PatternId runtime identity (task 2.2).
+#
+# A standalone example (not property-based) validating Requirements 5.1, 6.9,
+# 7.8: a PatternId stays stable when another pattern is removed/reordered, a
+# reused slot gets a higher generation so a stale reference is rejected, and the
+# allocator is fixed-capacity and allocation-free.
+#
+# It includes only the SDK-free header-only common/PatternId.h; links
+# genseq_emission for consistency with the sibling examples (no symbols actually
+# needed); NO Pico SDK libs and NO RapidCheck, so it builds host-side
+# unconditionally. Its own main() means it MUST be excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_PATTERN_ID_SRC "${TEST_DIR}/example_pattern_id.cpp")
+
+add_executable(genseq_example_pattern_id "${EXAMPLE_PATTERN_ID_SRC}")
+target_include_directories(genseq_example_pattern_id PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_pattern_id PRIVATE genseq_emission)
+add_test(NAME genseq_example_pattern_id COMMAND genseq_example_pattern_id)
+
+# ---------------------------------------------------------------------------
+# Example test: centralized NoteLifecycle (task 2.3).
+#
+# A standalone example validating Requirements 5.1-5.5, 5.8: ownership recorded
+# at onset, release by recorded identity, overlapping-pattern retrigger with an
+# aggregate refcount (final note-off only when the last owner releases),
+# monophonic replacement, and releaseAll/panic leaving zero per-pattern AND
+# aggregate ownership.
+#
+# NoteLifecycle.h is header-only and SDK-free (IMidiOutput + canonical
+# channel/id types + MIDI byte tables). The test uses the host RecordingMidiOutput
+# and links genseq_emission for consistency; NO Pico SDK libs, NO RapidCheck.
+# Its own main() means it MUST be excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_NOTE_LIFECYCLE_SRC "${TEST_DIR}/example_note_lifecycle.cpp")
+
+add_executable(genseq_example_note_lifecycle "${EXAMPLE_NOTE_LIFECYCLE_SRC}")
+target_include_directories(genseq_example_note_lifecycle PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_note_lifecycle PRIVATE genseq_emission)
+add_test(NAME genseq_example_note_lifecycle COMMAND genseq_example_note_lifecycle)
+
+# ---------------------------------------------------------------------------
+# Example test: TransportTimeline (task 3.2).
+#
+# A standalone example validating Requirements 1.1-1.5: start() establishes the
+# timeline, beat/bar boundaries derive from the tick index and meter, long-run
+# tick timestamps are drift-free (carried remainder, checked against an exact
+# rational reference across BPMs), a mid-run BPM change preserves tick index and
+# phase, and an unsupported meter/zero BPM is rejected.
+#
+# TransportTimeline.h is header-only and SDK-free. Links genseq_emission for
+# consistency; NO Pico SDK libs, NO RapidCheck. Its own main() means it MUST be
+# excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_TRANSPORT_TIMELINE_SRC "${TEST_DIR}/example_transport_timeline.cpp")
+
+add_executable(genseq_example_transport_timeline "${EXAMPLE_TRANSPORT_TIMELINE_SRC}")
+target_include_directories(genseq_example_transport_timeline PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_transport_timeline PRIVATE genseq_emission)
+add_test(NAME genseq_example_transport_timeline COMMAND genseq_example_transport_timeline)
+
+# ---------------------------------------------------------------------------
+# Example test: Sequencer integration of NoteLifecycle + TransportTimeline
+# (tasks 2.4, 2.5, 3.3, 4.1).
+#
+# Drives the REAL Sequencer through its public API with a FakeMonotonicClock to
+# validate the wave-3 hot-path wiring: falling edges release the recorded onset
+# (even after a pitch edit), Stop/mute/remove release ownership, repeated Play
+# is a no-op, and the unified MIDI Clock emits one Start / one Clock per tick /
+# one Stop.
+#
+# It links genseq_emission (real Sequencer + common) and uses the host
+# RecordingMidiOutput + FakeMonotonicClock; NO Pico SDK libs, NO RapidCheck. Its
+# own main() means it MUST be excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_SEQUENCER_INTEGRATION_SRC "${TEST_DIR}/example_sequencer_integration.cpp")
+
+add_executable(genseq_example_sequencer_integration "${EXAMPLE_SEQUENCER_INTEGRATION_SRC}")
+target_include_directories(genseq_example_sequencer_integration PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_sequencer_integration PRIVATE genseq_emission)
+add_test(NAME genseq_example_sequencer_integration COMMAND genseq_example_sequencer_integration)
+
+# ---------------------------------------------------------------------------
+# Example test: allocation-free core1 command path (task 6.4).
+#
+# Proves Sequencer::processCommand(msg, snapshot) — the application half of the
+# core1 cut-over to commands::receiveCommandInto — is behaviorally equivalent to
+# the legacy scalar (CommandMessage-vector) path, and validates set commands
+# against the PatternSnapshot's counts. SDK-free (Sequencer + PatternSnapshot).
+# ---------------------------------------------------------------------------
+set(EXAMPLE_COMMAND_SNAPSHOT_PATH_SRC "${TEST_DIR}/example_command_snapshot_path.cpp")
+
+add_executable(genseq_example_command_snapshot_path "${EXAMPLE_COMMAND_SNAPSHOT_PATH_SRC}")
+target_include_directories(genseq_example_command_snapshot_path PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_command_snapshot_path PRIVATE genseq_emission)
+add_test(NAME genseq_example_command_snapshot_path COMMAND genseq_example_command_snapshot_path)
+
+# ---------------------------------------------------------------------------
+# Example test: steady-state zero-allocation gate (task 12.2 / Req 7.9).
+#
+# Overrides global operator new to count allocations and asserts the per-tick
+# scheduling+emission path and the allocation-free command-decode path perform
+# zero heap allocations after warm-up. Documents (does not assert zero) the
+# set-application allocation and the fixed queue budgets. SDK-free.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_STEADY_STATE_ALLOCATION_SRC "${TEST_DIR}/example_steady_state_allocation.cpp")
+
+add_executable(genseq_example_steady_state_allocation "${EXAMPLE_STEADY_STATE_ALLOCATION_SRC}")
+target_include_directories(genseq_example_steady_state_allocation PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_steady_state_allocation PRIVATE genseq_emission)
+add_test(NAME genseq_example_steady_state_allocation COMMAND genseq_example_steady_state_allocation)
+
+# ---------------------------------------------------------------------------
+# Example test: fixed-capacity MIDI event queue (task 4.2).
+#
+# A standalone example validating Requirements 4.1, 4.2, 4.5, 4.7: deterministic
+# coincident ordering (timestamp, class priority, PatternId), real-time priority,
+# fixed capacity with no growth, and reserved safety capacity (ordinary events
+# refused into the reserve; a full-queue safety event reports DirectRequired).
+#
+# MidiEventQueue.h is header-only and SDK-free (only <cstdint> + canonical
+# PatternId). Links genseq_emission for consistency; NO Pico SDK libs, NO
+# RapidCheck. Its own main() means it MUST be excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_MIDI_EVENT_QUEUE_SRC "${TEST_DIR}/example_midi_event_queue.cpp")
+
+add_executable(genseq_example_midi_event_queue "${EXAMPLE_MIDI_EVENT_QUEUE_SRC}")
+target_include_directories(genseq_example_midi_event_queue PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_midi_event_queue PRIVATE genseq_emission)
+add_test(NAME genseq_example_midi_event_queue COMMAND genseq_example_midi_event_queue)
+
+# ---------------------------------------------------------------------------
+# Example test: Scheduler::service(now) front end (task 5.1).
+#
+# A standalone example validating Requirements 3.1, 3.2, 3.3: every serviced tick
+# carries its intended (deadline) timestamp independent of the observation time,
+# immediate safety work runs first on every call, and the per-service work is
+# bounded by a documented tick budget (surplus overdue ticks reported, not
+# drained in a burst; the next call resumes from the authoritative phase).
+#
+# Scheduler.h / TransportTimeline.h / PerformanceMetrics.h are header-only and
+# SDK-free. Links genseq_emission for consistency; NO Pico SDK libs, NO
+# RapidCheck. Its own main() means it MUST be excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_SCHEDULER_SRC "${TEST_DIR}/example_scheduler.cpp")
+
+add_executable(genseq_example_scheduler "${EXAMPLE_SCHEDULER_SRC}")
+target_include_directories(genseq_example_scheduler PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_scheduler PRIVATE genseq_emission)
+add_test(NAME genseq_example_scheduler COMMAND genseq_example_scheduler)
+
+# ---------------------------------------------------------------------------
+# Example test: output overload detection (task 4.3).
+#
+# A standalone example validating Requirements 4.4, 4.5, 4.6: current/max backlog
+# accounting, a backlog sustained for one beat of monotonic time latching a
+# sustained-overload signal, and a transient backlog that drains before one beat
+# NOT latching. OverloadDetector.h is header-only and SDK-free.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_OVERLOAD_DETECTOR_SRC "${TEST_DIR}/example_overload_detector.cpp")
+
+add_executable(genseq_example_overload_detector "${EXAMPLE_OVERLOAD_DETECTOR_SRC}")
+target_include_directories(genseq_example_overload_detector PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_overload_detector PRIVATE genseq_emission)
+add_test(NAME genseq_example_overload_detector COMMAND genseq_example_overload_detector)
+
+# ---------------------------------------------------------------------------
+# Example test: fixed-capacity CommandInbox + sequence IDs/acks (tasks 6.1, 6.2).
+#
+# A standalone example validating Requirements 7.1-7.4, 7.8, 6.9: single-producer/
+# single-consumer ring with complete-slot publish (no payload-word blocking),
+# fixed capacity (full refused, not grown), bounded drain, monotonic sequence IDs
+# with Accepted/Applied/Rejected ack status, and stale-generation rejection
+# against the live PatternIdAllocator. CommandInbox.h is header-only and SDK-free.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_COMMAND_INBOX_SRC "${TEST_DIR}/example_command_inbox.cpp")
+
+add_executable(genseq_example_command_inbox "${EXAMPLE_COMMAND_INBOX_SRC}")
+target_include_directories(genseq_example_command_inbox PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_command_inbox PRIVATE genseq_emission)
+add_test(NAME genseq_example_command_inbox COMMAND genseq_example_command_inbox)
+
+# ---------------------------------------------------------------------------
+# Example test: fake-clock scheduler + fault integration (task 5.4).
+#
+# Drives the REAL Sequencer across the three lateness regimes: under one beat
+# (reconcile, no catch-up burst, no fault), at/beyond one beat (fail closed:
+# release notes, one Stop, latched cause, no auto-restart), and explicit Play
+# restart after a fault. Links genseq_emission; NO SDK libs, NO RapidCheck.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_SCHEDULER_FAULT_SRC "${TEST_DIR}/example_scheduler_fault.cpp")
+
+add_executable(genseq_example_scheduler_fault "${EXAMPLE_SCHEDULER_FAULT_SRC}")
+target_include_directories(genseq_example_scheduler_fault PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_scheduler_fault PRIVATE genseq_emission)
+add_test(NAME genseq_example_scheduler_fault COMMAND genseq_example_scheduler_fault)
+
+# ---------------------------------------------------------------------------
+# Example test: fixed-capacity Pattern snapshot (task 6.4).
+#
+# Validates the allocation-free container core1 decodes commands into: gate
+# bitset round-trip, count clamping at protocol caps, pitch/velocity round-trip,
+# clear-and-reuse, and the documented fixed footprint. Header-only, SDK-free.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_PATTERN_SNAPSHOT_SRC "${TEST_DIR}/example_pattern_snapshot.cpp")
+
+add_executable(genseq_example_pattern_snapshot "${EXAMPLE_PATTERN_SNAPSHOT_SRC}")
+target_include_directories(genseq_example_pattern_snapshot PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_pattern_snapshot PRIVATE genseq_emission)
+add_test(NAME genseq_example_pattern_snapshot COMMAND genseq_example_pattern_snapshot)
+
+# ---------------------------------------------------------------------------
+# Example test: TimingPolicy + effective-tick resolution (task 7.1).
+#
+# Validates Immediate/Next Beat/Next Bar resolution against the Transport
+# Timeline across meters, the on-boundary -> next-boundary convention, and isDue.
+# Header-only, SDK-free.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_TIMING_POLICY_SRC "${TEST_DIR}/example_timing_policy.cpp")
+
+add_executable(genseq_example_timing_policy "${EXAMPLE_TIMING_POLICY_SRC}")
+target_include_directories(genseq_example_timing_policy PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_timing_policy PRIVATE genseq_emission)
+add_test(NAME genseq_example_timing_policy COMMAND genseq_example_timing_policy)
+
+# ---------------------------------------------------------------------------
+# Example test: Save Snapshot semantics (task 8.1).
+#
+# Validates Requirements 8.1-8.4: capture() takes an immutable by-value copy of
+# accepted Working State; a later edit to the live state cannot mutate the
+# in-progress snapshot; accepted (pending-application) changes are included and
+# unkept drafts excluded (via what the caller passes). SaveSnapshot.h +
+# PersistableConfig.h are header-only and SDK-free.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_SAVE_SNAPSHOT_SRC "${TEST_DIR}/example_save_snapshot.cpp")
+
+add_executable(genseq_example_save_snapshot "${EXAMPLE_SAVE_SNAPSHOT_SRC}")
+target_include_directories(genseq_example_save_snapshot PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/persistence"
+)
+target_link_libraries(genseq_example_save_snapshot PRIVATE genseq_emission)
+add_test(NAME genseq_example_save_snapshot COMMAND genseq_example_save_snapshot)
+
+# ---------------------------------------------------------------------------
+# Example test: atomic Pattern snapshot application (task 7.4).
+#
+# Validates Requirements 5.7, 6.8, 7.1: the complete gate/pitch/velocity material
+# is swapped atomically; a sounding note (owned by NoteLifecycle) survives; the
+# release uses the recorded onset. Header-only applier; links genseq_emission for
+# common::Pattern + the sets.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_PATTERN_SNAPSHOT_APPLY_SRC "${TEST_DIR}/example_pattern_snapshot_apply.cpp")
+
+add_executable(genseq_example_pattern_snapshot_apply "${EXAMPLE_PATTERN_SNAPSHOT_APPLY_SRC}")
+target_include_directories(genseq_example_pattern_snapshot_apply PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_pattern_snapshot_apply PRIVATE genseq_emission)
+add_test(NAME genseq_example_pattern_snapshot_apply COMMAND genseq_example_pattern_snapshot_apply)
+
+# ---------------------------------------------------------------------------
+# Example test: bounded nonblocking save service (task 8.2).
+#
+# Validates Requirements 8.5-8.9: begin/pump/terminal state machine over the
+# in-memory FakeFlashStore, distinct SUCCESS/FAIL outcomes, snapshot immutability
+# across post-begin edits, no overlapping saves, and the UI/input service-gap
+# metric. Links genseq_persistence (serialize/manager); SaveService/SaveSnapshot
+# are header-only.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_SAVE_SERVICE_SRC "${TEST_DIR}/example_save_service.cpp")
+
+add_executable(genseq_example_save_service "${EXAMPLE_SAVE_SERVICE_SRC}")
+target_include_directories(genseq_example_save_service PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/persistence"
+    "${TEST_DIR}/persistence"
+)
+target_link_libraries(genseq_example_save_service PRIVATE genseq_persistence)
+add_test(NAME genseq_example_save_service COMMAND genseq_example_save_service)
+
+# ---------------------------------------------------------------------------
+# Example test: distinct latched Timing Fault UI state (task 11.1).
+#
+# Validates Requirements 10.3, 10.4, 10.7: the latched fault indicator is
+# distinct from the SaveBanner feedback, preserves Working State, is cleared only
+# explicitly, and retains a machine-readable cause. ui/state/UIState.h is
+# header-only (depends only on the header-only common::PlayingOrder enum).
+# ---------------------------------------------------------------------------
+set(EXAMPLE_FAULT_UI_STATE_SRC "${TEST_DIR}/example_fault_ui_state.cpp")
+
+add_executable(genseq_example_fault_ui_state "${EXAMPLE_FAULT_UI_STATE_SRC}")
+target_include_directories(genseq_example_fault_ui_state PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/ui"
+    "${SRC_DIR}/ui/state"
+)
+target_link_libraries(genseq_example_fault_ui_state PRIVATE genseq_emission)
+add_test(NAME genseq_example_fault_ui_state COMMAND genseq_example_fault_ui_state)
+
+# ---------------------------------------------------------------------------
+# Example test: backend-neutral A/B record store (task 10.1).
+#
+# Validates Req 9.1 + the A/B transactional shape for 9.6/9.7: commit alternates
+# slots and bumps generation; load selects the newest valid committed record; a
+# failed/interrupted commit preserves the previous record; capacity guard. Links
+# genseq_persistence (serialize/deserialize) + the in-memory FakeFlashStore.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_RECORD_STORE_SRC "${TEST_DIR}/example_record_store.cpp")
+
+add_executable(genseq_example_record_store "${EXAMPLE_RECORD_STORE_SRC}")
+target_include_directories(genseq_example_record_store PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/persistence"
+    "${TEST_DIR}/persistence"
+)
+target_link_libraries(genseq_example_record_store PRIVATE genseq_persistence)
+add_test(NAME genseq_example_record_store COMMAND genseq_example_record_store)
+
+# ---------------------------------------------------------------------------
+# Example test: MB85RS2MTA FRAM driver protocol (task 9.3 prep).
+#
+# Proves the SDK-free Mb85rsFram IFlashStore driver against a host device model
+# (FakeFramSpi): round-trip, 3-byte addressing beyond 64 KB, WREN sequencing,
+# read-back verify, device-id, and RecordStore backend-neutrality over FRAM.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_FRAM_DRIVER_SRC "${TEST_DIR}/example_fram_driver.cpp")
+
+add_executable(genseq_example_fram_driver "${EXAMPLE_FRAM_DRIVER_SRC}")
+target_include_directories(genseq_example_fram_driver PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/persistence"
+    "${TEST_DIR}/persistence"
+)
+target_link_libraries(genseq_example_fram_driver PRIVATE genseq_persistence)
+add_test(NAME genseq_example_fram_driver COMMAND genseq_example_fram_driver)
+
+# ---------------------------------------------------------------------------
+# Example test: persistent fault indication + explicit-Play ack (tasks 11.2/11.3).
+#
+# Validates Req 10.4/10.5/10.6: the fault matrix color is distinct and takes
+# precedence, does not auto-dismiss, and an explicit Play clears the latch (only
+# then). ui/state/FaultIndication.h + UIState.h are header-only.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_FAULT_INDICATION_SRC "${TEST_DIR}/example_fault_indication.cpp")
+
+add_executable(genseq_example_fault_indication "${EXAMPLE_FAULT_INDICATION_SRC}")
+target_include_directories(genseq_example_fault_indication PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/ui"
+    "${SRC_DIR}/ui/state"
+)
+target_link_libraries(genseq_example_fault_indication PRIVATE genseq_emission)
+add_test(NAME genseq_example_fault_indication COMMAND genseq_example_fault_indication)
+
+# ---------------------------------------------------------------------------
+# Example test: snapshot + save-coordination (task 8.3).
+#
+# Validates Req 8.1-8.9: draft/working/pending distinctions, mutation after
+# capture, a transactional A/B failure preserving the previous record, and that
+# unsafe coordination (capacity/injected failure) performs ZERO destructive
+# writes. Links genseq_persistence + the in-memory FakeFlashStore.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_SAVE_COORDINATION_SRC "${TEST_DIR}/example_save_coordination.cpp")
+
+add_executable(genseq_example_save_coordination "${EXAMPLE_SAVE_COORDINATION_SRC}")
+target_include_directories(genseq_example_save_coordination PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/persistence"
+    "${TEST_DIR}/persistence"
+)
+target_link_libraries(genseq_example_save_coordination PRIVATE genseq_persistence)
+add_test(NAME genseq_example_save_coordination COMMAND genseq_example_save_coordination)
+
+# ---------------------------------------------------------------------------
 # Property-test executable.
 #
 # The property tests (task 6.3+) live in test/*.cpp. They are auto-discovered
@@ -448,6 +880,54 @@ if(RAPIDCHECK_AVAILABLE)
     # own main() (it compiles Reducer.cpp + commands:: seams); exclude it from the
     # shared runner so the two main()s do not collide.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SAVE_COMBO_SRC}")
+    # The canonical-channel example (task 2.1) is its own dedicated target with
+    # its own main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_CANONICAL_CHANNEL_SRC}")
+    # The time-signature example (task 3.1) is its own dedicated target with its
+    # own main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_TIME_SIGNATURE_SRC}")
+    # The pattern-id example (task 2.2) is its own dedicated target with its own
+    # main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_PATTERN_ID_SRC}")
+    # The NoteLifecycle (2.3) and TransportTimeline (3.2) examples are their own
+    # dedicated targets with their own main(); exclude them from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_NOTE_LIFECYCLE_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_TRANSPORT_TIMELINE_SRC}")
+    # The Sequencer integration example (tasks 2.4/2.5/3.3/4.1) is its own target
+    # with its own main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SEQUENCER_INTEGRATION_SRC}")
+    # The allocation-free command-path example (6.4) is its own target with its
+    # own main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_COMMAND_SNAPSHOT_PATH_SRC}")
+    # The steady-state allocation gate (12.2) overrides global operator new and
+    # has its own main(); it MUST be its own target, never in the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_STEADY_STATE_ALLOCATION_SRC}")
+    # The MIDI event queue (4.2) and Scheduler (5.1) examples are their own
+    # targets with their own main(); exclude them from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_MIDI_EVENT_QUEUE_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SCHEDULER_SRC}")
+    # The overload detector (4.3) and CommandInbox (6.1/6.2) examples are their
+    # own targets with their own main(); exclude them from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_OVERLOAD_DETECTOR_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_COMMAND_INBOX_SRC}")
+    # Wave-6 examples (5.4 scheduler-fault, 6.4 pattern-snapshot, 7.1 timing-
+    # policy) are their own targets with their own main(); exclude them.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SCHEDULER_FAULT_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_PATTERN_SNAPSHOT_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_TIMING_POLICY_SRC}")
+    # Wave-7 save-snapshot example (8.1) is its own target with its own main().
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SAVE_SNAPSHOT_SRC}")
+    # Wave-8 examples (7.4 apply, 8.2 save-service, 11.1 fault-ui-state) are
+    # their own targets with their own main(); exclude them from the runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_PATTERN_SNAPSHOT_APPLY_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SAVE_SERVICE_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_FAULT_UI_STATE_SRC}")
+    # Wave-9 host examples (10.1 record-store, 11.2/11.3 fault-indication, 8.3
+    # save-coordination) are their own targets with their own main().
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_RECORD_STORE_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_FRAM_DRIVER_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_FAULT_INDICATION_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SAVE_COORDINATION_SRC}")
 
     if(NOT TEST_SOURCES)
         message(STATUS

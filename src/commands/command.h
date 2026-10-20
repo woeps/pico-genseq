@@ -5,6 +5,8 @@
 #include "pico/multicore.h"
 #include "../common/pitch_set.h"
 
+namespace sequencer { class PatternSnapshot; }  // fwd (task 6.4 receive path)
+
 namespace commands {
 
     // Enum for sequencer commands
@@ -56,5 +58,23 @@ namespace commands {
      * @return CommandMessage with the received command and parameters
      */
     CommandMessage receiveCommand();
+
+    /**
+     * @brief Allocation-free receive for the timing-critical core1 path
+     *        (performance-safe-foundation task 6.4, Req 7.4/7.9/7.10).
+     *
+     * Decodes one FIFO command exactly like receiveCommand(), but for the
+     * multiword pattern-set commands (GATE/PITCH/VELOCITY) it writes the payload
+     * into the caller-owned, reused @p snapshot instead of heap-allocating the
+     * std::vector members of CommandMessage via .assign(). The returned
+     * CommandMessage carries only the SCALAR fields (cmd, param1, counts, order)
+     * — its vector members stay empty — so the caller applies set commands from
+     * @p snapshot (see Sequencer::processCommand overload). This removes the
+     * only steady-state heap allocation on the core1 receive path.
+     *
+     * @param snapshot  Reused fixed-capacity decode buffer. CLEARED on entry.
+     * @return CommandMessage with scalar fields set; vector members empty.
+     */
+    CommandMessage receiveCommandInto(sequencer::PatternSnapshot& snapshot);
 
 } // namespace commands

@@ -29,14 +29,18 @@ namespace sequencer {
 void corePauseCheck();
 
 // Called by core0. Requests that core1 pause and blocks until core1 has
-// acknowledged (i.e. is spinning in RAM and will not fetch from flash). After
-// this returns it is safe to erase/program flash. MUST be paired with
-// corePauseRelease().
+// acknowledged (i.e. is spinning in RAM and will not fetch from flash), or until
+// an ABSOLUTE-TIME timeout elapses. Returns true only on a POSITIVE
+// acknowledgement; false on timeout (task 9.1, Req 8.8 / 9.8). A false return
+// MUST prohibit the erase/program: the caller aborts the save with no
+// destructive write. MUST be paired with corePauseRelease() in both cases so a
+// late ack cannot strand core1 in its spin.
 //
-// If core1 has not been started/observed yet (no acknowledgement within a bounded
-// spin), this still returns so a save cannot hang forever; callers disable
-// interrupts around the actual flash op regardless.
-void corePauseRequestAndWait();
+// `timeoutMs` bounds the wait in wall-clock milliseconds (absolute-time, not a
+// spin count), so the bound is deterministic regardless of core clock or
+// optimisation. A generous default covers a sector erase+program (a few ms) with
+// margin.
+bool corePauseRequestAndWait(uint32_t timeoutMs = 50);
 
 // Called by core0 after the flash operation completes. Releases core1 from its
 // busy-wait so it resumes the normal command/update loop.

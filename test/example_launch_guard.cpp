@@ -31,6 +31,7 @@
 
 #include "sequencer.h"          // sequencer::createSequencerTask declaration
 #include "UartMidiOutput.h"     // sequencer::UartMidiOutput declaration (real header)
+#include "PatternSnapshot.h"    // sequencer::PatternSnapshot (receiveCommandInto seam, task 6.4)
 #include "pico/multicore.h"     // multicore_launch_core1 declaration (host stub)
 #include "../commands/command.h"
 
@@ -87,8 +88,10 @@ void corePauseCheck() {
 namespace commands {
 
 // Linker seam only: sequencer_task (which calls this) is never executed in this test because
-// the counting multicore_launch_core1 above does not invoke the entry function.
-CommandMessage receiveCommand() {
+// the counting multicore_launch_core1 above does not invoke the entry function. The task-6.4
+// cut-over made the core1 loop call receiveCommandInto(snapshot); this is its host seam.
+CommandMessage receiveCommandInto(sequencer::PatternSnapshot& snapshot) {
+    snapshot.clear();
     return CommandMessage{};
 }
 

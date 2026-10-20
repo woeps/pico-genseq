@@ -30,7 +30,7 @@ The charter also maps known implementation gaps to later milestones. Completing 
 
 ### 2. Performance-Safe Minimum Foundation
 
-**Status: Planned — approved specification ready for implementation.**
+**Status: Complete — all automated and hardware evidence gates pass (v1 storage backend: external SPI FRAM, MB85RS2MTA). The one late-found gate failure — a ~501 ms core0 UI-loop stall from a wireless-receiver TinyUSB enumeration delay — was root-caused and fixed (UI render pump during the host delay; UI gap 501 ms -> 26 ms, under the ≤50 ms limit).**
 
 The approved Milestone 2 specification is split into:
 
@@ -38,6 +38,8 @@ The approved Milestone 2 specification is split into:
 - [Design](.kiro/specs/performance-safe-foundation/design.md)
 - [Implementation Tasks](.kiro/specs/performance-safe-foundation/tasks.md)
 - [Hardware Timing Baseline (task 1.4 evidence)](docs/development/baseline/README.md) — BS05U captures of the current implementation; logical jitter ≈ 0, blocking save stalls MIDI ~33 ms (the defect this milestone fixes).
+- [FRAM evaluation + live-save transparency (tasks 9.2–9.4, 12.4)](docs/development/baseline/README.md) — internal flash freezes both cores ~37 ms per save; the chosen external FRAM save is transparent (ticks + MIDI continue at nominal cadence through a ~10 ms save at 40/120/255 BPM).
+- [Autonomous bench harnesses (tasks 12.3/12.4)](test/bench/README.md) — host-control-driven, hands-off: boot-load round-trip, BPM-sweep transparency, edit storm, endurance (20× save+reboot) and long-run soak; all gates pass.
 
 This milestone establishes the invariants required before expanding the generative engine:
 

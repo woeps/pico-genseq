@@ -162,6 +162,20 @@ struct UIState {
     // set on boot when the saved config could not be loaded, so a separate
     // boot flag is not required (Req 6.7).
     SaveBanner saveBanner = SaveBanner::NONE;
+
+    // --- Timing Fault indication (performance-safe-foundation task 11.1) ---
+    // Latched fail-closed indicator (Req 10.3, 10.4, 10.7). DISTINCT from the
+    // SaveBanner states (success/failure/not-loaded) so the matrix can present
+    // it unambiguously (Req 10.4). It latches when core1 publishes a Timing
+    // Fault and is cleared only by an explicit Play acknowledgement (Req 10.6);
+    // it NEVER auto-dismisses (Req 10.5). Working State (patterns + their
+    // configuration above) is PRESERVED while this is latched (Req 10.3) — the
+    // fault flag is independent plain state and does not clear any config.
+    bool timingFaultLatched = false;
+    // Machine-readable fault cause for diagnostics (Req 10.7); mirrors
+    // sequencer::PerformanceFaultCause as a plain byte so UIState stays free of
+    // a sequencer include. 0 == NONE.
+    uint8_t timingFaultCause = 0;
 };
 
 } // namespace ui::state
