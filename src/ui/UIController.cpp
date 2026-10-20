@@ -1,5 +1,6 @@
 #include "UIController.h"
 #include "UiTelemetry.h"
+#include "UiPump.h"
 #include "state/Reducer.h"
 #include "state/StateManager.h"
 #include "state/PersistMapping.h"
@@ -44,6 +45,10 @@ constexpr uint32_t BANNER_COLOR_NOT_LOADED = 0x00FFFF00; // amber (green+red)
 
 namespace ui {
 
+// Static self-pointer so the C-style UI-pump trampoline (invoked from the
+// TinyUSB host-delay override) can reach the live controller. Single instance.
+static UIController* g_pumpTarget = nullptr;
+
 // Live UI timing telemetry read by HostControl's H:dump (task 12.3 literal
 // metrics). Written only here on core0.
 uint32_t g_lastSaveMicros = 0;
@@ -65,6 +70,12 @@ void UIController::initialize()
     // Create hardware
     led = std::make_unique<hardware::Led>(config.ledPin);
     ledMatrix = std::make_unique<hardware::LedMatrix>(config.ledMatrixPin);
+
+    // Register the render-only UI pump so a TinyUSB host enumeration delay
+    // (invoked from keyboard->update() later) cannot blank the UI past the
+    // Req 8.7 <=50 ms budget. Must be set before the keyboard is brought up.
+    g_pumpTarget = this;
+    ui::setUiPump(&UIController::pumpTrampoline);
 
     // Create views (allocated once at initialization)
     initView = std::make_unique<InitView>(*led, *ledMatrix);
@@ -340,6 +351,35 @@ void UIController::updateSaveBanner()
     }
 
     bannerRendered = true;
+}
+
+void UIController::pumpRender()
+{
+    // Render-only: keep the visible UI alive during a TinyUSB host delay. NO
+    // keyboard/save/host-control servicing (this runs from inside tuh_task via
+    // the host-delay override, so re-entering those would recurse). Reads state
+    // read-only and repaints; cheap and reentrancy-safe.
+    if (led) led->update();
+    if (activeView) {
+        activeView->render(state::getStateManager().getState());
+    }
+    updateSaveBanner();
+
+    // A pump IS a UI-service event: credit it against the gap tracker so the
+    // measured gap reflects real responsiveness (the UI is being serviced here
+    // even though the top-level update() call is still blocked in tuh_task).
+    const uint64_t nowUs = to_us_since_boot(get_absolute_time());
+    if (lastUpdateMicros_ != 0) {
+        const uint64_t gap = nowUs - lastUpdateMicros_;
+        if (gap > maxUiGapMicros_) maxUiGapMicros_ = static_cast<uint32_t>(gap);
+        g_maxUiGapMicros = maxUiGapMicros_;
+    }
+    lastUpdateMicros_ = nowUs;
+}
+
+void UIController::pumpTrampoline()
+{
+    if (g_pumpTarget) g_pumpTarget->pumpRender();
 }
 
 void UIController::update()

@@ -29,6 +29,14 @@ public:
     void initialize();
     void update();
 
+    // Render-only UI pump (task 12.3): re-renders the active view + banner with
+    // NO keyboard/save/host-control servicing, so it is safe to call from inside
+    // TinyUSB's host delay (which is itself invoked from keyboard->update()).
+    // Registered as the ui::setUiPump callback so a 500 ms USB enum debounce
+    // cannot blank the UI past the Req 8.7 <=50 ms budget.
+    void pumpRender();
+    static void pumpTrampoline();
+
 private:
     const HardwareConfig& config;
 
