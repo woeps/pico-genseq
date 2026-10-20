@@ -17,7 +17,6 @@
 #include "../state/UIState.h"
 #include "../../sequencer/sequencer_telemetry.h"
 #include "../UiTelemetry.h"
-namespace ui { extern volatile uint32_t g_tusbDelayCalls; extern volatile uint32_t g_tusbDelayMaxMs; }
 
 namespace hardware {
 namespace {
@@ -285,11 +284,6 @@ void HostControl::emitDump() {
     printf("D:soundingNotes=%u\n", static_cast<unsigned>(sequencer::g_soundingNotes));
     printf("D:lastSaveUs=%u\n", static_cast<unsigned>(ui::g_lastSaveMicros));
     printf("D:maxUiGapUs=%u\n", static_cast<unsigned>(ui::g_maxUiGapMicros));
-    printf("D:maxKbUs=%u\n", static_cast<unsigned>(ui::g_maxKbUs));
-    printf("D:lastKbUs=%u\n", static_cast<unsigned>(ui::g_lastKbUs));
-    printf("D:lastHcUs=%u\n", static_cast<unsigned>(ui::g_lastHcUs));
-    printf("D:tusbDelayCalls=%u\n", static_cast<unsigned>(ui::g_tusbDelayCalls));
-    printf("D:tusbDelayMaxMs=%u\n", static_cast<unsigned>(ui::g_tusbDelayMaxMs));
     printf("D:end\n");
 }
 

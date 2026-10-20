@@ -24,15 +24,10 @@ static void (*g_ui_pump)() = nullptr;
 
 void setUiPump(void (*pump)()) { g_ui_pump = pump; }
 
-volatile uint32_t g_tusbDelayCalls = 0;
-volatile uint32_t g_tusbDelayMaxMs = 0;
-
 }  // namespace ui
 
 // C linkage: overrides TinyUSB's weak default (src/tusb.c).
 extern "C" void tusb_time_delay_ms_api(uint32_t ms) {
-    ui::g_tusbDelayCalls++;
-    if (ms > ui::g_tusbDelayMaxMs) ui::g_tusbDelayMaxMs = ms;
     const absolute_time_t deadline = make_timeout_time_ms(ms);
     while (!time_reached(deadline)) {
         if (ui::g_ui_pump) {
