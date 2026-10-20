@@ -280,7 +280,14 @@ of this plan.
         (a) drive tuh_task off the UI-critical path (own cadence/core) so a USB
         delay cannot stall the UI; (b) confirm the physical USB setup — a real,
         stable keyboard directly on the native port may remove the recurring
-        re-enumeration entirely. Needs a bench USB check before 12.3 can pass.**
+        re-enumeration entirely. Needs a bench USB check before 12.3 can pass.
+        CONFIRMED device: a wireless Logitech USB receiver — COMPOSITE, 3 HID
+        interfaces (addr1 idx0 keyboard mounted+working, idx1/idx2 mouse/Unifying
+        vendor HID 'ignored'). Enumerates once; the recurring 500 ms is periodic
+        tuh_task activity from the receiver (unserviced idx1/idx2 endpoints /
+        wireless keepalive) re-entering the blocking enum/debounce path, inline
+        on the core0 UI loop. NOT a wiring/VBUS/UART issue. Fix (a) — decouple
+        tuh_task from the UI loop — is device-independent and the right one.**
       - Overload/meter-variant injection not separately scripted (255 BPM +
         15-pattern dense gate is the worst case exercised).
   - [x] 12.4 Run note-safety and endurance validation
