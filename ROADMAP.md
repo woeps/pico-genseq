@@ -30,7 +30,7 @@ The charter also maps known implementation gaps to later milestones. Completing 
 
 ### 2. Performance-Safe Minimum Foundation
 
-**Status: Nearly complete — v1 storage backend (external SPI FRAM, MB85RS2MTA) integrated and all gates pass EXCEPT one: a pre-existing ~501 ms core0 UI-loop stall (task 12.3, maxUiGapUs) exceeds the ≤50 ms UI-gap limit. It is unrelated to the save (save-time gap is a clean ~10.6 ms) and was surfaced by direct instrumentation; it needs root-cause before final sign-off.**
+**Status: Complete — all automated and hardware evidence gates pass (v1 storage backend: external SPI FRAM, MB85RS2MTA). The one late-found gate failure — a ~501 ms core0 UI-loop stall from a wireless-receiver TinyUSB enumeration delay — was root-caused and fixed (UI render pump during the host delay; UI gap 501 ms -> 26 ms, under the ≤50 ms limit).**
 
 The approved Milestone 2 specification is split into:
 

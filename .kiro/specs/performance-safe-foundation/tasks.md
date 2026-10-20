@@ -242,7 +242,7 @@ of this plan.
     - Clear the fault, reset runtime positions/pending invalid operations, start a new timeline
     - _Requirements: 10.5, 10.6_
 
-- [ ] 12. Final automated and hardware validation
+- [x] 12. Final automated and hardware validation
   - [x] 12.1 Make required host tests reproducible
     - Register all required suites with CTest
     - Pin dependencies or provide always-available deterministic generated traces
@@ -252,7 +252,7 @@ of this plan.
     - Build firmware and run all required host suites with zero failures
     - Confirm zero steady-state real-time allocation and documented queue budgets
     - _Requirements: 3.3, 7.2, 7.4, 7.9, 11.2–11.4_
-  - [ ] 12.3 Run RP2040 timing and MIDI validation
+  - [x] 12.3 Run RP2040 timing and MIDI validation
     - BPM 40/120/255, supported meters, minimum/maximum Pattern load, edit storms, and overload
     - Confirm logical jitter <=1 ms; report wire skew separately
     - Confirm normal UI gaps <=50 ms and save-time gaps <=100 ms
@@ -264,30 +264,17 @@ of this plan.
         inter-tick DURING saves == baseline == nominal 62.52/20.88/9.84 ms;
         autonomous soak gate A). Wire skew reported separately (task-1.4).
       - Edit storm (200 synth keys + saves): channel live, timingFault=0.
-      - **UI gap: FAIL — a recurring ~501 ms stall in the core0 UI loop even in
-        pure idle playback, measured directly (maxUiGapUs=501139), well over the
-        <=50 ms limit. NOT the save (clean 10.6 ms) and invisible to the core1
-        timingFault. ROOT CAUSE (SWD + per-section H:dump timing, commit
-        ab4491e): the entire stall is inside keyboard->update() -> tuh_task()
-        (maxKbUs=500108, lastKbUs normally ~3 us). It is TinyUSB's blocking
-        enumeration delay ENUM_RESET_DELAY_MS(50) + ENUM_DEBOUNCING_DELAY_MS(450)
-        = 500 ms (host/usbh.c), which recurs (~every 2 s) because the host keeps
-        (re-)attempting enumeration — with NO "Keyboard mounted" on the UART,
-        i.e. a device/hub that never enumerates cleanly or a bouncing/absent
-        connection on this picoprobe-driven bench rig (CFG_TUH_HUB=1). tuh_task
-        runs inline on the core0 UI loop, so that 500 ms blocks rendering/input.
-        FIX OPTIONS (not the save; a pre-existing USB-host-integration issue):
-        (a) drive tuh_task off the UI-critical path (own cadence/core) so a USB
-        delay cannot stall the UI; (b) confirm the physical USB setup — a real,
-        stable keyboard directly on the native port may remove the recurring
-        re-enumeration entirely. Needs a bench USB check before 12.3 can pass.
-        CONFIRMED device: a wireless Logitech USB receiver — COMPOSITE, 3 HID
-        interfaces (addr1 idx0 keyboard mounted+working, idx1/idx2 mouse/Unifying
-        vendor HID 'ignored'). Enumerates once; the recurring 500 ms is periodic
-        tuh_task activity from the receiver (unserviced idx1/idx2 endpoints /
-        wireless keepalive) re-entering the blocking enum/debounce path, inline
-        on the core0 UI loop. NOT a wiring/VBUS/UART issue. Fix (a) — decouple
-        tuh_task from the UI loop — is device-independent and the right one.**
+      - UI gap: FIXED — PASS (26 ms, under the <=50 ms limit). Root cause
+        (SWD + per-section H:dump timing): a wireless Logitech composite USB
+        receiver re-triggers TinyUSB host enumeration, whose blocking
+        ENUM_DEBOUNCING_DELAY_MS(450)+ENUM_RESET_DELAY_MS(50)=500 ms runs inline
+        from tuh_task() on the core0 UI loop (override confirmed tusbDelayMaxMs=
+        450), blanking the UI past the budget. NOT the save (clean 10.6 ms) and
+        invisible to the core1 timingFault. FIX (commit 412557b, ships in the
+        default build): override TinyUSB's weak tusb_time_delay_ms_api to pump a
+        reentrancy-safe render-only UI callback while it waits — the full delay
+        still elapses (enumeration timing preserved) but the UI keeps rendering.
+        MEASURED maxUiGapUs 501139 -> 26258 us, stable over 10 s idle.
       - Overload/meter-variant injection not separately scripted (255 BPM +
         15-pattern dense gate is the worst case exercised).
   - [x] 12.4 Run note-safety and endurance validation
@@ -307,7 +294,7 @@ of this plan.
       Stop, so Stop's releaseAll() leaves zero owned notes (no stuck note, no
       ownership leak). The full mute/remove/edit/Stop/fault+overlap matrix is
       exercised as an edit storm rather than enumerated case-by-case.
-  - [ ] 12.5 Retain evidence and reconcile documentation
+  - [x] 12.5 Retain evidence and reconcile documentation
     - Check in procedures, captures/results, counter dumps, storage decision, and known limits
     - Update README and technical docs to match measured behavior
     - Link evidence from ROADMAP.md and mark Milestone 2 complete only when every gate passes
