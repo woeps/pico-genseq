@@ -1023,3 +1023,24 @@ target_include_directories(genseq_test_modulation_pattern PRIVATE ${EMISSION_INC
 # the modulation headers are header-only and SDK-free.
 target_link_libraries(genseq_test_modulation_pattern PRIVATE genseq_emission)
 add_test(NAME test_modulation_pattern COMMAND genseq_test_modulation_pattern)
+
+# Task 2 (generative-engine-expansion): generator plugin interface (FR1, AC1,
+# AC8).
+#
+# Validates GeneratorCapabilities / GeneratorParamDef / IGenerator /
+# GeneratorRegistry with test-only fake generators: registration and id
+# lookup, duplicate and capacity rejection, the capability bits, param-def
+# iteration (count, ranges, defaults), base-pointer dispatch with the
+# context/RNG plumbing, and the (currently empty) built-in registration
+# list that lives solely in RegisterGenerators.cpp.
+set(UNIT_GENERATOR_REGISTRY_SRC "${TEST_DIR}/unit/test_generator_registry.cpp")
+
+add_executable(genseq_test_generator_registry
+    "${UNIT_GENERATOR_REGISTRY_SRC}"
+    "${SRC_DIR}/sequencer/generators/RegisterGenerators.cpp"
+)
+target_include_directories(genseq_test_generator_registry PRIVATE ${EMISSION_INCLUDE_DIRS})
+# The generator plugin interface headers are header-only and SDK-free;
+# RegisterGenerators.cpp (the ONLY built-in listing, AC1) is compiled directly
+# into this test target. NONE of the Pico SDK libs and NO RapidCheck.
+add_test(NAME test_generator_registry COMMAND genseq_test_generator_registry)
