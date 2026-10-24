@@ -2,8 +2,8 @@
 // AC1, AC8).
 //
 // Validates the plugin architecture pieces with test-only fake generators
-// (no concrete built-in generator exists yet — the built-in list is
-// registered by RegisterGenerators.cpp and stays empty until T4-T7):
+// (the concrete built-ins are registered by RegisterGenerators.cpp; T4
+// adds the Euclidean gate generator, T5-T7 the rest):
 //
 //   1. registration succeeds and reports the registered count;
 //   2. lookup by id returns the generator, unknown ids miss;
@@ -15,7 +15,7 @@
 //   7. dispatch through the IGenerator base pointer drives generate() with
 //      the context/output plumbing and the deterministic seedable RNG;
 //   8. registerGenerators() (RegisterGenerators.cpp) is the only built-in
-//      listing and currently registers none.
+//      listing; since T4 it registers the Euclidean gate generator.
 //
 // Standalone unit test (own main(), no RapidCheck). It lives in test/unit/
 // so the property-test glob (test/*.cpp) never sweeps it; registered in the
@@ -333,9 +333,17 @@ void test_rng_determinism() {
 void test_register_generators_builtin_list() {
     sequencer::GeneratorRegistry registry;
     sequencer::registerGenerators(registry);
-    check(registry.count() == 0,
-          "the built-in list is empty until T4-T7 register the plugins");
-    check(registry.at(0) == nullptr, "nothing is reachable from the empty built-in list");
+    // Since T4 the built-in list holds the Euclidean gate generator (T5-T7
+    // append the remaining plugins here).
+    check(registry.count() == 1,
+          "the built-in list registers the Euclidean gate generator (T4)");
+    const sequencer::IGenerator* euclid = registry.find("builtin.euclidean");
+    check(euclid != nullptr, "builtin.euclidean is reachable by id");
+    check(euclid != nullptr &&
+              euclid->capabilities().has(GeneratorCapability::GATE),
+          "the registered Euclidean generator declares GATE");
+    check(euclid != nullptr && euclid->paramDefs().count == 3,
+          "the registered Euclidean generator exposes its parameters");
 }
 
 }  // namespace

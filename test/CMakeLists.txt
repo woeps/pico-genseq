@@ -1068,6 +1068,28 @@ target_include_directories(genseq_test_pattern_generative_state PRIVATE ${EMISSI
 target_link_libraries(genseq_test_pattern_generative_state PRIVATE genseq_emission)
 add_test(NAME test_pattern_generative_state COMMAND genseq_test_pattern_generative_state)
 
+# Task 4 (generative-engine-expansion): Euclidean gate generator plugin
+# (FR2, AC1).
+#
+# Golden-output tests: the step patterns were captured from the PRE-refactor
+# common::GateSet::createEuclidean and pinned as literals, so the plugin (and
+# gate_set.cpp's delegation to it) is verified against the ORIGINAL algorithm.
+# Covers representative (steps, pulses, rotation) tuples plus the edge cases
+# 0 pulses, pulses == steps, pulses > steps and steps == 1, the wrapped second
+# pattern revolution, GATE-only capabilities, paramDefs matching the existing
+# UI limits (steps 1..64, pulses 0..64, rotation 0..63), and the registration
+# of "builtin.euclidean" by RegisterGenerators.cpp (the only built-in
+# listing, AC1).
+set(UNIT_EUCLIDEAN_GENERATOR_SRC "${TEST_DIR}/unit/test_euclidean_generator.cpp")
+
+add_executable(genseq_test_euclidean_generator "${UNIT_EUCLIDEAN_GENERATOR_SRC}")
+target_include_directories(genseq_test_euclidean_generator PRIVATE ${EMISSION_INCLUDE_DIRS})
+# Link the emission logic (gate_set.cpp + RegisterGenerators.cpp) but NONE of
+# the Pico SDK libs and NO RapidCheck; EuclideanGateGenerator.h is header-only
+# and SDK-free.
+target_link_libraries(genseq_test_euclidean_generator PRIVATE genseq_emission)
+add_test(NAME test_euclidean_generator COMMAND genseq_test_euclidean_generator)
+
 # Task 12 (generative-engine-expansion): global undo stack + working state
 # manager (FR9, AC5, AC6).
 #

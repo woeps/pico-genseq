@@ -32,7 +32,11 @@ namespace common {
 
         void reset();
 
-        /// Create a gate set based on the Euclidean algorithm (Bjorklund's algorithm)
+        /// Create a gate set based on the Euclidean algorithm (Bjorklund's algorithm).
+        /// The step-level pulse decisions are delegated to the
+        /// sequencer::EuclideanGateGenerator plugin (the algorithm lives there
+        /// since task 4); this class keeps only the shared gate data handling:
+        /// the tick-level expansion (step length, gate length).
         ///
         /// \param steps The total number of steps in the pattern
         /// \param pulses The number of pulses to distribute evenly
