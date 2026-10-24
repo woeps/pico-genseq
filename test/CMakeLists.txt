@@ -986,3 +986,18 @@ target_include_directories(genseq_test_timing_policy PRIVATE ${EMISSION_INCLUDE_
 # TimingPolicy.h / OperationTimingConfig.h are header-only and SDK-free.
 target_link_libraries(genseq_test_timing_policy PRIVATE genseq_emission)
 add_test(NAME test_timing_policy COMMAND genseq_test_timing_policy)
+
+# Task 15: global modulation patterns and per-target config (FR11, FR13, FR14).
+# Validates ModulationPattern / ModulationTarget / ModulationRegistry: step
+# clamping and capacity, transport-derived step indices for beat/bar step
+# durations, every playing order, independent targets on one pattern, the
+# scaling/balance formula clamped to the target range, per-pattern default
+# scope and the registry's fixed capacity.
+set(UNIT_MODULATION_PATTERN_SRC "${TEST_DIR}/unit/test_modulation_pattern.cpp")
+
+add_executable(genseq_test_modulation_pattern "${UNIT_MODULATION_PATTERN_SRC}")
+target_include_directories(genseq_test_modulation_pattern PRIVATE ${EMISSION_INCLUDE_DIRS})
+# Link the emission logic but NONE of the Pico SDK libs and NO RapidCheck;
+# the modulation headers are header-only and SDK-free.
+target_link_libraries(genseq_test_modulation_pattern PRIVATE genseq_emission)
+add_test(NAME test_modulation_pattern COMMAND genseq_test_modulation_pattern)
