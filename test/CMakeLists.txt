@@ -1294,3 +1294,29 @@ add_executable(genseq_test_composite_mutations
 )
 target_include_directories(genseq_test_composite_mutations PRIVATE ${EMISSION_INCLUDE_DIRS})
 add_test(NAME test_composite_mutations COMMAND genseq_test_composite_mutations)
+
+# Task 14 (generative-engine-expansion): command dispatch (FR5, FR9, FR10,
+# AC4-AC7).
+#
+# Validates the Mutate / Undo / Revert / Keep commands dispatched through
+# the bounded CommandInbox into the sequencer's working state: Immediate
+# commands apply on the next serviced tick, beat/bar-quantized commands
+# stage in the fixed-capacity pending slot list and apply exactly at their
+# resolved boundary tick (three-level timing resolution), every APPLIED
+# mutation pushes the global undo stack (NO_CHANGE / REJECTED ones do
+# not), Undo pops LIFO across patterns, Revert restores every pattern's
+# baseline and clears the stack, Keep re-anchors the baseline, a full ring
+# refuses new pushes without blocking, the pending list drops (and acks
+# Rejected) past its fixed capacity, quantized commands survive late-tick
+# reconciliation deterministically, and a mid-note material mutation leaves
+# no hung notes (the release fires for the recorded onset identity).
+#
+# Like test_note_duration_generator, the target drives the REAL Sequencer
+# through the emission library (sequencer.cpp + RegisterGenerators.cpp
+# against the pico_stubs). NONE of the Pico SDK libs and NO RapidCheck.
+set(UNIT_MUTATION_COMMANDS_SRC "${TEST_DIR}/unit/test_mutation_commands.cpp")
+
+add_executable(genseq_test_mutation_commands "${UNIT_MUTATION_COMMANDS_SRC}")
+target_include_directories(genseq_test_mutation_commands PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_test_mutation_commands PRIVATE genseq_emission)
+add_test(NAME test_mutation_commands COMMAND genseq_test_mutation_commands)

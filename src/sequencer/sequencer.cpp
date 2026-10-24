@@ -1,5 +1,10 @@
 #include "sequencer.h"
+#include "IMutationOperator.h"
+#include "MutationConstraints.h"
+#include "MutationResult.h"
+#include "TimingPolicy.h"
 #include "midi_messages.h"
+#include "mutations/MutationOperatorRegistry.h"
 #include "Scheduler.h"
 #include "sequencer_telemetry.h"
 #include "PatternSnapshot.h"
@@ -42,6 +47,35 @@ uint64_t generatorSeed(common::PatternId id, uint8_t roleOrdinal, uint32_t stepI
     return (mixed == 0) ? 1u : mixed;
 }
 
+// Deterministic per-(pattern, command) mutation seed (task 14, global
+// constraint: deterministic, seedable randomness). The pattern's STABLE
+// identity (slot + generation), the slot ordinal and the command's inbox
+// sequence number mix into splitmix64; 0 maps to 1 (GeneratorRng's
+// fixed-point guard). The same command stream always replays the same
+// mutations — two identical runs are bit-identical — and different
+// patterns/commands draw independent streams.
+uint64_t mutationSeed(common::PatternId id, uint8_t slot, SequenceId seq) {
+    const uint64_t mixed = splitmix64(
+        (static_cast<uint64_t>(id.index) << 40) ^
+        (static_cast<uint64_t>(id.generation) << 8) ^
+        (static_cast<uint64_t>(slot) << 56) ^
+        static_cast<uint64_t>(seq));
+    return (mixed == 0) ? 1u : mixed;
+}
+
+// Map a command's generative kind onto the operation whose three-level
+// timing mode resolves its application boundary (TimingPolicy.h, T11).
+GenerativeOperation generativeOperationFor(GenerativeCommandKind kind) {
+    switch (kind) {
+        case GenerativeCommandKind::Mutate: return GenerativeOperation::Mutate;
+        case GenerativeCommandKind::Undo: return GenerativeOperation::Undo;
+        case GenerativeCommandKind::Revert: return GenerativeOperation::Revert;
+        case GenerativeCommandKind::Keep: return GenerativeOperation::Keep;
+        case GenerativeCommandKind::None: break;
+    }
+    return GenerativeOperation::Mutate;  // unreachable (None is never staged)
+}
+
 }  // namespace
 
 Sequencer::Sequencer(IMidiOutput& output, IMonotonicClock& clock,
@@ -63,6 +97,11 @@ Sequencer::Sequencer(IMidiOutput& output, IMonotonicClock& clock,
     // generators/RegisterGenerators.cpp and add()'s duplicate guard makes
     // repeated construction safe. No concrete generator type is named here.
     registerGenerators(generatorRegistry_);
+    // Populate the mutation operator registry the same way (task 14): the
+    // dispatch resolves operator ids through the process-wide registry —
+    // the ONLY coupling point to the mutation plugins (T10's list is the
+    // only built-in listing; add()'s duplicate guard makes this safe).
+    registerBuiltInMutations(g_mutationRegistry);
 }
 
 void MeteredMidiOutput::write(uint8_t byte) {
@@ -98,9 +137,11 @@ void Sequencer::init() {
         pattern.getVelocitySet().reset();
     }
     // Generative RUNTIME positions restart from their defined start; the
-    // generative CONFIGURATION (generativeStates_) is Working State and is
-    // preserved (task 3).
+    // generative CONFIGURATION (the working state) is Working State and is
+    // preserved (task 3). Staged quantized commands belong to the previous
+    // timeline epoch and are dropped (task 14).
     resetGenerativeRuntime();
+    clearPendingGenerative();
 }
 
 void Sequencer::update() {
@@ -109,6 +150,15 @@ void Sequencer::update() {
     // freezing at the last played value. Single aligned 32-bit store, read
     // lock-free by core0 (task 12.4 literal stuck-note metric).
     g_soundingNotes = noteLifecycle.soundingCount();
+
+    // Drain the bounded command inbox (task 14, Req 7.4): at most
+    // kGenerativeDrainBudget commands leave the ring per call — never
+    // blocking, never unbounded. An Immediate generative command executes
+    // here, i.e. before the next serviced tick (and also while the transport
+    // is STOPPED, so the recovery commands Undo/Revert/Keep always answer);
+    // a quantized one stages in the pending slot list for its resolved
+    // boundary tick (three-level policy, AC7).
+    drainCommandInbox();
 
     if (!playing) return;
 
@@ -122,12 +172,19 @@ void Sequencer::update() {
     auto safety = []() { /* reserved: pending safety-op draining (tasks 6.x) */ };
     auto tick = [this](uint64_t /*intendedMicros*/) {
         instrumentation::PerformanceTrace::tickBegin();
+        // A staged command resolved to THIS tick applies before the tick's
+        // emission, so the boundary tick itself plays the mutated material
+        // (task 14, AC7).
+        applyDueGenerativeCommands();
         serviceTick(/*reconcileOnly=*/false);
         instrumentation::PerformanceTrace::tickEnd();
     };
     auto reconcile = [this](uint64_t /*intendedMicros*/) {
         // Missed tick: advance phase and emit crossed releases only (Req 3.5),
-        // no obsolete Note On and no obsolete Clock byte (Req 3.4/3.6).
+        // no obsolete Note On and no obsolete Clock byte (Req 3.4/3.6). A
+        // staged command resolved to this tick still applies exactly here —
+        // deterministically, whenever the transport catches up (task 14).
+        applyDueGenerativeCommands();
         serviceTick(/*reconcileOnly=*/true);
     };
 
@@ -162,7 +219,11 @@ void Sequencer::enterTimingFault(PerformanceFaultCause cause, uint64_t measureme
         sendMidiByte(midi::SystemRealTimeMessage::STOP);
     }
     // Runtime positions are reset on the next explicit Play acknowledgement
-    // (Req 10.6), not here, so Working State inspection after a fault is stable.
+    // (Req 10.6), not here, so Working State inspection after a fault is
+    // stable. A latched fault ends the timeline's tick epoch: staged
+    // quantized commands were resolved against it, so none may fire against
+    // a restarted transport (task 14).
+    clearPendingGenerative();
 }
 
 void Sequencer::serviceTick(bool reconcileOnly) {
@@ -201,19 +262,30 @@ void Sequencer::serviceTick(bool reconcileOnly) {
         // plugins; no concrete generator type is named here. Pure stored-data
         // playback (no role assigned) skips dispatch entirely.
         GenerativeStep gen;
-        if (generativeStates_[i].anyGeneratorAssigned()) {
+        const PatternGenerativeState* gstate = workingState_.working(
+            static_cast<uint8_t>(i));
+        if (gstate != nullptr && gstate->anyGeneratorAssigned()) {
             dispatchGenerativeStep(i, generativeSteps_[i], gen);
         }
 
         const bool gateFromGenerator = gen.gateResolved;
-        // Source checks (task 3): each role participates from its generator
-        // (when one resolved and produced a decision) or from the stored
-        // pattern data. With no generators assigned this reduces EXACTLY to
-        // the Milestone 2 participation rule (all three stored sets
-        // non-empty), so existing behavior is preserved.
+        // Source checks (task 3 / task 14): each role participates from its
+        // generator (when one resolved and produced a decision), from the
+        // WORKING STATE's material set (the live source the mutation
+        // commands edit — the very next Note On plays the edited material),
+        // or from the stored pattern data. With no generators assigned and
+        // empty working sets this reduces EXACTLY to the Milestone 2
+        // participation rule (all three stored sets non-empty), so existing
+        // behavior is preserved.
+        const bool pitchFromState =
+            !gen.pitchResolved && gstate != nullptr && gstate->pitchSet.count > 0;
+        const bool velocityFromState =
+            !gen.velocityResolved && gstate != nullptr && gstate->velocitySet.count > 0;
         if (!gateFromGenerator && gateSet.getGates().empty()) continue;
-        if (!gen.pitchResolved && pitchSet.getPitches().empty()) continue;
-        if (!gen.velocityResolved && velocitySet.getVelocities().empty()) continue;
+        if (!gen.pitchResolved && !pitchFromState && pitchSet.getPitches().empty()) continue;
+        if (!gen.velocityResolved && !velocityFromState &&
+            velocitySet.getVelocities().empty())
+            continue;
 
         const common::PatternId id = patternIds[i];
 
@@ -246,11 +318,19 @@ void Sequencer::serviceTick(bool reconcileOnly) {
             // phase-correct, but emit nothing on the wire.
             if (!reconcileOnly) {
                 // Generated material wins per role; a role without a decision
-                // falls back to the stored pattern data unchanged (task 3).
+                // falls back to the WORKING STATE's live material set (the
+                // mutation substrate, task 14) and then to the stored pattern
+                // data unchanged (task 3).
                 const uint8_t pitch =
-                    gen.pitchResolved ? gen.pitch : pitchSet.getPitch();
+                    gen.pitchResolved ? gen.pitch
+                    : pitchFromState
+                        ? materialValueAt(gstate->pitchSet, statePitchCursor_[i])
+                        : pitchSet.getPitch();
                 const uint8_t velocity =
-                    gen.velocityResolved ? gen.velocity : velocitySet.getVelocity();
+                    gen.velocityResolved ? gen.velocity
+                    : velocityFromState
+                        ? materialValueAt(gstate->velocitySet, stateVelocityCursor_[i])
+                        : velocitySet.getVelocity();
                 // Record ownership at onset by the pattern's canonical channel
                 // and the exact pitch sounding NOW (task 2.4, Req 5.1).
                 noteLifecycle.noteOn(id, pattern.getCanonicalChannel(), pitch,
@@ -266,8 +346,20 @@ void Sequencer::serviceTick(bool reconcileOnly) {
             // IS emitted during reconciliation: a note whose release boundary was
             // crossed must be released so it does not hang (task 5.2, Req 3.5).
             noteLifecycle.releasePattern(id);
-            pitchSet.advance();
-            velocitySet.advance();
+            // The material that produced this onset advances on its falling
+            // edge — the working-state live set when it was the source
+            // (task 14), the stored set otherwise — with PitchSet-compatible
+            // traversal (position / playing order / pendulum / LCG).
+            if (pitchFromState) {
+                advanceMaterial(gstate->pitchSet, statePitchCursor_[i]);
+            } else {
+                pitchSet.advance();
+            }
+            if (velocityFromState) {
+                advanceMaterial(gstate->velocitySet, stateVelocityCursor_[i]);
+            } else {
+                velocitySet.advance();
+            }
             // The boundary release already happened; disarm any pending
             // duration countdown so it cannot fire a second (no-op) release.
             generativeDurationLeft_[i] = 0;
@@ -286,18 +378,21 @@ void Sequencer::serviceTick(bool reconcileOnly) {
 }
 
 PatternGenerativeState* Sequencer::generativeState(size_t patternIndex) {
-    return (patternIndex < common::PATTERN_CAPACITY) ? &generativeStates_[patternIndex]
-                                                     : nullptr;
+    if (patternIndex >= common::PATTERN_CAPACITY) return nullptr;
+    return workingState_.working(static_cast<uint8_t>(patternIndex));
 }
 
 const PatternGenerativeState* Sequencer::generativeState(size_t patternIndex) const {
-    return (patternIndex < common::PATTERN_CAPACITY) ? &generativeStates_[patternIndex]
-                                                     : nullptr;
+    if (patternIndex >= common::PATTERN_CAPACITY) return nullptr;
+    return workingState_.working(static_cast<uint8_t>(patternIndex));
 }
 
 void Sequencer::dispatchGenerativeStep(size_t patternIndex, uint32_t stepIndex,
                                        GenerativeStep& step) {
-    const PatternGenerativeState& state = generativeStates_[patternIndex];
+    const PatternGenerativeState* stateSlot =
+        workingState_.working(static_cast<uint8_t>(patternIndex));
+    if (stateSlot == nullptr) return;  // defensive: callers stay in range
+    const PatternGenerativeState& state = *stateSlot;
     // The pattern length the generator context reports: the stored gate set's
     // tick length (scaffold for step-based generators), clamped to the
     // context's uint8 field.
@@ -355,6 +450,210 @@ void Sequencer::resetGenerativeRuntime() {
         generativeSteps_[i] = 0;
         generativeGateLast_[i] = false;
         generativeDurationLeft_[i] = 0;
+        statePitchCursor_[i] = MaterialCursor{};
+        stateVelocityCursor_[i] = MaterialCursor{};
+    }
+}
+
+// --- generative command dispatch (task 14, FR5/FR9/FR10, AC4-AC7) -------------
+
+void Sequencer::drainCommandInbox() {
+    InboxCommand cmd;
+    for (uint16_t n = 0; n < kGenerativeDrainBudget && inbox_.tryPop(cmd); ++n) {
+        if (cmd.gen.kind != GenerativeCommandKind::None) {
+            stageGenerativeCommand(cmd);
+        }
+        // Ordinary (transport) inbox operations keep the Accepted status
+        // recorded at pop time; their wiring is the transport integration
+        // (later tasks) and costs a bounded pop here.
+    }
+}
+
+void Sequencer::stageGenerativeCommand(const InboxCommand& cmd) {
+    // Three-level timing resolution (T11, AC7): the invocation's override,
+    // else the operation's configured mode, else the global default.
+    const GenerativeOperation op = generativeOperationFor(cmd.gen.kind);
+    const timing_policy::TimingOverride invocation{
+        cmd.gen.timing.active,
+        static_cast<OperationTimingMode>(cmd.gen.timing.mode)};
+    const OperationTimingMode mode =
+        timing_policy::resolveTiming(op, timingConfig_, invocation);
+    if (mode == OperationTimingMode::Immediate) {
+        // Immediate applies on the next serviced tick — i.e. it executes NOW,
+        // before that tick is serviced (and works while stopped, so the
+        // recovery commands always answer).
+        executeGenerativeCommand(cmd.gen, cmd.sequence);
+        return;
+    }
+    const uint64_t applyTick = timing_policy::computeApplyTick(mode, timeline);
+    if (pendingGenerativeCount_ >= kMaxPendingGenerativeCommands) {
+        // Bounded drop (AC4): the fixed pending list is full — refuse the
+        // NEWEST staged command and ack it Rejected rather than blocking,
+        // growing memory or evicting an older (sooner) command.
+        inbox_.markAck(cmd.sequence, AckStatus::Rejected);
+        return;
+    }
+    PendingGenerative& slot = pendingGenerative_[pendingGenerativeCount_++];
+    slot.applyTick = applyTick;
+    slot.sequence = cmd.sequence;
+    slot.gen = cmd.gen;
+}
+
+void Sequencer::applyDueGenerativeCommands() {
+    const uint64_t currentTick = timeline.tickIndex();
+    uint8_t write = 0;
+    for (uint8_t i = 0; i < pendingGenerativeCount_; ++i) {
+        if (timing_policy::isDue(pendingGenerative_[i].applyTick, currentTick)) {
+            // Apply in staging order; executed commands leave the list.
+            executeGenerativeCommand(pendingGenerative_[i].gen,
+                                     pendingGenerative_[i].sequence);
+        } else {
+            pendingGenerative_[write++] = pendingGenerative_[i];  // keep, in order
+        }
+    }
+    pendingGenerativeCount_ = write;
+}
+
+void Sequencer::executeGenerativeCommand(const GenerativeCommand& gen, SequenceId seq) {
+    switch (gen.kind) {
+        case GenerativeCommandKind::Mutate:
+            executeMutate(gen.mutate, seq);
+            return;
+        case GenerativeCommandKind::Undo:
+            workingState_.undo();  // AC5: pops LIFO; a no-op when the stack is empty
+            inbox_.markAck(seq, AckStatus::Applied);
+            return;
+        case GenerativeCommandKind::Revert:
+            workingState_.revert();  // AC6: every pattern's baseline, stack cleared
+            inbox_.markAck(seq, AckStatus::Applied);
+            return;
+        case GenerativeCommandKind::Keep:
+            workingState_.keep();  // FR15: re-anchor the baseline, stack cleared
+            inbox_.markAck(seq, AckStatus::Applied);
+            return;
+        case GenerativeCommandKind::None:
+            return;  // never staged; ignore
+    }
+    inbox_.markAck(seq, AckStatus::Rejected);  // unknown kind fails closed
+}
+
+void Sequencer::executeMutate(const MutateCmd& mutate, SequenceId seq) {
+    // Lookup by id through the registry ONLY (T10): the single coupling
+    // point to the mutation plugins; no concrete operator type is named
+    // here. An unknown (or empty) id rejects the command untouched.
+    IMutationOperator* op = g_mutationRegistry.find(mutate.opId);
+    if (op == nullptr) {
+        inbox_.markAck(seq, AckStatus::Rejected);
+        return;
+    }
+    bool anyExecuted = false;
+    if (mutate.patternIndex == kAllPatterns) {
+        // FR5's all-patterns form: fan out over the live slots in order;
+        // every application snapshots its own undo step (AC5).
+        for (size_t i = 0; i < patterns.size(); ++i) {
+            anyExecuted |=
+                applyMutationToPattern(*op, mutate, static_cast<uint8_t>(i), seq);
+        }
+    } else if (static_cast<size_t>(mutate.patternIndex) < patterns.size()) {
+        anyExecuted = applyMutationToPattern(*op, mutate, mutate.patternIndex, seq);
+    }
+    // Applied when ANY application executed (APPLIED or NO_CHANGE); only a
+    // command refused everywhere (unknown target pattern, or REJECTED by
+    // every operator application) acks Rejected.
+    inbox_.markAck(seq, anyExecuted ? AckStatus::Applied : AckStatus::Rejected);
+}
+
+bool Sequencer::applyMutationToPattern(IMutationOperator& op, const MutateCmd& mutate,
+                                       uint8_t slot, SequenceId seq) {
+    PatternGenerativeState* working = workingState_.working(slot);
+    if (working == nullptr) return false;
+    // The command's FR6/FR7/FR8 parameters, verbatim: targets, intensity,
+    // invariants and distance limit (the operator + finalize gate verify
+    // them; the scale constraint lives in the state itself).
+    const MutationConstraints constraints(mutate.targets, mutate.intensity,
+                                          mutate.invariants, mutate.maxDistance);
+    const PatternGenerativeState before = *working;
+    // AC5: the snapshot is pushed BEFORE the operator runs, so Undo always
+    // holds the pre-mutation state — whatever the operator then does.
+    workingState_.recordBeforeMutation(slot);
+    PatternMutationView view(*working, before, slot);
+    // Deterministic per-(pattern, command) seed (global constraint): the
+    // same command stream always replays the same mutations.
+    GeneratorRng rng(mutationSeed(patternIds[slot], slot, seq));
+    const MutationResult result = op.apply(view, constraints, rng);
+    if (!result.applied()) {
+        // Only APPLIED mutations occupy the bounded history: a NO_CHANGE or
+        // REJECTED command did not touch the working state, so its snapshot
+        // (the most recent push) is cancelled instead of burning undo depth
+        // on a no-op step.
+        UndoEntry cancelled;
+        workingState_.undoStack().pop(cancelled);
+    }
+    // Executed, not refused: APPLIED and NO_CHANGE both executed the
+    // command (a NO_CHANGE is a successful no-op and acks Applied); only a
+    // REJECTED operator refuses it.
+    return result.status != MutationStatus::REJECTED;
+}
+
+void Sequencer::clearPendingGenerative() {
+    // Bounded by the fixed list capacity (at most 8 entries): the epoch that
+    // was to execute these commands ended (fault latch / transport restart),
+    // so each dropped command's producer gets a FINAL Rejected status instead
+    // of being left in the pop-time Accepted limbo. Newest-first is
+    // irrelevant — the sequences are independent.
+    while (pendingGenerativeCount_ > 0) {
+        --pendingGenerativeCount_;
+        const PendingGenerative& dropped = pendingGenerative_[pendingGenerativeCount_];
+        if (dropped.sequence != kInvalidSequence) {
+            inbox_.markAck(dropped.sequence, AckStatus::Rejected);
+        }
+    }
+}
+
+// Working-state material traversal (task 14): common::PitchSet-compatible
+// semantics over a fixed GenerativeValueSet. valueAt reads
+// values[position] (defensively re-based when a mutation or direct write
+// shrank the set below the cursor); advance mirrors PitchSet::advance per
+// playing order. Bounded, allocation-free.
+uint8_t Sequencer::materialValueAt(const GenerativeValueSet& set,
+                                   const MaterialCursor& cursor) {
+    const uint8_t count =
+        set.count < kGenerativeSetCapacity ? set.count : kGenerativeSetCapacity;
+    if (count == 0) return 0;
+    uint8_t position = cursor.position;
+    if (position >= count) position = 0;
+    return set.values[position];
+}
+
+void Sequencer::advanceMaterial(const GenerativeValueSet& set, MaterialCursor& cursor) {
+    const uint8_t count =
+        set.count < kGenerativeSetCapacity ? set.count : kGenerativeSetCapacity;
+    if (count == 0) return;
+    cursor.previous = cursor.position;
+    if (cursor.position >= count) cursor.position = 0;  // a shrunken set re-bases
+    if (count == 1) {
+        cursor.position = 0;
+        return;
+    }
+    switch (set.order) {
+        case common::PlayingOrder::FORWARDS:
+            cursor.position = static_cast<uint8_t>((cursor.position + 1) % count);
+            break;
+        case common::PlayingOrder::BACKWARDS:
+            cursor.position = static_cast<uint8_t>((cursor.position + count - 1) % count);
+            break;
+        case common::PlayingOrder::PENDULUM:
+            if (cursor.pendulum > 0 && cursor.position >= count - 1) {
+                cursor.pendulum = -1;
+            } else if (cursor.pendulum < 0 && cursor.position == 0) {
+                cursor.pendulum = 1;
+            }
+            cursor.position = static_cast<uint8_t>(cursor.position + cursor.pendulum);
+            break;
+        case common::PlayingOrder::RANDOM:
+            cursor.lcg = cursor.lcg * 1103515245u + 12345u;
+            cursor.position = static_cast<uint8_t>(((cursor.lcg >> 16) & 0xFF) % count);
+            break;
     }
 }
 
@@ -534,6 +833,13 @@ void Sequencer::play() {
     // the generative configuration is Working State and is preserved.
     resetGenerativeRuntime();
 
+    // Staged quantized commands were resolved against the PREVIOUS epoch's
+    // tick indices; a fresh timeline must not fire them at unrelated ticks,
+    // so they are dropped (deterministic and bounded) (task 14). This runs
+    // only on an actual restart — the repeated-Play early return above keeps
+    // a playing transport's staged commands.
+    clearPendingGenerative();
+
     // Begin one monotonic Transport Timeline shared by every pattern (Req 1.1).
     timeline.start(clock.nowMicros());
     playing = true;
@@ -583,12 +889,17 @@ void Sequencer::addPattern(const common::Pattern& pattern) {
     patterns.push_back(pattern);
     patternIds.push_back(idAllocator.allocate());
     // The new slot owns a FRESH generative state: defaults, no generators
-    // assigned (task 3). Runtime arrays start from their defined start.
+    // assigned (task 3). The manager's working AND baseline slots are default
+    // outside the live range (removePattern re-anchors both whenever slots
+    // shift), so no manager action is needed — only the slot-local runtime
+    // restarts below.
     const size_t slot = patterns.size() - 1;
-    generativeStates_[slot] = PatternGenerativeState{};
+    *workingState_.working(static_cast<uint8_t>(slot)) = PatternGenerativeState{};
     generativeSteps_[slot] = 0;
     generativeGateLast_[slot] = false;
     generativeDurationLeft_[slot] = 0;
+    statePitchCursor_[slot] = MaterialCursor{};
+    stateVelocityCursor_[slot] = MaterialCursor{};
 }
 
 void Sequencer::removePattern(size_t index) {
@@ -604,15 +915,29 @@ void Sequencer::removePattern(size_t index) {
     // state is trivially copyable, so slot moves are plain assignments.
     const size_t surviving = patterns.size();
     for (size_t j = index; j < surviving; ++j) {
-        generativeStates_[j] = generativeStates_[j + 1];
+        // The state is trivially copyable, so slot moves are plain
+        // assignments (working state, runtime, material cursors).
+        *workingState_.working(static_cast<uint8_t>(j)) =
+            *workingState_.working(static_cast<uint8_t>(j + 1));
         generativeSteps_[j] = generativeSteps_[j + 1];
         generativeGateLast_[j] = generativeGateLast_[j + 1];
         generativeDurationLeft_[j] = generativeDurationLeft_[j + 1];
+        statePitchCursor_[j] = statePitchCursor_[j + 1];
+        stateVelocityCursor_[j] = stateVelocityCursor_[j + 1];
     }
-    generativeStates_[surviving] = PatternGenerativeState{};
+    *workingState_.working(static_cast<uint8_t>(surviving)) = PatternGenerativeState{};
     generativeSteps_[surviving] = 0;
     generativeGateLast_[surviving] = false;
     generativeDurationLeft_[surviving] = 0;
+    statePitchCursor_[surviving] = MaterialCursor{};
+    stateVelocityCursor_[surviving] = MaterialCursor{};
+    // Structural change (task 14): slot indices shifted, so the undo
+    // history's pattern indices no longer name their patterns, and the
+    // baseline's vacated slots are stale. Re-anchor the baseline at the
+    // current (shifted) working state and drop the invalidated history —
+    // Keep-style semantics for structural edits (T12/T13).
+    workingState_.captureBaseline();
+    workingState_.undoStack().clear();
 }
 
 void Sequencer::activatePattern(size_t index) {

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
+#include <type_traits>
 
 #include "../common/PatternId.h"
 
@@ -35,14 +37,109 @@
 //     PatternId whose generation no longer matches the live allocator is marked
 //     Rejected and NOT applied, so a removed/reused slot never mis-targets.
 //
+//   - GENERATIVE COMMAND PASSENGERS (generative-engine-expansion task 14,
+//     FR5/FR9/FR10): the Mutate / Undo / Revert / Keep commands ride the same
+//     bounded ring as fixed-size POD passengers (below). The sequencer's
+//     consumer drains them with a bounded budget, resolves each one's
+//     application tick through the three-level timing policy, and publishes
+//     the final Applied / Rejected status over the same ack ring via markAck.
+//
 // Full priority/coalescing/barriers and the saturation policy are task 6.3; this
 // component owns the bounded ring, sequence identity, and ack status. SDK-free:
-// only <cstdint> and the canonical PatternId type.
+// only <cstdint> / <cstring> / <type_traits> and the canonical PatternId type.
 
 namespace sequencer {
 
 using SequenceId = uint32_t;
 constexpr SequenceId kInvalidSequence = 0;  // 0 == no sequence
+
+// ---------------------------------------------------------------------------
+// Generative command passengers (task 14, FR5/FR9/FR10)
+//
+// The four recoverable generative-layer commands the sequencer dispatches
+// (FR5). They ride the SAME bounded ring as every other operation, as fixed-
+// size POD passengers — no new queue, no allocation, no blocking. The
+// sequencer resolves each one's application boundary through the three-level
+// timing policy (level-1 per-invocation override -> level-2 per-operation
+// mode -> level-3 global default, TimingPolicy.h) and executes it against the
+// working state (WorkingStateManager + the mutation operator registry).
+// ---------------------------------------------------------------------------
+
+// Sentinel pattern index for "every live pattern" (FR5's all-patterns
+// Mutate): one command fans out over the live pattern slots in order, each
+// application pushing its own undo snapshot.
+constexpr uint8_t kAllPatterns = 0xFF;
+
+// Fixed storage for one mutation operator id (bytes incl. the NUL). Mirrors
+// PatternGenerativeState's kGeneratorIdCapacity so every registered operator
+// id is addressable; kept local so this header stays self-contained.
+constexpr uint8_t kMutationOpIdCapacity = 24;
+
+// Level-1 timing override for ONE generative command invocation (FR10).
+// `mode` carries the OperationTimingMode ordinal (OperationTimingConfig.h):
+// 0 Immediate, 1 QuantizeBeat, 2 QuantizeBar — a raw byte because this
+// header is SDK-free and only the dispatcher interprets it. `active == false`
+// means no override was supplied and resolution falls to levels 2 and 3.
+struct GenerativeTimingOverride {
+    bool active = false;
+    uint8_t mode = 0;  // OperationTimingMode ordinal: 0/1/2
+};
+
+// The Mutate command (FR5/FR6/FR7/FR8): WHICH registered operator to run,
+// on which pattern (a slot index or every live pattern), with the FR7 target
+// mask, the FR6 intensity, the FR8 invariants and distance limit the
+// operator must respect. All fixed-size POD — trivially snapshotted and
+// crossed the ring whole.
+struct MutateCmd {
+    char opId[kMutationOpIdCapacity] = {};
+    uint8_t patternIndex = kAllPatterns;
+    uint16_t targets = 0;     // MutationTargetMask (FR7)
+    uint8_t intensity = 0;     // 0-127 (FR6); 0 is a deliberate no-change
+    uint16_t invariants = 0;  // MutationInvariantMask (FR8)
+    uint8_t maxDistance = 255;  // FR8 distance limit (kUnlimitedMutationDistance)
+};
+
+// The three recovery commands (FR9/FR15). They carry no payload of their
+// own beyond the shared timing override: Undo pops the global undo stack,
+// Revert restores every pattern's baseline and clears the stack, Keep
+// promotes the working state into the baseline (WorkingStateManager, T12/
+// T13). The named variants exist so the dispatch's `kind` discriminated
+// union stays closed and explicit.
+struct UndoCmd {};
+struct RevertCmd {};
+struct KeepCmd {};
+
+// Which generative command a slot carries.
+enum class GenerativeCommandKind : uint8_t {
+    None = 0,  // an ordinary (non-generative) inbox operation
+    Mutate = 1,
+    Undo = 2,
+    Revert = 3,
+    Keep = 4,
+};
+
+// One complete generative command: the kind, the level-1 timing override
+// and (for Mutate) the operator request. The recovery commands leave
+// `mutate` at its defaults.
+struct GenerativeCommand {
+    GenerativeCommandKind kind = GenerativeCommandKind::None;
+    GenerativeTimingOverride timing{};
+    MutateCmd mutate{};
+};
+
+static_assert(std::is_trivially_copyable<GenerativeCommand>::value,
+              "generative command passengers must stay POD");
+
+// Copy `id` into the fixed operator-id storage. An id that does NOT fit is
+// truncated to an EMPTY id — dispatch then rejects the command (a too-long
+// id never silently aliases a different operator).
+inline void copyMutationOpId(char (&dst)[kMutationOpIdCapacity], const char* id) {
+    dst[0] = '\0';
+    if (id == nullptr) return;
+    const size_t n = std::strlen(id);
+    if (n >= kMutationOpIdCapacity) return;
+    std::memcpy(dst, id, n + 1);
+}
 
 // A compact, fixed-size command slot. The opaque `kind`/`a`/`b` fields carry the
 // already-decoded operation (the full payload shape is the integration's; the
@@ -64,7 +161,60 @@ struct InboxCommand {
     // save snapshots must NOT be coalesced across — edits on either side keep
     // their relative order. A barrier op is itself never coalesced.
     bool isBarrier = false;
+    // Generative passenger (task 14): the Mutate / Undo / Revert / Keep
+    // command this slot carries, or kind None for an ordinary operation.
+    // A fixed POD passenger keeps the whole slot allocation-free; the added
+    // footprint (one GenerativeCommand per slot, Capacity * ~40 bytes) is the
+    // documented cost of routing the generative layer over the same bounded
+    // ring. Generative commands are never coalesced (property stays 0): each
+    // application is its own undo step.
+    GenerativeCommand gen;
 };
+
+static_assert(std::is_trivially_copyable<InboxCommand>::value,
+              "the command slot must stay POD (fixed-size ring storage)");
+
+// Factory: one Mutate command. `timing` is the optional level-1 override
+// (FR10); without it the operation's configured mode applies (level 2).
+inline InboxCommand makeMutateCommand(const char* opId, uint8_t patternIndex,
+                                      uint16_t targets, uint8_t intensity,
+                                      uint16_t invariants = 0,
+                                      uint8_t maxDistance = 255,
+                                      GenerativeTimingOverride timing = {}) {
+    InboxCommand cmd{};
+    cmd.gen.kind = GenerativeCommandKind::Mutate;
+    cmd.gen.timing = timing;
+    copyMutationOpId(cmd.gen.mutate.opId, opId);
+    cmd.gen.mutate.patternIndex = patternIndex;
+    cmd.gen.mutate.targets = targets;
+    cmd.gen.mutate.intensity = intensity;
+    cmd.gen.mutate.invariants = invariants;
+    cmd.gen.mutate.maxDistance = maxDistance;
+    return cmd;
+}
+
+// Factories: the three recovery commands, each with an optional level-1
+// timing override (they default to Immediate through their level-2 modes).
+inline InboxCommand makeUndoCommand(GenerativeTimingOverride timing = {}) {
+    InboxCommand cmd{};
+    cmd.gen.kind = GenerativeCommandKind::Undo;
+    cmd.gen.timing = timing;
+    return cmd;
+}
+
+inline InboxCommand makeRevertCommand(GenerativeTimingOverride timing = {}) {
+    InboxCommand cmd{};
+    cmd.gen.kind = GenerativeCommandKind::Revert;
+    cmd.gen.timing = timing;
+    return cmd;
+}
+
+inline InboxCommand makeKeepCommand(GenerativeTimingOverride timing = {}) {
+    InboxCommand cmd{};
+    cmd.gen.kind = GenerativeCommandKind::Keep;
+    cmd.gen.timing = timing;
+    return cmd;
+}
 
 enum class AckStatus : uint8_t { Unknown, Accepted, Applied, Rejected };
 
@@ -168,6 +318,12 @@ public:
         recordAck(cmd.sequence, live ? AckStatus::Applied : AckStatus::Rejected);
         return live;
     }
+
+    // Consumer (task 14): publish the FINAL status of a popped generative
+    // command once it has been executed (or dropped). Overwrites the
+    // Accepted recorded at pop time, exactly like resolveAndApply does for
+    // transport commands; a later status always wins.
+    void markAck(SequenceId seq, AckStatus status) { recordAck(seq, status); }
 
     // Core0 polls the ack for a sequence to render pending/applied state.
     AckStatus ackStatus(SequenceId seq) const {
