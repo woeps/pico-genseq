@@ -1344,3 +1344,33 @@ add_executable(genseq_test_mutation_commands "${UNIT_MUTATION_COMMANDS_SRC}")
 target_include_directories(genseq_test_mutation_commands PRIVATE ${EMISSION_INCLUDE_DIRS})
 target_link_libraries(genseq_test_mutation_commands PRIVATE genseq_emission)
 add_test(NAME test_mutation_commands COMMAND genseq_test_mutation_commands)
+
+# Task 17 (generative-engine-expansion): modulation integration (FR11-FR14,
+# AC3).
+#
+# Validates the per-tick ModulationApplier pass and its integration into
+# the Sequencer tick loop: every enabled target derives its step index from
+# the single authoritative transport position (beat/bar-relative step
+# durations, forward/reverse/ping-pong/random playing orders, deterministic
+# per seed), maps balance + scaling * (step - center) onto the target
+# parameter's range and writes ONE absolute overlay on the ParameterBus —
+# never a base value, undo snapshot or saved baseline (AC3); per-pattern
+# targets affect only their own pattern slot, global targets the one global
+# parameter; disabling a target (or scale 0) clears its overlay, and
+# unconfigured factory targets modulate nothing (Milestone 2 default); the
+# pass is bounded by the registry's fixed target capacity and allocation-
+# free. End to end through the REAL Sequencer: BPM modulation changes the
+# effective tempo through the existing transport (tick durations follow the
+# overlay without compounding, the stored BPM read from the bus is always
+# the user's base) and late-tick reconciliation keeps working under
+# modulation; Stop clears all overlays until Play re-arms them.
+#
+# ModulationApplier.h is header-only and SDK-free. Like the other sequencer
+# integration tests the target drives the REAL Sequencer through the
+# emission library. NONE of the Pico SDK libs and NO RapidCheck.
+set(UNIT_MODULATION_APPLIER_SRC "${TEST_DIR}/unit/test_modulation_applier.cpp")
+
+add_executable(genseq_test_modulation_applier "${UNIT_MODULATION_APPLIER_SRC}")
+target_include_directories(genseq_test_modulation_applier PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_test_modulation_applier PRIVATE genseq_emission)
+add_test(NAME test_modulation_applier COMMAND genseq_test_modulation_applier)

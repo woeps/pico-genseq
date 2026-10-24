@@ -6,6 +6,7 @@
 #include "midi_messages.h"
 #include "mutations/MutationOperatorRegistry.h"
 #include "Scheduler.h"
+#include "ModulationApplier.h"
 #include "sequencer_telemetry.h"
 #include "PatternSnapshot.h"
 #include "../common/pitch_set.h"
@@ -76,6 +77,14 @@ GenerativeOperation generativeOperationFor(GenerativeCommandKind kind) {
     return GenerativeOperation::Mutate;  // unreachable (None is never staged)
 }
 
+// The global BPM address (task 17): the ONE parameter the transport's
+// tick-duration math consumes. While a modulation overlay is armed here,
+// update() opens a "tempo window" — the timeline's BPM runs at the bus's
+// EFFECTIVE value for the window only, restored to the stored base around
+// it — so a modulated tempo never compounds and never leaks into the
+// stored state (AC3).
+constexpr ParameterAddress kBpmAddress{ParameterScope::Global, 0, ParamId::GlobalBpm};
+
 }  // namespace
 
 Sequencer::Sequencer(IMidiOutput& output, IMonotonicClock& clock,
@@ -102,6 +111,13 @@ Sequencer::Sequencer(IMidiOutput& output, IMonotonicClock& clock,
     // the ONLY coupling point to the mutation plugins (T10's list is the
     // only built-in listing; add()'s duplicate guard makes this safe).
     registerBuiltInMutations(g_mutationRegistry);
+
+    // Bind the ParameterBus at construction (task 17): the tick loop reads
+    // EFFECTIVE values (modulation-overlay aware) from this bus before every
+    // step evaluation, so it is bound to the timeline and working state from
+    // the start, not only when a caller first touches parameterBus()
+    // (bind is idempotent; the lazy accessor keeps its re-bind).
+    parameterBus_.bind(&timeline, &workingState_);
 }
 
 void MeteredMidiOutput::write(uint8_t byte) {
@@ -130,6 +146,11 @@ void Sequencer::init() {
 
     midiClockEnabled = true;
     timeline.setBpm(120);
+
+    // Modulation (task 17): the power-on baseline carries no modulation
+    // overlays — effective values equal the stored bases until the tick
+    // loop re-arms them from the configuration.
+    parameterBus_.clearAllOverlays();
 
     for (auto& pattern : patterns) {
         pattern.getGateSet().reset();
@@ -169,29 +190,71 @@ void Sequencer::update() {
     // fault when lateness reaches one beat.
     const uint64_t currentTime = clock.nowMicros();
 
+    // TEMPO WINDOW (task 17, FR12, AC3): while a BPM modulation overlay is
+    // armed, the transport's tick-duration math runs at the EFFECTIVE tempo
+    // read from the ParameterBus — the same source step evaluation reads. The
+    // timeline's stored BPM is swapped to the effective value for this window
+    // only and RESTORED afterwards (and to the stored base inside each tick
+    // callback, before the modulation pass recomputes the overlay), so every
+    // tick's overlay is derived from the user's stored base and a modulated
+    // tempo can never compound; baseValue(BPM) — what the UI, undo and
+    // persistence read — is never modified. setBpm is phase-preserving: same
+    // semantics as a user tempo change, the new duration applies from the
+    // next tick, so late-tick reconciliation keeps working unchanged (AC3).
+    const bool tempoModulated = parameterBus_.hasOverlay(kBpmAddress);
+    const uint16_t storedBpm = timeline.bpm();
+    if (tempoModulated) {
+        timeline.setBpm(
+            static_cast<uint16_t>(parameterBus_.effectiveValue(kBpmAddress)));
+    }
+
     auto safety = []() { /* reserved: pending safety-op draining (tasks 6.x) */ };
-    auto tick = [this](uint64_t /*intendedMicros*/) {
+    auto tick = [this, storedBpm, tempoModulated](uint64_t /*intendedMicros*/) {
         instrumentation::PerformanceTrace::tickBegin();
+        // Restore the STORED base first (task 17): the modulation pass inside
+        // serviceTick must recompute this tick's overlay from the user's
+        // base, never from a previously modulated tempo. Then re-sync the
+        // freshly computed effective BPM so the NEXT tick's duration runs at
+        // the modulated tempo.
+        if (tempoModulated) timeline.setBpm(storedBpm);
         // A staged command resolved to THIS tick applies before the tick's
         // emission, so the boundary tick itself plays the mutated material
         // (task 14, AC7).
         applyDueGenerativeCommands();
         serviceTick(/*reconcileOnly=*/false);
+        if (tempoModulated) {
+            timeline.setBpm(
+                static_cast<uint16_t>(parameterBus_.effectiveValue(kBpmAddress)));
+        }
         instrumentation::PerformanceTrace::tickEnd();
     };
-    auto reconcile = [this](uint64_t /*intendedMicros*/) {
+    auto reconcile = [this, storedBpm, tempoModulated](uint64_t /*intendedMicros*/) {
         // Missed tick: advance phase and emit crossed releases only (Req 3.5),
         // no obsolete Note On and no obsolete Clock byte (Req 3.4/3.6). A
         // staged command resolved to this tick still applies exactly here —
         // deterministically, whenever the transport catches up (task 14).
+        // The same tempo protocol as the tick callback (task 17): restore the
+        // stored base before the pass, re-sync the recomputed effective BPM
+        // after it, so a multi-tick catch-up window never compounds either.
+        if (tempoModulated) timeline.setBpm(storedBpm);
         applyDueGenerativeCommands();
         serviceTick(/*reconcileOnly=*/true);
+        if (tempoModulated) {
+            timeline.setBpm(
+                static_cast<uint16_t>(parameterBus_.effectiveValue(kBpmAddress)));
+        }
     };
 
     Scheduler<decltype(safety), decltype(tick), decltype(reconcile)> scheduler(timeline,
                                                                                metrics);
     const ServiceReport report =
         scheduler.service(currentTime, std::move(safety), std::move(tick), std::move(reconcile));
+
+    // Close the tempo window (task 17): outside it the timeline always holds
+    // the STORED base — baseValue(BPM) reads exactly the user's value.
+    if (tempoModulated) {
+        timeline.setBpm(storedBpm);
+    }
 
     // Fail closed at one beat of lateness (task 5.3, Req 3.7): the scheduler
     // serviced nothing this call and asked us to fault.
@@ -224,6 +287,12 @@ void Sequencer::enterTimingFault(PerformanceFaultCause cause, uint64_t measureme
     // quantized commands were resolved against it, so none may fire against
     // a restarted transport (task 14).
     clearPendingGenerative();
+
+    // Modulation (task 17): the fail-closed state carries no overlays —
+    // effective values fall back to the stored bases (a faulted transport
+    // reads pristine Working State, AC3). The next explicit Play re-arms
+    // them from the current configuration.
+    parameterBus_.clearAllOverlays();
 }
 
 void Sequencer::serviceTick(bool reconcileOnly) {
@@ -235,6 +304,18 @@ void Sequencer::serviceTick(bool reconcileOnly) {
     if (midiClockEnabled && !reconcileOnly) {
         sendMidiByte(midi::SystemRealTimeMessage::TIMING_CLOCK);
     }
+
+    // MODULATION PASS (task 17, FR11-FR14, AC3): run for THIS tick, at the
+    // single authoritative transport position, BEFORE step evaluation — so
+    // the effective values resolved below (material traversal, scale, and
+    // the tempo through update()'s window) belong to this tick. Bounded by
+    // the registry's fixed target capacity, allocation-free, deterministic;
+    // writes ONLY ParameterBus overlays — never a base value, an undo
+    // snapshot or a saved baseline. Reconciled ticks run the same pass at
+    // their own positions, so late-tick catch-up stays deterministic (no
+    // step is skipped or replayed by the reconciliation itself).
+    ModulationApplier::process(transportPositionOf(timeline), g_modulationRegistry,
+                               parameterBus_);
 
     for (size_t i = 0; i < patterns.size(); ++i) {
         common::Pattern& pattern = patterns[i];
@@ -268,6 +349,31 @@ void Sequencer::serviceTick(bool reconcileOnly) {
             dispatchGenerativeStep(i, generativeSteps_[i], gen);
         }
 
+        // EFFECTIVE material (task 17): the material sets' SIZE and PLAYING
+        // ORDER resolve through the ParameterBus — overlay-aware, so
+        // modulating them re-traverses the live set — while the CONTENTS
+        // stay the working state's (modulation never edits Working State,
+        // AC3). With nothing modulated this is exactly the stored set: the
+        // bus's clamp is the identity on the stored count/order invariants.
+        GenerativeValueSet pitchMaterial{};
+        GenerativeValueSet velocityMaterial{};
+        if (gstate != nullptr) {
+            const uint8_t slot = static_cast<uint8_t>(i);
+            pitchMaterial = gstate->pitchSet;
+            velocityMaterial = gstate->velocitySet;
+            pitchMaterial.count = static_cast<uint8_t>(parameterBus_.effectiveValue(
+                {ParameterScope::Pattern, slot, ParamId::PitchSetCount}));
+            pitchMaterial.order = static_cast<common::PlayingOrder>(
+                parameterBus_.effectiveValue(
+                    {ParameterScope::Pattern, slot, ParamId::PitchPlayingOrder}));
+            velocityMaterial.count = static_cast<uint8_t>(
+                parameterBus_.effectiveValue(
+                    {ParameterScope::Pattern, slot, ParamId::VelocitySetCount}));
+            velocityMaterial.order = static_cast<common::PlayingOrder>(
+                parameterBus_.effectiveValue(
+                    {ParameterScope::Pattern, slot, ParamId::VelocityPlayingOrder}));
+        }
+
         const bool gateFromGenerator = gen.gateResolved;
         // Source checks (task 3 / task 14): each role participates from its
         // generator (when one resolved and produced a decision), from the
@@ -278,9 +384,9 @@ void Sequencer::serviceTick(bool reconcileOnly) {
         // participation rule (all three stored sets non-empty), so existing
         // behavior is preserved.
         const bool pitchFromState =
-            !gen.pitchResolved && gstate != nullptr && gstate->pitchSet.count > 0;
+            !gen.pitchResolved && gstate != nullptr && pitchMaterial.count > 0;
         const bool velocityFromState =
-            !gen.velocityResolved && gstate != nullptr && gstate->velocitySet.count > 0;
+            !gen.velocityResolved && gstate != nullptr && velocityMaterial.count > 0;
         if (!gateFromGenerator && gateSet.getGates().empty()) continue;
         if (!gen.pitchResolved && !pitchFromState && pitchSet.getPitches().empty()) continue;
         if (!gen.velocityResolved && !velocityFromState &&
@@ -324,12 +430,12 @@ void Sequencer::serviceTick(bool reconcileOnly) {
                 const uint8_t pitch =
                     gen.pitchResolved ? gen.pitch
                     : pitchFromState
-                        ? materialValueAt(gstate->pitchSet, statePitchCursor_[i])
+                        ? materialValueAt(pitchMaterial, statePitchCursor_[i])
                         : pitchSet.getPitch();
                 const uint8_t velocity =
                     gen.velocityResolved ? gen.velocity
                     : velocityFromState
-                        ? materialValueAt(gstate->velocitySet, stateVelocityCursor_[i])
+                        ? materialValueAt(velocityMaterial, stateVelocityCursor_[i])
                         : velocitySet.getVelocity();
                 // Record ownership at onset by the pattern's canonical channel
                 // and the exact pitch sounding NOW (task 2.4, Req 5.1).
@@ -347,16 +453,18 @@ void Sequencer::serviceTick(bool reconcileOnly) {
             // crossed must be released so it does not hang (task 5.2, Req 3.5).
             noteLifecycle.releasePattern(id);
             // The material that produced this onset advances on its falling
-            // edge — the working-state live set when it was the source
-            // (task 14), the stored set otherwise — with PitchSet-compatible
-            // traversal (position / playing order / pendulum / LCG).
+            // edge — the effective material view when it was the source
+            // (the working state's live set traversed at its effective
+            // size/order, task 17), the stored set otherwise — with
+            // PitchSet-compatible traversal (position / playing order /
+            // pendulum / LCG).
             if (pitchFromState) {
-                advanceMaterial(gstate->pitchSet, statePitchCursor_[i]);
+                advanceMaterial(pitchMaterial, statePitchCursor_[i]);
             } else {
                 pitchSet.advance();
             }
             if (velocityFromState) {
-                advanceMaterial(gstate->velocitySet, stateVelocityCursor_[i]);
+                advanceMaterial(velocityMaterial, stateVelocityCursor_[i]);
             } else {
                 velocitySet.advance();
             }
@@ -399,7 +507,19 @@ void Sequencer::dispatchGenerativeStep(size_t patternIndex, uint32_t stepIndex,
     const uint32_t storedLength = patterns[patternIndex].getGateSet().getLength();
     const uint8_t patternLength =
         static_cast<uint8_t>(storedLength > 255u ? 255u : storedLength);
-    const common::Scale scale = state.scale();
+    // The scale constraint resolves through the ParameterBus (task 17): the
+    // EFFECTIVE root and template index — overlay-aware, so modulating the
+    // scale shifts pitch generation live — while the working state's STORED
+    // scale (what undo/save/the UI read) is untouched (AC3). With nothing
+    // modulated this is exactly state.scale(): the bus's clamp is the
+    // identity on the stored invariants.
+    const common::Scale scale(
+        static_cast<uint8_t>(parameterBus_.effectiveValue(
+            {ParameterScope::Pattern, static_cast<uint8_t>(patternIndex),
+             ParamId::ScaleRoot})),
+        static_cast<uint8_t>(parameterBus_.effectiveValue(
+            {ParameterScope::Pattern, static_cast<uint8_t>(patternIndex),
+             ParamId::ScaleTemplate})));
 
     for (uint8_t r = 0; r < kGeneratorRoleCount; ++r) {
         const GeneratorRole role = static_cast<GeneratorRole>(r);
@@ -840,6 +960,12 @@ void Sequencer::play() {
     // a playing transport's staged commands.
     clearPendingGenerative();
 
+    // Modulation (task 17): a fresh timeline epoch starts from the stored
+    // bases — no overlays carried over from the previous epoch. The tick
+    // loop re-arms the overlay set from the current configuration on the
+    // first serviced tick.
+    parameterBus_.clearAllOverlays();
+
     // Begin one monotonic Transport Timeline shared by every pattern (Req 1.1).
     timeline.start(clock.nowMicros());
     playing = true;
@@ -875,6 +1001,11 @@ void Sequencer::stop() {
     // Generative runtime restarts from step 0 with clean edge memory (task 3);
     // the generative configuration is Working State and is preserved.
     resetGenerativeRuntime();
+
+    // Modulation (task 17): a stopped transport carries no modulation
+    // overlays — effective values equal the stored bases until the next
+    // Play re-arms them (the bus's documented play/stop overlay reset).
+    parameterBus_.clearAllOverlays();
 }
 
 void Sequencer::setBPM(uint16_t bpm) {
