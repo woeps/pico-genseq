@@ -333,13 +333,14 @@ void test_rng_determinism() {
 void test_register_generators_builtin_list() {
     sequencer::GeneratorRegistry registry;
     sequencer::registerGenerators(registry);
-    // Since T4 the built-in list holds the Euclidean gate generator; T5
-    // appends the scale-aware pitch generator and T6 the probability gate
-    // generator (T7 adds the remaining plugin here).
-    check(registry.count() == 3,
+    // The built-in list holds the four FR2 plugins: the Euclidean gate
+    // generator (T4), the scale-aware pitch generator (T5), the
+    // probability gate generator (T6) and the note duration generator
+    // (T7).
+    check(registry.count() == 4,
           "the built-in list registers the Euclidean gate generator (T4), "
-          "the scale-aware pitch generator (T5) and the probability gate "
-          "generator (T6)");
+          "the scale-aware pitch generator (T5), the probability gate "
+          "generator (T6) and the note duration generator (T7)");
     const sequencer::IGenerator* euclid = registry.find("builtin.euclidean");
     check(euclid != nullptr, "builtin.euclidean is reachable by id");
     check(euclid != nullptr &&
@@ -360,6 +361,13 @@ void test_register_generators_builtin_list() {
           "the registered probability generator declares GATE");
     check(probability != nullptr && probability->paramDefs().count == 1,
           "the registered probability generator exposes its parameter");
+    const sequencer::IGenerator* duration = registry.find("builtin.duration");
+    check(duration != nullptr, "builtin.duration is reachable by id");
+    check(duration != nullptr &&
+              duration->capabilities().has(GeneratorCapability::DURATION),
+          "the registered duration generator declares DURATION");
+    check(duration != nullptr && duration->paramDefs().count == 4,
+          "the registered duration generator exposes its parameters");
 }
 
 }  // namespace

@@ -426,9 +426,9 @@ void test_registration() {
     sequencer::GeneratorRegistry registry;
     sequencer::registerGenerators(registry);
 
-    check(registry.count() == 3,
+    check(registry.count() == 4,
           "registerGenerators registers the Euclidean gate, the scale-aware "
-          "pitch and the probability gate generator");
+          "pitch, the probability gate and the note duration generator");
     const sequencer::IGenerator* found = registry.find("builtin.pitch");
     check(found != nullptr, "builtin.pitch is reachable by id");
     check(found != nullptr &&
@@ -454,11 +454,11 @@ void test_registration() {
 
     // Repeated registration is safe: the duplicates are rejected.
     sequencer::registerGenerators(registry);
-    check(registry.count() == 3, "a repeated registerGenerators adds nothing");
+    check(registry.count() == 4, "a repeated registerGenerators adds nothing");
 
-    // The not-yet-registered built-ins stay unreachable.
-    check(registry.find("builtin.duration") == nullptr,
-          "not-yet-registered built-ins stay unreachable");
+    // The T7 note duration generator is registered.
+    check(registry.find("builtin.duration") != nullptr,
+          "the note duration generator (T7) is registered");
 }
 
 }  // namespace

@@ -31,9 +31,8 @@
 //   9. registration: registerGenerators() (RegisterGenerators.cpp, the
 //      ONLY built-in listing, AC1) registers the plugin under
 //      "builtin.probability" with the factory configuration, alongside the
-//      Euclidean gate and scale-aware pitch generators; repeated
-//      registration adds nothing; the not-yet-registered T7 built-in
-//      ("builtin.duration") stays unreachable; the id fits
+//      Euclidean gate, scale-aware pitch and (since T7) note duration
+//      generators; repeated registration adds nothing; the id fits
 //      PatternGenerativeState's fixed generator-id storage.
 //
 // Standalone unit test (own main(), no RapidCheck). It lives in test/unit/
@@ -304,9 +303,9 @@ void test_registration() {
     sequencer::GeneratorRegistry registry;
     sequencer::registerGenerators(registry);
 
-    check(registry.count() == 3,
+    check(registry.count() == 4,
           "registerGenerators registers the Euclidean gate, the scale-aware "
-          "pitch and the probability gate generator");
+          "pitch, the probability gate and the note duration generator");
     const sequencer::IGenerator* found = registry.find("builtin.probability");
     check(found != nullptr, "builtin.probability is reachable by id");
     check(found != nullptr &&
@@ -318,8 +317,8 @@ void test_registration() {
           "the Euclidean gate generator stays registered");
     check(registry.find("builtin.pitch") != nullptr,
           "the scale-aware pitch generator stays registered");
-    check(registry.find("builtin.duration") == nullptr,
-          "not-yet-registered built-ins stay unreachable");
+    check(registry.find("builtin.duration") != nullptr,
+          "the note duration generator (T7) is registered");
 
     // The registered instance carries the FACTORY configuration: its
     // decisions match a locally factory-configured instance bit for bit.
@@ -335,7 +334,7 @@ void test_registration() {
 
     // Repeated registration is safe: the duplicates are rejected.
     sequencer::registerGenerators(registry);
-    check(registry.count() == 3, "a repeated registerGenerators adds nothing");
+    check(registry.count() == 4, "a repeated registerGenerators adds nothing");
 
     // The id fits PatternGenerativeState's fixed generator-id storage
     // (assignable to the GATE role).

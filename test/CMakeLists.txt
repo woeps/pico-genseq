@@ -1215,3 +1215,30 @@ target_include_directories(genseq_test_probability_gate_generator PRIVATE ${EMIS
 # ProbabilityGateGenerator.h is header-only and SDK-free. NONE of the Pico
 # SDK libs and NO RapidCheck.
 add_test(NAME test_probability_gate_generator COMMAND genseq_test_probability_gate_generator)
+
+# Task 7 (generative-engine-expansion): note duration generator plugin
+# (FR2, AC1).
+#
+# Validates NoteDurationGenerator: every generated duration stays within
+# the configured min/max transport ticks, variation 0 gives the constant
+# base duration (consuming no RNG entropy), the output is deterministic
+# per seed (identical (seed, step) inputs replay identical durations, a
+# different seed produces a different stream), variation 127 reaches both
+# window endpoints, DURATION-only capabilities and the duration-only
+# output shape, the four-parameter table (base/min/max length in ticks,
+# variation), the total normalizing configure(), the registration of
+# "builtin.duration" by RegisterGenerators.cpp (the only built-in listing,
+# AC1), and a sequencer-level check: driving the REAL Sequencer with the
+# plugin assigned to the DURATION role, every Note On still gets exactly
+# one Note Off (the release boundary disarms the countdown; a falling
+# edge disarms a pending countdown) — per-pattern note ownership is
+# preserved.
+set(UNIT_NOTE_DURATION_GENERATOR_SRC "${TEST_DIR}/unit/test_note_duration_generator.cpp")
+
+add_executable(genseq_test_note_duration_generator "${UNIT_NOTE_DURATION_GENERATOR_SRC}")
+target_include_directories(genseq_test_note_duration_generator PRIVATE ${EMISSION_INCLUDE_DIRS})
+# Link the emission logic (REAL Sequencer + RegisterGenerators.cpp, the
+# ONLY built-in listing, AC1) but NONE of the Pico SDK libs and NO
+# RapidCheck; NoteDurationGenerator.h is header-only and SDK-free.
+target_link_libraries(genseq_test_note_duration_generator PRIVATE genseq_emission)
+add_test(NAME test_note_duration_generator COMMAND genseq_test_note_duration_generator)
