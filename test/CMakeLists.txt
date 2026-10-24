@@ -987,6 +987,28 @@ target_include_directories(genseq_test_timing_policy PRIVATE ${EMISSION_INCLUDE_
 target_link_libraries(genseq_test_timing_policy PRIVATE genseq_emission)
 add_test(NAME test_timing_policy COMMAND genseq_test_timing_policy)
 
+# Task 1 (generative-engine-expansion): built-in scale templates + scale math
+# (FR3, FR4, AC2).
+#
+# Validates the fixed read-only template table (20-30 entries, unique non-empty
+# names, root bit set, intervals within 0-11) and the Scale value type
+# (containsNote against the mask for every root across MIDI 0-127,
+# nearestNoteInScale with the deterministic lower-note tie-break, the
+# degreeToNote / noteToDegree round-trip with octave wrapping, and chromatic
+# completeness).
+set(UNIT_SCALE_SRC "${TEST_DIR}/unit/test_scale.cpp")
+
+add_executable(genseq_test_scale
+    "${UNIT_SCALE_SRC}"
+    "${SRC_DIR}/common/Scale.cpp"
+)
+target_include_directories(genseq_test_scale PRIVATE ${EMISSION_INCLUDE_DIRS})
+# Scale.cpp is a NEW generative-engine translation unit, deliberately NOT part
+# of genseq_emission (the Milestone-2 emission library stays untouched), so it
+# is compiled directly into this test target. NONE of the Pico SDK libs and NO
+# RapidCheck; ScaleTemplates.h / Scale.h are SDK-free.
+add_test(NAME test_scale COMMAND genseq_test_scale)
+
 # Task 15: global modulation patterns and per-target config (FR11, FR13, FR14).
 # Validates ModulationPattern / ModulationTarget / ModulationRegistry: step
 # clamping and capacity, transport-derived step indices for beat/bar step
