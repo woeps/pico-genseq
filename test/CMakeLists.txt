@@ -1406,3 +1406,34 @@ add_executable(genseq_test_generator_config_view
 target_include_directories(genseq_test_generator_config_view PRIVATE ${EMISSION_INCLUDE_DIRS})
 target_link_libraries(genseq_test_generator_config_view PRIVATE genseq_emission)
 add_test(NAME test_generator_config_view COMMAND genseq_test_generator_config_view)
+
+# Task 19 (generative-engine-expansion): per-pattern scale selection UI view
+# (FR4).
+#
+# Validates the ScaleSelectionView: the root cycles through the 12 pitch
+# classes 0-11 with wrap in both directions (and through the key front end),
+# the scale index cycles through ALL built-in templates with the displayed
+# names taken verbatim from the common ScaleTemplates table (a total,
+# clamping name accessor; out-of-range selections refused, never clamped),
+# every selection writes the pattern's scaleRoot/scaleTemplateIndex through
+# the ParameterBus BASE values (the per-pattern generative working state;
+# never arming a modulation overlay), and changing pattern A's scale never
+# affects pattern B.
+#
+# ScaleSelectionView.cpp (the view's SDK-free model + render logic) is
+# compiled directly into this target; its render path targets the real
+# LedMatrix driver, so the test TU supplies host-safe no-op LedMatrix member
+# seams (the same pattern as test_generator_config_view) instead of
+# compiling the SDK-dependent LedMatrix.cpp. The scale templates and the
+# parameter addressing/bus are header-only and SDK-free; the backing working
+# state arrives through genseq_emission. NONE of the Pico SDK libs and NO
+# RapidCheck.
+set(UNIT_SCALE_SELECTION_VIEW_SRC "${TEST_DIR}/unit/test_scale_selection_view.cpp")
+
+add_executable(genseq_test_scale_selection_view
+    "${UNIT_SCALE_SELECTION_VIEW_SRC}"
+    "${SRC_DIR}/ui/views/ScaleSelectionView.cpp"
+)
+target_include_directories(genseq_test_scale_selection_view PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_test_scale_selection_view PRIVATE genseq_emission)
+add_test(NAME test_scale_selection_view COMMAND genseq_test_scale_selection_view)
