@@ -1268,3 +1268,29 @@ add_executable(genseq_test_parameter_transform_mutations
 )
 target_include_directories(genseq_test_parameter_transform_mutations PRIVATE ${EMISSION_INCLUDE_DIRS})
 add_test(NAME test_parameter_transform_mutations COMMAND genseq_test_parameter_transform_mutations)
+
+# Task 10 (generative-engine-expansion): composite mutation operators + the
+# fixed-capacity mutation operator registry (FR5, FR6, FR7, FR8, AC4).
+#
+# Validates the two composites (MutateAllMutation / EvolveMutation, composed
+# from the T9 operators) and MutationOperatorRegistry: per-target application
+# and changed-target aggregation, the small intensity-scaled Evolve change
+# bounded by the FR8 distance limit, invariant preservation (pulse-count lock,
+# the AC2 scale lock over every template/root, all-locks no-change), registry
+# lookup / duplicate / over-capacity / enumeration semantics, the full built-in
+# list (registerBuiltInMutations) and the AC4 budget (the composite's
+# instrumentation dispatch counter, a test-side PRNG-draw counter and a host
+# wall-clock sanity limit).
+#
+# Like test_parameter_transform_mutations, the target compiles Scale.cpp
+# directly (the scale-aware sub-operators need the shared constraint math)
+# and links NO library — every operator header is header-only and SDK-free.
+# NONE of the Pico SDK libs and NO RapidCheck.
+set(UNIT_COMPOSITE_MUTATIONS_SRC "${TEST_DIR}/unit/test_composite_mutations.cpp")
+
+add_executable(genseq_test_composite_mutations
+    "${UNIT_COMPOSITE_MUTATIONS_SRC}"
+    "${SRC_DIR}/common/Scale.cpp"
+)
+target_include_directories(genseq_test_composite_mutations PRIVATE ${EMISSION_INCLUDE_DIRS})
+add_test(NAME test_composite_mutations COMMAND genseq_test_composite_mutations)
