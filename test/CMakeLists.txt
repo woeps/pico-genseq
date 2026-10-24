@@ -1067,3 +1067,21 @@ target_include_directories(genseq_test_pattern_generative_state PRIVATE ${EMISSI
 # headers are header-only and SDK-free.
 target_link_libraries(genseq_test_pattern_generative_state PRIVATE genseq_emission)
 add_test(NAME test_pattern_generative_state COMMAND genseq_test_pattern_generative_state)
+
+# Task 12 (generative-engine-expansion): global undo stack + working state
+# manager (FR9, AC5, AC6).
+#
+# Validates UndoStack (depth clamped to 5-16, ring overwrite dropping the
+# oldest entry, empty-stack no-op, fixed memory bound) and
+# WorkingStateManager (per-pattern snapshots on ONE global stack, N undos
+# after N mutations across different patterns, revert restoring the saved
+# baseline for all patterns and clearing the stack, out-of-range rejection).
+# UndoStack.h / WorkingStateManager.h are header-only and SDK-free.
+set(UNIT_UNDO_STACK_SRC "${TEST_DIR}/unit/test_undo_stack.cpp")
+
+add_executable(genseq_test_undo_stack "${UNIT_UNDO_STACK_SRC}")
+target_include_directories(genseq_test_undo_stack PRIVATE ${EMISSION_INCLUDE_DIRS})
+# Link the emission logic but NONE of the Pico SDK libs and NO RapidCheck;
+# UndoStack.h / WorkingStateManager.h are header-only and SDK-free.
+target_link_libraries(genseq_test_undo_stack PRIVATE genseq_emission)
+add_test(NAME test_undo_stack COMMAND genseq_test_undo_stack)
