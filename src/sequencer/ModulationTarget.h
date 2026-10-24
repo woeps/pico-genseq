@@ -113,6 +113,12 @@ struct ModulationTarget {
     StepDuration stepDuration{};
     // FR11 "playing order" (per target).
     ModulationOrder order = ModulationOrder::Forward;
+    // FR14: master switch for this target. A disabled target contributes
+    // NOTHING: the modulation applier (task 17) skips it and clears its
+    // overlay. Configuration is preserved, so re-enabling resumes exactly
+    // where the config left off. Factory state: a freshly configured target
+    // modulates immediately, like a freshly edited gate/velocity pattern.
+    bool enabled = true;
     // Deterministic seed for ModulationOrder::Random.
     uint16_t randomSeed = 0;
 

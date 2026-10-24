@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 // Global modulation pattern (generative-engine-expansion task 15, FR11).
 //
@@ -57,5 +58,10 @@ private:
     uint8_t steps_[MAX_STEPS] = {0};
     uint8_t length_ = static_cast<uint8_t>(MAX_STEPS);
 };
+
+// The whole pattern is plain fixed storage: safe to copy around (registry
+// moves, snapshots) with no custom copy machinery.
+static_assert(std::is_trivially_copyable<ModulationPattern>::value,
+              "ModulationPattern must be trivially copyable");
 
 }  // namespace sequencer

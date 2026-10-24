@@ -256,6 +256,115 @@ void test_targets_on_same_pattern_advance_independently() {
     }
 }
 
+// FR11: shrinking the length only hides steps — their stored values survive
+// and growing the length back reveals them unchanged (the fixed 16-step store
+// is never compacted), and rejected lengths never touch the stored data.
+void test_shrink_grow_preserves_hidden_steps() {
+    ModulationPattern p;
+    for (size_t i = 0; i < ModulationPattern::MAX_STEPS; ++i) {
+        check(p.setStep(i, static_cast<uint8_t>(i + 1)), "fill all 16 steps");
+    }
+    check(p.setLength(4), "shrink to length 4");
+    check(p.setLength(1), "shrink to length 1");
+    check(p.stepAt(0) == 1 && p.stepAt(3) == 1,
+          "length 1 reads a constant value (index 0)");
+    check(!p.setLength(0), "length 0 is rejected while shrunk");
+    check(p.setLength(ModulationPattern::MAX_STEPS), "grow back to full length");
+    for (size_t i = 0; i < ModulationPattern::MAX_STEPS; ++i) {
+        check(p.stepAt(i) == static_cast<uint8_t>(i + 1),
+              "hidden step values survive shrink and grow");
+    }
+}
+
+// FR11: transport-to-index mapping is correct for beat- and bar-unit step
+// durations at EVERY length 1-16 — forward order walks 0..L-1 and wraps,
+// and longer step durations divide the counter before the modulo.
+void test_transport_mapping_all_lengths() {
+    ModulationTarget beat;
+    beat.stepDuration = StepDuration{StepUnit::Beat, 1};
+    ModulationTarget bar;
+    bar.stepDuration = StepDuration{StepUnit::Bar, 1};
+    for (uint8_t len = 1; len <= ModulationPattern::MAX_STEPS; ++len) {
+        for (uint64_t beatIndex = 0; beatIndex < 20; ++beatIndex) {
+            const uint32_t expected = static_cast<uint32_t>(beatIndex % len);
+            check(beat.stepIndexForTransport(pos(beatIndex, beatIndex / 4), len) == expected,
+                  "beat-unit mapping wraps modulo the length for every length");
+            check(bar.stepIndexForTransport(pos(beatIndex * 4, beatIndex), len) == expected,
+                  "bar-unit mapping wraps modulo the length for every length");
+        }
+    }
+    // Step durations of N beats/bars hold each step N times longer.
+    ModulationTarget wide;
+    wide.stepDuration = StepDuration{StepUnit::Beat, 3};
+    for (uint64_t beatIndex = 0; beatIndex < 30; ++beatIndex) {
+        const uint32_t expected = static_cast<uint32_t>((beatIndex / 3) % 7);
+        check(wide.stepIndexForTransport(pos(beatIndex, 0), 7) == expected,
+              "a 3-beat step duration divides the counter before wrapping");
+    }
+}
+
+// FR11: ping-pong edge cases. Length 1 is pinned to index 0 (no bounce);
+// length 2 degenerates to alternation 0,1,0,1,... (the turnaround step
+// would repeat an endpoint); length 3 shows the full triangular walk.
+void test_pingpong_edge_lengths() {
+    ModulationTarget t;
+    t.order = ModulationOrder::PingPong;
+    t.stepDuration = StepDuration{StepUnit::Beat, 1};
+
+    for (uint64_t beat = 0; beat < 6; ++beat) {
+        check(t.stepIndexForTransport(pos(beat, 0), 1) == 0,
+              "ping-pong at length 1 stays at index 0");
+    }
+    const uint32_t two[] = {0, 1, 0, 1, 0, 1, 0, 1};
+    for (uint64_t beat = 0; beat < 8; ++beat) {
+        check(t.stepIndexForTransport(pos(beat, 0), 2) == two[beat],
+              "ping-pong at length 2 alternates 0,1 without repeating");
+    }
+    const uint32_t three[] = {0, 1, 2, 1, 0, 1, 2, 1};
+    for (uint64_t beat = 0; beat < 8; ++beat) {
+        check(t.stepIndexForTransport(pos(beat, 0), 3) == three[beat],
+              "ping-pong at length 3 walks 0,1,2,1,0,1,2,1");
+    }
+}
+
+// FR11: a length that does not divide evenly into the bar wraps at its OWN
+// length — polymetrically, exactly like the gate/velocity step patterns —
+// instead of realigning at bar boundaries.
+void test_polymetric_wrap() {
+    ModulationPattern p;
+    for (size_t i = 0; i < ModulationPattern::MAX_STEPS; ++i) {
+        check(p.setStep(i, static_cast<uint8_t>(i + 1)), "fill steps");
+    }
+    check(p.setLength(5), "a 5-step pattern over 4-beat bars is polymetric");
+    check(p.stepAt(4) == 5, "beat 4 (bar boundary) is step 4, not step 0");
+    check(p.stepAt(5) == 1, "beat 5 wraps to step 0");
+    check(p.stepAt(8) == 4, "beat 8 (bar 2 boundary) is step 3");
+    check(p.stepAt(20) == 1, "beat 20 (bar 5 boundary) realigns at step 0");
+
+    ModulationTarget t;  // forward, one step per beat
+    check(t.stepIndexForTransport(pos(4, 1), 5) == 4,
+          "the target index is polymetric too: bar boundary -> step 4");
+    check(t.stepIndexForTransport(pos(5, 1), 5) == 0,
+          "the target index wraps at the pattern length, not the bar");
+}
+
+// FR14: the enabled flag defaults to true (a configured target modulates
+// immediately, like a freshly edited gate/velocity pattern) and is a plain
+// per-target switch; the pure evaluation helpers stay total while disabled.
+void test_enabled_flag() {
+    ModulationTarget t;
+    check(t.enabled, "a factory target starts enabled");
+    ModulationRegistry reg;
+    const size_t i = reg.addTarget();
+    check(reg.target(i).enabled, "a freshly claimed registry slot starts enabled");
+    reg.target(i).enabled = false;
+    check(!reg.target(i).enabled, "a target can be disabled");
+    check(reg.target(i).stepIndexForTransport(pos(9, 2), 4) == 1,
+          "evaluation stays total (and unchanged) while disabled");
+    reg.target(i).enabled = true;
+    check(reg.target(i).enabled, "re-enabling restores the switch");
+}
+
 // --- ModulationTarget: scaling/balance formula ------------------------------
 
 // FR14: output = clamp(base + centered(step + balance) * scale * span / (64*127))
@@ -360,13 +469,18 @@ void test_global_registry_singleton() {
 int main() {
     test_step_values_clamped();
     test_length_and_wrap();
+    test_shrink_grow_preserves_hidden_steps();
     test_step_index_beat_duration();
     test_step_index_bar_duration();
+    test_transport_mapping_all_lengths();
     test_step_index_derives_from_authoritative_transport();
     test_playing_orders();
+    test_pingpong_edge_lengths();
+    test_polymetric_wrap();
     test_targets_on_same_pattern_advance_independently();
     test_apply_to_base_formula();
     test_default_scope_is_per_pattern();
+    test_enabled_flag();
     test_registry_capacity_enforced();
     test_global_registry_singleton();
 
