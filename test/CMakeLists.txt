@@ -1242,3 +1242,29 @@ target_include_directories(genseq_test_note_duration_generator PRIVATE ${EMISSIO
 # RapidCheck; NoteDurationGenerator.h is header-only and SDK-free.
 target_link_libraries(genseq_test_note_duration_generator PRIVATE genseq_emission)
 add_test(NAME test_note_duration_generator COMMAND genseq_test_note_duration_generator)
+
+# Task 9 (generative-engine-expansion): parameter and transform mutation
+# operators (FR5-FR8, AC2).
+#
+# Validates the eight concrete IMutationOperator plugins: the parameter
+# mutations (DensityMutation / PitchSetMutation / VelocitySetMutation /
+# DurationMutation / EuclideanParamMutation) and the transform mutations
+# (RotateMutation / InvertMutation / ShuffleMutation over the pitch, velocity
+# and gate orderings). Covers intensity 0 no-change, monotonically larger
+# expected change over a fixed seed set, the AC2 scale lock over EVERY
+# built-in template and root, distance limits (reject-and-restore or clamp),
+# preserved pulse count / locked-field invariants, the rotate +N/-N round
+# trip, the invert involution and the shuffle permutation.
+#
+# Like test_mutation_framework, the target compiles Scale.cpp directly (the
+# scale-aware operators need the shared constraint math: nearestNoteInScale /
+# degreeToNote) and links NO library — the operator headers are header-only
+# and SDK-free. NONE of the Pico SDK libs and NO RapidCheck.
+set(UNIT_PARAMETER_TRANSFORM_MUTATIONS_SRC "${TEST_DIR}/unit/test_parameter_transform_mutations.cpp")
+
+add_executable(genseq_test_parameter_transform_mutations
+    "${UNIT_PARAMETER_TRANSFORM_MUTATIONS_SRC}"
+    "${SRC_DIR}/common/Scale.cpp"
+)
+target_include_directories(genseq_test_parameter_transform_mutations PRIVATE ${EMISSION_INCLUDE_DIRS})
+add_test(NAME test_parameter_transform_mutations COMMAND genseq_test_parameter_transform_mutations)
