@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ParameterAddress.h"
+
 #include <cstdint>
 
 #include "ModulationPattern.h"
@@ -26,24 +28,31 @@
 // Both evaluation helpers are PURE functions of (fields, inputs): the tick
 // path can call them freely with no hidden state, no heap and no locks.
 // SDK-free: <cstdint> only, no Pico SDK types.
+//
+// Task 16 re-binds the address field to the shared ParameterAddress type:
+// the task-15 ModulationParameterAddress placeholder is superseded (the
+// field keeps its size and layout, so the T15 registry/tests keep working)
+// and ModulationScope is now an alias of ParameterScope. The parameter ids
+// carried in the address are the stable task-16 table ids (ParamId): 0 is
+// the global BPM; a factory target's address is deliberately INVALID
+// (per-pattern scope holding the global-only BPM id) until configured, so
+// an unconfigured target modulates nothing and default behavior stays
+// stable. The per-pattern scope factory default (FR13) is unchanged.
 
 namespace sequencer {
 
 // FR13: modulation targets are per-pattern by default; global is the option.
-enum class ModulationScope : uint8_t {
-    Pattern = 0,
-    Global = 1,
-};
+// The scope type lives in ParameterAddress.h (task 16) as ParameterScope;
+// the ModulationScope alias keeps the FR13 name for existing call sites
+// and configuration code.
+using ModulationScope = ParameterScope;
 
-// Address of the parameter a target modulates. Forward-compatible with the
-// ParameterAddress of task 16 ({scope, patternIndex, paramId}): task 16's
-// parameter table assigns the ids consumed here, so a target configured
-// today resolves against that table unchanged.
-struct ModulationParameterAddress {
-    ModulationScope scope = ModulationScope::Pattern;  // FR13 default
-    uint8_t patternIndex = 0;  // which pattern's parameter (scope == Pattern)
-    uint16_t paramId = 0;      // id from the task-16 parameter table
-};
+// The address of the parameter this target modulates: the task-16
+// ParameterAddress (scope + pattern slot + a stable table param id). The
+// factory address is deliberately INVALID (per-pattern scope holding the
+// global-only BPM id): an unconfigured target modulates nothing until the
+// performer binds a valid address (task 17 resolves it through the
+// ParameterBus), keeping default behavior stable.
 
 // FR11: step timing is beat- or bar-relative, each step lasting `length`
 // units. A zero length is guarded to one unit at evaluation time.
@@ -99,8 +108,9 @@ struct ModulationTarget {
     // Which global ModulationPattern drives this target (index into the
     // ModulationRegistry's pattern pool).
     uint8_t patternIndex = 0;
-    // Which parameter the overlay is written to (task-16 ParameterAddress).
-    ModulationParameterAddress address{};
+    // Which parameter the overlay is written to (task-16 ParameterAddress,
+    // type-shared with the ParameterBus the applier drives).
+    ParameterAddress address{};
     // FR14 "scaling factor", 0-127 (uint8_t, naturally bounded):
     //   0   -> modulation disabled;
     //   64  -> a centered step maps 1:1 onto parameter units on a 0-127 range;

@@ -9,6 +9,7 @@
 #include "CommandInbox.h"
 #include "NoteLifecycle.h"
 #include "OperationTimingConfig.h"
+#include "ParameterBus.h"
 #include "PatternGenerativeState.h"
 #include "PerformanceFault.h"
 #include "PerformanceMetrics.h"
@@ -104,6 +105,29 @@ public:
     // through workingStateManager().
     PatternGenerativeState* generativeState(size_t patternIndex);
     const PatternGenerativeState* generativeState(size_t patternIndex) const;
+
+    // The parameter bus (task 16, FR12/FR13, AC3): every UI-settable
+    // parameter — global BPM and the per-pattern generative configuration —
+    // addressed by ParameterAddress, with the STORED base value living in
+    // the existing sequencer state (the transport timeline and the
+    // working-state manager below) and modulation OVERLAYS kept in separate
+    // fixed arrays, so a modulation write (setOverlay) never changes a
+    // stored, undo or saved value. Lazily bound to this Sequencer's own
+    // timeline and working-state manager on access (idempotent: the same two
+    // pointers every time, so a stale alias is impossible).
+    ParameterBus& parameterBus() {
+        parameterBus_.bind(&timeline, &workingState_);
+        return parameterBus_;
+    }
+    const ParameterBus& parameterBus() const {
+        // Re-binding hands the bus pointers to THIS Sequencer's own timeline
+        // and working state — the const_cast only drops the accessor's
+        // const view of those members (they are not const objects); the
+        // returned const reference keeps the bus read-only for the caller.
+        parameterBus_.bind(const_cast<TransportTimeline*>(&timeline),
+                           const_cast<WorkingStateManager*>(&workingState_));
+        return parameterBus_;
+    }
 
 private:
     IMidiOutput& output;
@@ -288,6 +312,11 @@ private:
     CommandInbox inbox_;
     WorkingStateManager workingState_;
     OperationTimingConfig timingConfig_{};
+    // The parameter bus (task 16): a mutable member so the const accessor can
+    // re-bind it — its overlay arrays are modulation state, not part of the
+    // sequencer's musical const-ness, and its base reads/writes go through
+    // the bound timeline/working-state pointers above.
+    mutable ParameterBus parameterBus_;
     // Pending quantized generative commands (fixed-capacity slot list,
     // staging order) and their count.
     PendingGenerative pendingGenerative_[kMaxPendingGenerativeCommands] = {};

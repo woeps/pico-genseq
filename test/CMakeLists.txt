@@ -1295,6 +1295,30 @@ add_executable(genseq_test_composite_mutations
 target_include_directories(genseq_test_composite_mutations PRIVATE ${EMISSION_INCLUDE_DIRS})
 add_test(NAME test_composite_mutations COMMAND genseq_test_composite_mutations)
 
+# Task 16 (generative-engine-expansion): parameter addressing + bus (FR12,
+# FR13, AC3).
+#
+# Validates ParameterAddress (scope per-pattern by default / global the
+# option; the ParamId table over every UI-settable parameter plus the new
+# generator/scale parameters, each with min/max/name/default metadata) and
+# ParameterBus (the stored base value IS the live sequencer state — the
+# transport timeline for global BPM, the per-pattern generative working
+# state for the rest — with modulation overlays in separate fixed arrays:
+# an overlay changes effectiveValue but never baseValue, the stored state,
+# an undo snapshot or the saved baseline; effective values are clamped to
+# the parameter range; invalid addresses are rejected; the REAL Sequencer
+# exposes the bus bound to its own timeline and working-state manager).
+# ParameterAddress.h / ParameterBus.h are header-only and SDK-free.
+set(UNIT_PARAMETER_BUS_SRC "${TEST_DIR}/unit/test_parameter_bus.cpp")
+
+add_executable(genseq_test_parameter_bus "${UNIT_PARAMETER_BUS_SRC}")
+target_include_directories(genseq_test_parameter_bus PRIVATE ${EMISSION_INCLUDE_DIRS})
+# Link the emission logic (REAL Sequencer + common) but NONE of the Pico SDK
+# libs and NO RapidCheck; the parameter addressing headers are header-only
+# and SDK-free.
+target_link_libraries(genseq_test_parameter_bus PRIVATE genseq_emission)
+add_test(NAME test_parameter_bus COMMAND genseq_test_parameter_bus)
+
 # Task 14 (generative-engine-expansion): command dispatch (FR5, FR9, FR10,
 # AC4-AC7).
 #
