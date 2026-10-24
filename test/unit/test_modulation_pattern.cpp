@@ -41,6 +41,23 @@ using sequencer::TransportTimeline;
 using sequencer::g_modulationRegistry;
 using sequencer::transportPositionOf;
 
+// Task-15 required test item (7): static size asserts hold. Mirrors the
+// compile-time size bounds of the headers in this test translation unit, so
+// the test target fails to build if the new POD state ever grows past its
+// fixed budget.
+static_assert(ModulationPattern::MAX_STEPS == 16,
+              "FR11: modulation patterns store exactly 16 step values");
+static_assert(sizeof(ModulationPattern) <= 32,
+              "ModulationPattern stays a small fixed POD");
+static_assert(sizeof(ModulationTarget) <= 32,
+              "ModulationTarget stays a small fixed POD");
+static_assert(ModulationRegistry::MAX_PATTERNS <= 16,
+              "the global pattern pool stays a small fixed pool");
+static_assert(ModulationRegistry::MAX_TARGETS <= 16,
+              "the target-slot pool stays a small fixed pool");
+static_assert(sizeof(ModulationRegistry) <= 1024,
+              "ModulationRegistry stays a small fixed POD");
+
 namespace {
 
 int failures = 0;
@@ -253,6 +270,28 @@ void test_targets_on_same_pattern_advance_independently() {
         check(pattern.stepAt(ia) == valueA[beat], "beat/forward target reads its own steps");
         check(ib == expectB[beat], "bar/reverse target advances per bar, reversed");
         check(pattern.stepAt(ib) == valueB[beat], "bar/reverse target reads its own steps");
+    }
+}
+
+// FR11: variable length 1-16 — stepAt(i) == values[i % length] exactly,
+// checked at lengths 1, 7 and 16 over a long monotonic index range. Step
+// values are multiples of 8, so they are pairwise distinct both mod 16 and
+// mod 7 (8 ≡ 1 mod 7): any wrong wrap modulus reads back the wrong value.
+void test_wrap_at_lengths_1_7_16() {
+    ModulationPattern p;
+    uint8_t values[ModulationPattern::MAX_STEPS];
+    for (size_t i = 0; i < ModulationPattern::MAX_STEPS; ++i) {
+        values[i] = static_cast<uint8_t>(i * 8);  // 0..120, all <= 127
+        check(p.setStep(i, values[i]), "fill the 16 step slots");
+    }
+    const uint8_t lengths[] = {1, 7, 16};
+    for (uint8_t len : lengths) {
+        check(p.setLength(len), "every length 1-16 is accepted");
+        check(p.length() == len, "the length round-trips");
+        for (size_t i = 0; i < 64; ++i) {
+            check(p.stepAt(i) == values[i % len],
+                  "stepAt(i) == values[i % length] for lengths 1, 7 and 16");
+        }
     }
 }
 
@@ -469,6 +508,7 @@ void test_global_registry_singleton() {
 int main() {
     test_step_values_clamped();
     test_length_and_wrap();
+    test_wrap_at_lengths_1_7_16();
     test_shrink_grow_preserves_hidden_steps();
     test_step_index_beat_duration();
     test_step_index_bar_duration();

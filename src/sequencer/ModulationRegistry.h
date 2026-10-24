@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 #include "ModulationPattern.h"
 #include "ModulationTarget.h"
@@ -114,5 +115,16 @@ private:
 // variable — no heap, no first-call guard), shared across translation units.
 // Tests may instead instantiate local ModulationRegistry objects.
 inline ModulationRegistry g_modulationRegistry{};
+
+// Size bounds on the new POD state: both pools are fixed and the whole
+// registry stays a small static allocation (416 bytes).
+static_assert(std::is_trivially_copyable<ModulationRegistry>::value,
+              "ModulationRegistry must be trivially copyable");
+static_assert(ModulationRegistry::MAX_PATTERNS <= 16,
+              "the global pattern pool stays a small fixed pool");
+static_assert(ModulationRegistry::MAX_TARGETS <= 16,
+              "the target-slot pool stays a small fixed pool");
+static_assert(sizeof(ModulationRegistry) <= 1024,
+              "ModulationRegistry must stay a small fixed POD");
 
 }  // namespace sequencer

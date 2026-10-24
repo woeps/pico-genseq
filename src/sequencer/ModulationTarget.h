@@ -192,4 +192,9 @@ struct ModulationTarget {
     }
 };
 
+// Size bound on the new POD state: the whole per-target configuration fits
+// in a small fixed footprint (16 bytes).
+static_assert(sizeof(ModulationTarget) <= 32,
+              "ModulationTarget must stay a small fixed POD");
+
 }  // namespace sequencer

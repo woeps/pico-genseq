@@ -63,5 +63,11 @@ private:
 // moves, snapshots) with no custom copy machinery.
 static_assert(std::is_trivially_copyable<ModulationPattern>::value,
               "ModulationPattern must be trivially copyable");
+// FR11 size bounds on the new POD state: the fixed storage holds exactly 16
+// step values in a small fixed footprint (17 bytes: 16 steps + length).
+static_assert(ModulationPattern::MAX_STEPS == 16,
+              "FR11: modulation patterns store exactly 16 step values");
+static_assert(sizeof(ModulationPattern) <= 32,
+              "ModulationPattern must stay a small fixed POD");
 
 }  // namespace sequencer
