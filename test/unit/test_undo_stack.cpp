@@ -289,6 +289,53 @@ void test_baseline_initialization() {
           "default working state reaches the last slot");
 }
 
+// --- captureBaseline(): re-anchor at the currently saved state ---------------
+
+void test_capture_baseline_reanchor() {
+    const uint8_t kCount = WorkingStateManager::kPatternCount;
+    PatternGenerativeState loaded[kCount];
+    for (uint8_t i = 0; i < kCount; ++i) loaded[i] = taggedState(static_cast<uint8_t>(150 + i));
+    WorkingStateManager mgr(loaded, kCount);
+
+    // Capturing immediately after load is a no-op: the baseline stays the
+    // state the manager was constructed from (the loaded/saved state).
+    mgr.captureBaseline();
+    for (uint8_t i = 0; i < kCount; ++i) {
+        check(statesEqual(*mgr.baseline(i), loaded[i]),
+              "captureBaseline right after load keeps the loaded baseline");
+    }
+
+    // Mutate, then SAVE: the FRAM path calls captureBaseline() on the
+    // committed state, so the baseline is re-anchored at the save point.
+    check(mgr.recordBeforeMutation(0), "record pattern 0 before the save");
+    *mgr.working(0) = taggedState(210);
+    check(mgr.recordBeforeMutation(3), "record pattern 3 before the save");
+    *mgr.working(3) = taggedState(211);
+    mgr.captureBaseline();  // a successful transactional save
+    check(statesEqual(*mgr.baseline(0), taggedState(210)),
+          "the baseline tracks the state present at capture time (pattern 0)");
+    check(statesEqual(*mgr.baseline(3), taggedState(211)),
+          "the baseline tracks the state present at capture time (pattern 3)");
+    check(statesEqual(*mgr.baseline(7), loaded[7]),
+          "patterns untouched by the pre-save mutations keep their baseline");
+    check(mgr.undoStack().size() == 2,
+          "captureBaseline leaves the undo history untouched (revert clears)");
+
+    // Post-save mutations, then REVERT: back to the SAVED baseline, stack empty.
+    check(mgr.recordBeforeMutation(0), "record post-save mutation");
+    *mgr.working(0) = taggedState(220);
+    check(mgr.recordBeforeMutation(3), "record post-save mutation");
+    *mgr.working(3) = taggedState(221);
+    mgr.revert();
+    check(statesEqual(*mgr.working(0), taggedState(210)),
+          "revert restores the re-anchored saved baseline (AC6)");
+    check(statesEqual(*mgr.working(3), taggedState(211)),
+          "revert restores the re-anchored saved baseline (AC6)");
+    check(statesEqual(*mgr.working(7), loaded[7]),
+          "patterns untouched by mutations still match the saved baseline");
+    check(mgr.undoStack().empty(), "revert still clears the stack (AC6)");
+}
+
 void test_runtime_depth_configuration() {
     const uint8_t kCount = WorkingStateManager::kPatternCount;
     WorkingStateManager mgr(nullptr, 0, 6);
@@ -319,6 +366,7 @@ int main() {
     test_record_rejects_out_of_range();
     test_revert_restores_baseline_and_clears();
     test_baseline_initialization();
+    test_capture_baseline_reanchor();
     test_runtime_depth_configuration();
 
     if (failures == 0) {

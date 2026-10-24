@@ -81,6 +81,18 @@ public:
         return (patternIndex < kPatternCount) ? &baseline_[patternIndex] : nullptr;
     }
 
+    // Re-anchor the baseline at the CURRENT working state, so a later
+    // revert() restores exactly this point (AC6: "restores saved baseline").
+    // Called by the existing transactional FRAM path — on LOAD, after the
+    // loaded state has been applied to the working state (the constructor
+    // performs the initial capture), and on SAVE, after a successful
+    // transactional save, so "the saved baseline" tracks the last committed
+    // point. Does NOT touch the undo history (only revert() clears the
+    // stack) and performs NO FRAM write itself.
+    void captureBaseline() {
+        for (uint8_t i = 0; i < kPatternCount; ++i) baseline_[i] = working_[i];
+    }
+
     // --- undo / revert (FR9) ---------------------------------------------------
 
     // Snapshot `patternIndex`'s CURRENT working state onto the global undo
