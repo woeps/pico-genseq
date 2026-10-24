@@ -1114,6 +1114,23 @@ target_include_directories(genseq_test_undo_stack PRIVATE ${EMISSION_INCLUDE_DIR
 target_link_libraries(genseq_test_undo_stack PRIVATE genseq_emission)
 add_test(NAME test_undo_stack COMMAND genseq_test_undo_stack)
 
+# Task 13 (generative-engine-expansion): the Keep operation (FR15).
+#
+# Validates WorkingStateManager::keep(): the working state is unchanged by
+# mutate+keep, revert after keep restores the KEPT state (not the older
+# baseline), the undo stack is empty after keep (and post-keep records work
+# again), and FR8 distance limits are measured from the kept state — the
+# manager's baseline becomes the withinDistance anchor after Keep.
+# WorkingStateManager.h / MutationConstraints.h are header-only and SDK-free.
+set(UNIT_KEEP_OPERATION_SRC "${TEST_DIR}/unit/test_keep_operation.cpp")
+
+add_executable(genseq_test_keep_operation "${UNIT_KEEP_OPERATION_SRC}")
+target_include_directories(genseq_test_keep_operation PRIVATE ${EMISSION_INCLUDE_DIRS})
+# Link the emission logic but NONE of the Pico SDK libs and NO RapidCheck;
+# the keep operation lives entirely in the header-only SDK-free manager.
+target_link_libraries(genseq_test_keep_operation PRIVATE genseq_emission)
+add_test(NAME test_keep_operation COMMAND genseq_test_keep_operation)
+
 # Task 8 (generative-engine-expansion): mutation operator architecture
 # (FR5-FR8).
 #

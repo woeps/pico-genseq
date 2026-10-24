@@ -6,8 +6,8 @@
 #include "PatternGenerativeState.h"  // the per-pattern state being managed
 #include "UndoStack.h"               // the single global undo stack (FR9)
 
-// Working state manager (generative-engine-expansion task 12, FR9, AC5,
-// AC6; Keep arrives in task 13).
+// Working state manager (generative-engine-expansion tasks 12-13, FR9,
+// FR15, AC5, AC6).
 //
 // The engine distinguishes three states for the per-pattern generative
 // configuration:
@@ -25,7 +25,9 @@
 // (index + PatternGenerativeState copy) onto the global stack. undo() pops
 // the most recent snapshot and restores it into the working state (AC5);
 // revert() copies the baseline into the working state for ALL patterns and
-// clears the stack (AC6).
+// clears the stack (AC6); keep() (task 13, FR15) promotes the current
+// working state INTO the baseline and clears the stack, re-anchoring the
+// reference point for revert and distance limits.
 //
 // This manager performs NO FRAM writes: persistence stays on the existing
 // transactional FRAM save path. No automatic mutation happens here —
@@ -121,6 +123,24 @@ public:
     // clear the undo stack (AC6).
     void revert() {
         for (uint8_t i = 0; i < kPatternCount; ++i) working_[i] = baseline_[i];
+        undo_.clear();
+    }
+
+    // Keep (FR15): preserve the CURRENT working state as the new reference
+    // point. The working state is promoted into the baseline — so a later
+    // revert() restores exactly this state and FR8 distance limits are
+    // measured from it (MutationConstraints::withinDistance's reference
+    // becomes "the kept state after the Keep operation") — and the undo
+    // stack is CLEARED: the kept state is the new anchor, so undo can no
+    // longer walk back through the pre-Keep mutations. The working state
+    // itself is left UNTOUCHED (Keep never edits what the patterns play).
+    // Performs NO FRAM write: persistence stays on the existing
+    // transactional save path (a later SAVE re-anchors the same baseline via
+    // captureBaseline). Like undo/revert, this runs only when the performer
+    // issues a Keep command through the bounded CommandInbox. Bounded work
+    // (AC4): kPatternCount trivial copies plus the O(1) stack clear.
+    void keep() {
+        captureBaseline();  // working state -> baseline (the new anchor)
         undo_.clear();
     }
 
