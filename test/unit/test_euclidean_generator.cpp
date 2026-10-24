@@ -379,9 +379,9 @@ void test_registration() {
     sequencer::GeneratorRegistry registry;
     sequencer::registerGenerators(registry);
 
-    check(registry.count() == 2,
-          "registerGenerators registers the Euclidean gate and the "
-          "scale-aware pitch generator");
+    check(registry.count() == 3,
+          "registerGenerators registers the Euclidean gate, the scale-aware "
+          "pitch and the probability gate generator");
     const sequencer::IGenerator* found = registry.find("builtin.euclidean");
     check(found != nullptr, "builtin.euclidean is reachable by id");
     check(registry.at(0) == found,
@@ -391,12 +391,12 @@ void test_registration() {
           "the registered generator declares GATE");
     check(found != nullptr && found->paramDefs().count == 3,
           "the registered generator exposes its three parameters");
-    check(registry.find("builtin.probability") == nullptr,
+    check(registry.find("builtin.duration") == nullptr,
           "not-yet-registered built-ins stay unreachable");
 
     // Repeated registration is safe: the duplicate is rejected.
     sequencer::registerGenerators(registry);
-    check(registry.count() == 2, "a repeated registerGenerators adds nothing");
+    check(registry.count() == 3, "a repeated registerGenerators adds nothing");
 }
 
 // --- 9: the default-id constant names the registered plugin -------------

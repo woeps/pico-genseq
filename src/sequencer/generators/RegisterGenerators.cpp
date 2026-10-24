@@ -7,11 +7,11 @@
 // file (sequencer.h / sequencer.cpp) is touched (AC1).
 //
 // Registered built-ins:
-//   - EuclideanGateGenerator   (T4) — "builtin.euclidean", GATE capability
-//   - ScaleAwarePitchGenerator (T5) — "builtin.pitch", PITCH capability
+//   - EuclideanGateGenerator     (T4) — "builtin.euclidean", GATE capability
+//   - ScaleAwarePitchGenerator   (T5) — "builtin.pitch", PITCH capability
+//   - ProbabilityGateGenerator   (T6) — "builtin.probability", GATE capability
 //
-// Tasks T6-T7 add the remaining built-in plugins:
-//   - ProbabilityGateGenerator (T6)
+// Task T7 adds the remaining built-in plugin:
 //   - NoteDurationGenerator    (T7)
 //
 // The instances have static storage duration (no heap); each is registered
@@ -20,6 +20,7 @@
 
 #include "../GeneratorRegistry.h"
 #include "EuclideanGateGenerator.h"
+#include "ProbabilityGateGenerator.h"
 #include "ScaleAwarePitchGenerator.h"
 
 namespace sequencer {
@@ -29,15 +30,18 @@ namespace {
 // The registered built-in plugins: static storage duration, factory
 // configuration (the Euclidean generator defaults to 16 steps, 4 pulses,
 // no rotation — the GateSetConfig factory values; the scale-aware pitch
-// generator defaults to the two-octave note span 48..72).
+// generator defaults to the two-octave note span 48..72; the probability
+// gate generator defaults to probability 64 — roughly half density).
 EuclideanGateGenerator euclideanGateGenerator;
 ScaleAwarePitchGenerator scaleAwarePitchGenerator;
+ProbabilityGateGenerator probabilityGateGenerator;
 
 }  // namespace
 
 void registerGenerators(GeneratorRegistry& registry) {
     registry.add(&euclideanGateGenerator);
     registry.add(&scaleAwarePitchGenerator);
+    registry.add(&probabilityGateGenerator);
 }
 
 }  // namespace sequencer

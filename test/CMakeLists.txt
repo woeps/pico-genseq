@@ -1189,3 +1189,29 @@ target_include_directories(genseq_test_scale_pitch_generator PRIVATE ${EMISSION_
 # header itself is header-only and SDK-free. NONE of the Pico SDK libs and
 # NO RapidCheck.
 add_test(NAME test_scale_pitch_generator COMMAND genseq_test_scale_pitch_generator)
+
+# Task 6 (generative-engine-expansion): probability gate generator plugin
+# (FR2, AC1).
+#
+# Validates ProbabilityGateGenerator: probability 0 produces no gates,
+# probability 127 produces ALL gates, the long-run density follows p/127
+# (roughly half at 64) over many steps for a fixed seed base, the same
+# (seed, step) inputs replay identical decisions while a different seed
+# base produces a different stream, GATE-only capabilities, the gate-only
+# output shape, the single Percent parameter, the total clamping
+# configure(), and the registration of "builtin.probability" by
+# RegisterGenerators.cpp (the only built-in listing, AC1).
+set(UNIT_PROBABILITY_GATE_GENERATOR_SRC "${TEST_DIR}/unit/test_probability_gate_generator.cpp")
+
+add_executable(genseq_test_probability_gate_generator
+    "${UNIT_PROBABILITY_GATE_GENERATOR_SRC}"
+    "${SRC_DIR}/sequencer/generators/RegisterGenerators.cpp"
+    "${SRC_DIR}/common/Scale.cpp"
+)
+target_include_directories(genseq_test_probability_gate_generator PRIVATE ${EMISSION_INCLUDE_DIRS})
+# Like the sibling generator tests, the target compiles Scale.cpp (the
+# registered scale-aware pitch plugin needs the shared scale constraint
+# math) plus RegisterGenerators.cpp (the ONLY built-in listing, AC1);
+# ProbabilityGateGenerator.h is header-only and SDK-free. NONE of the Pico
+# SDK libs and NO RapidCheck.
+add_test(NAME test_probability_gate_generator COMMAND genseq_test_probability_gate_generator)

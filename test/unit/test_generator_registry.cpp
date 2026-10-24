@@ -334,11 +334,12 @@ void test_register_generators_builtin_list() {
     sequencer::GeneratorRegistry registry;
     sequencer::registerGenerators(registry);
     // Since T4 the built-in list holds the Euclidean gate generator; T5
-    // appends the scale-aware pitch generator (T6-T7 add the remaining
-    // plugins here).
-    check(registry.count() == 2,
-          "the built-in list registers the Euclidean gate generator (T4) "
-          "and the scale-aware pitch generator (T5)");
+    // appends the scale-aware pitch generator and T6 the probability gate
+    // generator (T7 adds the remaining plugin here).
+    check(registry.count() == 3,
+          "the built-in list registers the Euclidean gate generator (T4), "
+          "the scale-aware pitch generator (T5) and the probability gate "
+          "generator (T6)");
     const sequencer::IGenerator* euclid = registry.find("builtin.euclidean");
     check(euclid != nullptr, "builtin.euclidean is reachable by id");
     check(euclid != nullptr &&
@@ -351,6 +352,14 @@ void test_register_generators_builtin_list() {
     check(pitch != nullptr &&
               pitch->capabilities().has(GeneratorCapability::PITCH),
           "the registered pitch generator declares PITCH");
+    const sequencer::IGenerator* probability =
+        registry.find("builtin.probability");
+    check(probability != nullptr, "builtin.probability is reachable by id");
+    check(probability != nullptr &&
+              probability->capabilities().has(GeneratorCapability::GATE),
+          "the registered probability generator declares GATE");
+    check(probability != nullptr && probability->paramDefs().count == 1,
+          "the registered probability generator exposes its parameter");
 }
 
 }  // namespace
