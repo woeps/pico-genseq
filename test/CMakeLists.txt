@@ -1437,3 +1437,38 @@ add_executable(genseq_test_scale_selection_view
 target_include_directories(genseq_test_scale_selection_view PRIVATE ${EMISSION_INCLUDE_DIRS})
 target_link_libraries(genseq_test_scale_selection_view PRIVATE genseq_emission)
 add_test(NAME test_scale_selection_view COMMAND genseq_test_scale_selection_view)
+
+# Task 20 (generative-engine-expansion): mutation trigger UI view (FR5-
+# FR10, FR15).
+#
+# Validates the MutationView against the REAL mutation plugin contract and
+# the bounded CommandInbox: the operator list enumerated exactly from
+# MutationOperatorRegistry (id/name verbatim, over-range refused), the
+# target mask restricted to the selected operator's supportedTargets
+# (unsupported toggles refused, operator switches re-masked — FR8 operator
+# control), the FR6 intensity clamped to 0-127, Trigger posting a MutateCmd
+# with the correct payload (operator id, pattern index / the all-patterns
+# sentinel, target mask, intensity, default invariants / distance),
+# Undo/Revert/Keep posting the matching commands, the FR10 level-1 timing
+# override absent by default (levels 2/3 apply) and carried in the command
+# when set, and a full inbox surfaced as a rejected action without
+# blocking (kInvalidSequence, nothing enqueued, the rejection latched for
+# the render path).
+#
+# MutationView.cpp (the view's SDK-free model + render logic) is compiled
+# directly into this target; its render path targets the real LedMatrix
+# driver, so the test TU supplies host-safe no-op LedMatrix member seams
+# (the same pattern as test_generator_config_view /
+# test_scale_selection_view) instead of compiling the SDK-dependent
+# LedMatrix.cpp. The mutation operator registry, the operators and the
+# CommandInbox are header-only and SDK-free. NONE of the Pico SDK libs and
+# NO RapidCheck.
+set(UNIT_MUTATION_VIEW_SRC "${TEST_DIR}/unit/test_mutation_view.cpp")
+
+add_executable(genseq_test_mutation_view
+    "${UNIT_MUTATION_VIEW_SRC}"
+    "${SRC_DIR}/ui/views/MutationView.cpp"
+)
+target_include_directories(genseq_test_mutation_view PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_test_mutation_view PRIVATE genseq_emission)
+add_test(NAME test_mutation_view COMMAND genseq_test_mutation_view)
