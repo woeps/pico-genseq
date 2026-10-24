@@ -964,3 +964,25 @@ if(RAPIDCHECK_AVAILABLE)
     target_link_libraries(genseq_reducer_property_tests PRIVATE genseq_emission rapidcheck)
     add_test(NAME genseq_reducer_property_tests COMMAND genseq_reducer_property_tests)
 endif()
+
+# ---------------------------------------------------------------------------
+# Unit tests (generative-engine-expansion): test/unit/*.cpp.
+#
+# Standalone unit tests with their own main(). They live in test/unit/ so the
+# property-test glob (test/*.cpp) never sweeps them, and each is built
+# unconditionally: they exercise header-only SDK-free components and need NO
+# RapidCheck. The ctest names match the plan's verification regexes exactly
+# (ctest --test-dir build/host -R <test_name>).
+# ---------------------------------------------------------------------------
+
+# Task 11: three-level immediate/quantized timing policy (FR10, AC7).
+# Validates OperationTimingConfig + the resolveTiming/computeApplyTick
+# extension of TimingPolicy against the authoritative TransportTimeline.
+set(UNIT_TIMING_POLICY_SRC "${TEST_DIR}/unit/test_timing_policy.cpp")
+
+add_executable(genseq_test_timing_policy "${UNIT_TIMING_POLICY_SRC}")
+target_include_directories(genseq_test_timing_policy PRIVATE ${EMISSION_INCLUDE_DIRS})
+# Link the emission logic but NONE of the Pico SDK libs and NO RapidCheck;
+# TimingPolicy.h / OperationTimingConfig.h are header-only and SDK-free.
+target_link_libraries(genseq_test_timing_policy PRIVATE genseq_emission)
+add_test(NAME test_timing_policy COMMAND genseq_test_timing_policy)

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "OperationTimingConfig.h"
 #include "TransportTimeline.h"
 
 // Timing Policy and effective-tick resolution (performance-safe-foundation
@@ -20,6 +21,12 @@
 // mute/unmute; Next Bar for committed set replacement and removal) and the
 // global override are task 7.2 / 7.3; this component owns only the boundary math
 // so those tasks and the pending-operation queue build on one correct resolver.
+//
+// generative-engine-expansion task 11 (FR10, AC7) extends this component with
+// the THREE-LEVEL policy for the generative-engine operations
+// (OperationTimingConfig.h): a per-invocation override, then the operation's
+// configured mode, then the global default — see resolveTiming() and
+// computeApplyTick() at the bottom of this file.
 //
 // Boundary convention (zero logical-tick application error, Req 6.8): an
 // operation requested when the timeline is EXACTLY on a boundary tick still
@@ -146,6 +153,69 @@ inline uint64_t effectiveTick(TimingPolicy policy, const TransportTimeline& time
 // scheduler applies it on the first tick at or after the boundary (Req 6.8).
 inline bool isDue(uint64_t effective, uint64_t currentTick) {
     return currentTick >= effective;
+}
+
+}  // namespace timing_policy
+
+// ---------------------------------------------------------------------------
+// Three-level per-operation timing (generative-engine-expansion task 11,
+// FR10, AC7) for the generative-engine operations of OperationTimingConfig.h.
+//
+// The resolution order is FIXED: per-invocation override, then per-operation
+// configured mode, then the global default. Quantized targets are computed
+// from the AUTHORITATIVE transport via the Milestone-2 boundary math above, so
+// an operation requested exactly on a boundary applies at the NEXT boundary
+// of that kind — deterministic, never racing the tick currently serviced.
+// ---------------------------------------------------------------------------
+namespace timing_policy {
+
+// A per-invocation timing override (level 1). `active == false` means "no
+// override supplied"; resolution then falls to levels 2 and 3. A
+// default-constructed TimingOverride carries no override.
+struct TimingOverride {
+    bool active = false;
+    OperationTimingMode mode = OperationTimingMode::Immediate;
+};
+
+// Resolve the EFFECTIVE mode of `op` under `config` (FR10, AC7), applying the
+// fixed three-level order:
+//   1. an active per-invocation override wins outright — even over the
+//      operation's own configured mode and the global default;
+//   2. else the operation's configured mode, unless it is Inherit;
+//   3. else the global default.
+// The returned mode is always concrete (never Inherit) and is consumed by
+// computeApplyTick below.
+inline OperationTimingMode resolveTiming(GenerativeOperation op,
+                                         const OperationTimingConfig& config,
+                                         const TimingOverride& invocationOverride = TimingOverride{}) {
+    if (invocationOverride.active) return invocationOverride.mode;          // level 1
+    const OperationTimingMode configured = config.modeFor(op);
+    if (configured != OperationTimingMode::Inherit) return configured;        // level 2
+    return config.globalDefaultMode();                                       // level 3
+}
+
+// Compute the ABSOLUTE logical tick at which an operation resolved to `mode`
+// applies, from the authoritative transport position:
+//   Immediate    -> the next serviced tick (the current logical tick index);
+//   QuantizeBeat -> the next beat boundary;
+//   QuantizeBar  -> the next bar boundary.
+// The boundary math is the Milestone-2 effectiveTick (shared resolver, one
+// authoritative timeline), so a request exactly on a boundary lands on the
+// NEXT boundary of that kind. Inherit is a configuration value, not a
+// resolvable mode — resolveTiming consumes it first; passing it here fails
+// SAFE to the immediate tick so a mis-wired caller can never stall an op.
+inline uint64_t computeApplyTick(OperationTimingMode mode, const TransportTimeline& timeline) {
+    switch (mode) {
+        case OperationTimingMode::QuantizeBeat:
+            return effectiveTick(TimingPolicy::NextBeat, timeline);
+        case OperationTimingMode::QuantizeBar:
+            return effectiveTick(TimingPolicy::NextBar, timeline);
+        case OperationTimingMode::Immediate:
+        case OperationTimingMode::Inherit:
+        default:
+            break;
+    }
+    return effectiveTick(TimingPolicy::Immediate, timeline);  // fail-safe
 }
 
 }  // namespace timing_policy
