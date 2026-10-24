@@ -1374,3 +1374,35 @@ add_executable(genseq_test_modulation_applier "${UNIT_MODULATION_APPLIER_SRC}")
 target_include_directories(genseq_test_modulation_applier PRIVATE ${EMISSION_INCLUDE_DIRS})
 target_link_libraries(genseq_test_modulation_applier PRIVATE genseq_emission)
 add_test(NAME test_modulation_applier COMMAND genseq_test_modulation_applier)
+
+# Task 18 (generative-engine-expansion): capability-driven generator UI view
+# (FR1, AC8).
+#
+# Validates the GeneratorConfigView against the REAL generator plugin
+# contract: generator enumeration per role FILTERED by the GeneratorRegistry
+# capability bits (a gate generator never appears as a pitch option), the
+# control list built ONLY from the selected generator's GeneratorParamDefs
+# (Euclidean -> steps/pulses/rotation, probability -> exactly the one
+# probability control, scale-aware pitch -> low/high note, duration -> its
+# four controls), a test-only stub generator with custom ParameterDefs
+# rendering its params WITHOUT view code changes, edits writing through the
+# ParameterBus BASE values into the per-pattern generative working state
+# (never arming a modulation overlay), and every edit clamped to the
+# ParameterDef min/max.
+#
+# GeneratorConfigView.cpp (the view's SDK-free model + render logic) is
+# compiled directly into this target; its render path targets the real
+# LedMatrix driver, so the test TU supplies host-safe no-op LedMatrix member
+# seams (the same pattern as the reducer property test's commands:: seams)
+# instead of compiling the SDK-dependent LedMatrix.cpp. RegisterGenerators.cpp
+# (the ONLY built-in listing, AC1) arrives through genseq_emission. NONE of
+# the Pico SDK libs and NO RapidCheck.
+set(UNIT_GENERATOR_CONFIG_VIEW_SRC "${TEST_DIR}/unit/test_generator_config_view.cpp")
+
+add_executable(genseq_test_generator_config_view
+    "${UNIT_GENERATOR_CONFIG_VIEW_SRC}"
+    "${SRC_DIR}/ui/views/GeneratorConfigView.cpp"
+)
+target_include_directories(genseq_test_generator_config_view PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_test_generator_config_view PRIVATE genseq_emission)
+add_test(NAME test_generator_config_view COMMAND genseq_test_generator_config_view)
