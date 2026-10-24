@@ -1113,3 +1113,26 @@ target_include_directories(genseq_test_undo_stack PRIVATE ${EMISSION_INCLUDE_DIR
 # UndoStack.h / WorkingStateManager.h are header-only and SDK-free.
 target_link_libraries(genseq_test_undo_stack PRIVATE genseq_emission)
 add_test(NAME test_undo_stack COMMAND genseq_test_undo_stack)
+
+# Task 8 (generative-engine-expansion): mutation operator architecture
+# (FR5-FR8).
+#
+# Validates MutationConstraints (the FR7 target bitmask set/test/clear, the
+# FR6 intensity clamped to 0-127, the FR8 distance-limit helper over two
+# PatternGenerativeState snapshots, and the FR8 invariant checks: scale lock
+# via the T1 Scale, locked fields, preserved pulse count) and the
+# IMutationOperator contract (id / name / supportedTargets / apply) with a
+# test-only stub operator reporting Applied / NoChange / Rejected plus its
+# changed-target mask and restoring the state on rejection.
+set(UNIT_MUTATION_FRAMEWORK_SRC "${TEST_DIR}/unit/test_mutation_framework.cpp")
+
+add_executable(genseq_test_mutation_framework
+    "${UNIT_MUTATION_FRAMEWORK_SRC}"
+    "${SRC_DIR}/common/Scale.cpp"
+)
+target_include_directories(genseq_test_mutation_framework PRIVATE ${EMISSION_INCLUDE_DIRS})
+# Like test_scale, the target compiles Scale.cpp directly (the scale math is
+# the only non-header dependency: the scale-lock invariant calls
+# common::Scale::containsNote); every mutation-framework header is header-only
+# and SDK-free. NONE of the Pico SDK libs and NO RapidCheck.
+add_test(NAME test_mutation_framework COMMAND genseq_test_mutation_framework)
