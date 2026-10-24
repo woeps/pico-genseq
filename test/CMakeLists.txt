@@ -101,7 +101,11 @@ endif()
 #
 # Compiled host-side:
 #   - src/sequencer/sequencer.cpp        (emission logic)
-#   - src/common/{pattern,pitch_set,velocity_set,gate_set}.cpp
+#   - src/common/{pattern,pitch_set,velocity_set,gate_set,Scale}.cpp
+#
+# (Scale.cpp joined in task 5: the built-in generator list lives in
+# RegisterGenerators.cpp below, and the scale-aware pitch plugin registered
+# there requires the shared scale constraint math.)
 #
 # NOT compiled host-side (Pico SDK dependent):
 #   - src/sequencer/UartMidiOutput.cpp   (uart/gpio)
@@ -115,6 +119,7 @@ set(EMISSION_SOURCES
     "${SRC_DIR}/common/pitch_set.cpp"
     "${SRC_DIR}/common/velocity_set.cpp"
     "${SRC_DIR}/common/gate_set.cpp"
+    "${SRC_DIR}/common/Scale.cpp"
 )
 
 # Include dirs, ORDER MATTERS: pico_stubs FIRST so it shadows the real SDK.
@@ -1004,10 +1009,12 @@ add_executable(genseq_test_scale
     "${SRC_DIR}/common/Scale.cpp"
 )
 target_include_directories(genseq_test_scale PRIVATE ${EMISSION_INCLUDE_DIRS})
-# Scale.cpp is a NEW generative-engine translation unit, deliberately NOT part
-# of genseq_emission (the Milestone-2 emission library stays untouched), so it
-# is compiled directly into this test target. NONE of the Pico SDK libs and NO
-# RapidCheck; ScaleTemplates.h / Scale.h are SDK-free.
+# Scale.cpp is a generative-engine translation unit. It joined genseq_emission
+# in task 5 (the built-in pitch generator registered by RegisterGenerators.cpp
+# requires the shared scale constraint math), but this target links NO
+# library at all — so Scale.cpp is still compiled directly into it. NONE of
+# the Pico SDK libs and NO RapidCheck; ScaleTemplates.h / Scale.h are
+# SDK-free.
 add_test(NAME test_scale COMMAND genseq_test_scale)
 
 # Task 15: global modulation patterns and per-target config (FR11, FR13, FR14).
@@ -1039,11 +1046,14 @@ set(UNIT_GENERATOR_REGISTRY_SRC "${TEST_DIR}/unit/test_generator_registry.cpp")
 add_executable(genseq_test_generator_registry
     "${UNIT_GENERATOR_REGISTRY_SRC}"
     "${SRC_DIR}/sequencer/generators/RegisterGenerators.cpp"
+    "${SRC_DIR}/common/Scale.cpp"
 )
 target_include_directories(genseq_test_generator_registry PRIVATE ${EMISSION_INCLUDE_DIRS})
 # The generator plugin interface headers are header-only and SDK-free;
 # RegisterGenerators.cpp (the ONLY built-in listing, AC1) is compiled directly
-# into this test target. NONE of the Pico SDK libs and NO RapidCheck.
+# into this test target, together with Scale.cpp (the built-in pitch plugin
+# registered there requires the shared scale constraint math). NONE of the
+# Pico SDK libs and NO RapidCheck.
 add_test(NAME test_generator_registry COMMAND genseq_test_generator_registry)
 
 # Task 3 (generative-engine-expansion): per-pattern generative state and
@@ -1148,8 +1158,34 @@ add_executable(genseq_test_mutation_framework
     "${SRC_DIR}/common/Scale.cpp"
 )
 target_include_directories(genseq_test_mutation_framework PRIVATE ${EMISSION_INCLUDE_DIRS})
-# Like test_scale, the target compiles Scale.cpp directly (the scale math is
-# the only non-header dependency: the scale-lock invariant calls
-# common::Scale::containsNote); every mutation-framework header is header-only
-# and SDK-free. NONE of the Pico SDK libs and NO RapidCheck.
+# Like test_scale, the target compiles Scale.cpp directly (the scale-lock
+# invariant calls common::Scale::containsNote) and links NO library, so the
+# direct compile stays; every mutation-framework header is header-only and
+# SDK-free. NONE of the Pico SDK libs and NO RapidCheck.
 add_test(NAME test_mutation_framework COMMAND genseq_test_mutation_framework)
+
+# Task 5 (generative-engine-expansion): scale-aware pitch generator plugin
+# (FR2, FR4, AC2).
+#
+# Validates ScaleAwarePitchGenerator: every generated pitch satisfies
+# Scale::containsNote for EVERY built-in template and root 0-11 (including
+# the total no-in-scale-note-in-range fallback), fixed-seed determinism,
+# the low/high note range respected within MIDI 0-127 (plus configure()
+# normalization), PITCH-only capabilities, full in-range scale-note
+# reachability, the null-scale default-C-Major fallback, the param table,
+# and the registration of "builtin.pitch" by RegisterGenerators.cpp (the
+# only built-in listing, AC1).
+set(UNIT_SCALE_PITCH_GENERATOR_SRC "${TEST_DIR}/unit/test_scale_pitch_generator.cpp")
+
+add_executable(genseq_test_scale_pitch_generator
+    "${UNIT_SCALE_PITCH_GENERATOR_SRC}"
+    "${SRC_DIR}/common/Scale.cpp"
+    "${SRC_DIR}/sequencer/generators/RegisterGenerators.cpp"
+)
+target_include_directories(genseq_test_scale_pitch_generator PRIVATE ${EMISSION_INCLUDE_DIRS})
+# Like test_scale / test_mutation_framework, the target compiles Scale.cpp
+# directly (and links NO library, so the direct compile is required) plus
+# RegisterGenerators.cpp (the ONLY built-in listing, AC1); the generator
+# header itself is header-only and SDK-free. NONE of the Pico SDK libs and
+# NO RapidCheck.
+add_test(NAME test_scale_pitch_generator COMMAND genseq_test_scale_pitch_generator)

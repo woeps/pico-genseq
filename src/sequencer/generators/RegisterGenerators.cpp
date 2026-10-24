@@ -8,9 +8,9 @@
 //
 // Registered built-ins:
 //   - EuclideanGateGenerator   (T4) — "builtin.euclidean", GATE capability
+//   - ScaleAwarePitchGenerator (T5) — "builtin.pitch", PITCH capability
 //
-// Tasks T5-T7 add the remaining built-in plugins:
-//   - ScaleAwarePitchGenerator (T5)
+// Tasks T6-T7 add the remaining built-in plugins:
 //   - ProbabilityGateGenerator (T6)
 //   - NoteDurationGenerator    (T7)
 //
@@ -20,6 +20,7 @@
 
 #include "../GeneratorRegistry.h"
 #include "EuclideanGateGenerator.h"
+#include "ScaleAwarePitchGenerator.h"
 
 namespace sequencer {
 
@@ -27,13 +28,16 @@ namespace {
 
 // The registered built-in plugins: static storage duration, factory
 // configuration (the Euclidean generator defaults to 16 steps, 4 pulses,
-// no rotation — the GateSetConfig factory values).
+// no rotation — the GateSetConfig factory values; the scale-aware pitch
+// generator defaults to the two-octave note span 48..72).
 EuclideanGateGenerator euclideanGateGenerator;
+ScaleAwarePitchGenerator scaleAwarePitchGenerator;
 
 }  // namespace
 
 void registerGenerators(GeneratorRegistry& registry) {
     registry.add(&euclideanGateGenerator);
+    registry.add(&scaleAwarePitchGenerator);
 }
 
 }  // namespace sequencer

@@ -333,10 +333,12 @@ void test_rng_determinism() {
 void test_register_generators_builtin_list() {
     sequencer::GeneratorRegistry registry;
     sequencer::registerGenerators(registry);
-    // Since T4 the built-in list holds the Euclidean gate generator (T5-T7
-    // append the remaining plugins here).
-    check(registry.count() == 1,
-          "the built-in list registers the Euclidean gate generator (T4)");
+    // Since T4 the built-in list holds the Euclidean gate generator; T5
+    // appends the scale-aware pitch generator (T6-T7 add the remaining
+    // plugins here).
+    check(registry.count() == 2,
+          "the built-in list registers the Euclidean gate generator (T4) "
+          "and the scale-aware pitch generator (T5)");
     const sequencer::IGenerator* euclid = registry.find("builtin.euclidean");
     check(euclid != nullptr, "builtin.euclidean is reachable by id");
     check(euclid != nullptr &&
@@ -344,6 +346,11 @@ void test_register_generators_builtin_list() {
           "the registered Euclidean generator declares GATE");
     check(euclid != nullptr && euclid->paramDefs().count == 3,
           "the registered Euclidean generator exposes its parameters");
+    const sequencer::IGenerator* pitch = registry.find("builtin.pitch");
+    check(pitch != nullptr, "builtin.pitch is reachable by id");
+    check(pitch != nullptr &&
+              pitch->capabilities().has(GeneratorCapability::PITCH),
+          "the registered pitch generator declares PITCH");
 }
 
 }  // namespace
