@@ -110,6 +110,7 @@ endif()
 # ---------------------------------------------------------------------------
 set(EMISSION_SOURCES
     "${SRC_DIR}/sequencer/sequencer.cpp"
+    "${SRC_DIR}/sequencer/generators/RegisterGenerators.cpp"
     "${SRC_DIR}/common/pattern.cpp"
     "${SRC_DIR}/common/pitch_set.cpp"
     "${SRC_DIR}/common/velocity_set.cpp"
@@ -1044,3 +1045,25 @@ target_include_directories(genseq_test_generator_registry PRIVATE ${EMISSION_INC
 # RegisterGenerators.cpp (the ONLY built-in listing, AC1) is compiled directly
 # into this test target. NONE of the Pico SDK libs and NO RapidCheck.
 add_test(NAME test_generator_registry COMMAND genseq_test_generator_registry)
+
+# Task 3 (generative-engine-expansion): per-pattern generative state and
+# registry-based dispatch (FR1, FR4, AC1).
+#
+# Validates PatternGenerativeState (fixed POD: trivially copyable, standard
+# layout, bounded size; valid defaults) and the Sequencer's per-role
+# generator dispatch with test-only fake generators: dispatch by id for the
+# right role (gate/pitch/velocity/duration), per-role fallback to the stored
+# pattern data when no generator is assigned (or the id is unregistered),
+# per-pattern state isolation across add/remove, and a zero-allocation gate
+# on the dispatching tick path. The test drives the REAL Sequencer through
+# the emission library with a LOCAL GeneratorRegistry, so the core files
+# never name a concrete generator type (AC1).
+set(UNIT_PATTERN_GENERATIVE_STATE_SRC "${TEST_DIR}/unit/test_pattern_generative_state.cpp")
+
+add_executable(genseq_test_pattern_generative_state "${UNIT_PATTERN_GENERATIVE_STATE_SRC}")
+target_include_directories(genseq_test_pattern_generative_state PRIVATE ${EMISSION_INCLUDE_DIRS})
+# Link the emission logic (REAL Sequencer + common) but NONE of the Pico SDK
+# libs and NO RapidCheck; PatternGenerativeState.h / the generator interface
+# headers are header-only and SDK-free.
+target_link_libraries(genseq_test_pattern_generative_state PRIVATE genseq_emission)
+add_test(NAME test_pattern_generative_state COMMAND genseq_test_pattern_generative_state)

@@ -3,9 +3,11 @@
 #include <cstdint>
 #include <vector>
 
+#include "GeneratorRegistry.h"
 #include "IMidiOutput.h"
 #include "IMonotonicClock.h"
 #include "NoteLifecycle.h"
+#include "PatternGenerativeState.h"
 #include "PerformanceFault.h"
 #include "PerformanceMetrics.h"
 #include "TransportTimeline.h"
@@ -38,7 +40,13 @@ private:
 // Main sequencer class
 class Sequencer {
 public:
-    Sequencer(IMidiOutput& output, IMonotonicClock& clock);
+    // `generatorRegistry` is the registry every per-role generator dispatch
+    // (task 3, AC1) resolves ids through — the ONLY coupling point to the
+    // generator plugins; the sequencer never names a concrete generator
+    // type. Defaults to the process-wide registry so existing two-argument
+    // construction is unchanged.
+    Sequencer(IMidiOutput& output, IMonotonicClock& clock,
+              GeneratorRegistry& generatorRegistry = g_generatorRegistry);
 
     void init();
     void update();
@@ -54,6 +62,15 @@ public:
 
     const PerformanceMetrics& performanceMetrics() const { return metrics; }
     void resetPerformanceMetrics();
+
+    // Per-pattern generative state (task 3): each pattern owns ONE fixed POD
+    // holding its generator assignments (per role), generator parameters,
+    // scale constraint (FR4) and generative material sets. Returns nullptr
+    // when patternIndex is out of the fixed slot range. This is Working
+    // State configuration: it is changed only by performer commands, never
+    // automatically, and enters undo/baseline/Keep snapshots (T12/T13).
+    PatternGenerativeState* generativeState(size_t patternIndex);
+    const PatternGenerativeState* generativeState(size_t patternIndex) const;
 
 private:
     IMidiOutput& output;
@@ -120,6 +137,46 @@ private:
     // patterns and their configuration) is preserved; only runtime transport
     // stops. Idempotent via the PerformanceFault latch.
     void enterTimingFault(PerformanceFaultCause cause, uint64_t measurementUs);
+
+    // One step's registry-dispatch result (task 3): which roles produced a
+    // decision and what the decision was. A small fixed POD — no heap.
+    struct GenerativeStep {
+        bool gateResolved = false;
+        bool gate = false;
+        bool pitchResolved = false;
+        uint8_t pitch = 0;
+        bool velocityResolved = false;
+        uint8_t velocity = 0;
+        bool durationResolved = false;
+        uint16_t duration = 0;
+    };
+
+    // Registry-based per-role generator dispatch for one pattern's step
+    // (task 3, AC1): resolves the pattern's assigned ids through
+    // generatorRegistry_ ONLY — no concrete generator type is named here.
+    // A role participates only when it has an assigned id AND a registered
+    // generator AND that generator produced a decision; otherwise the
+    // sequencer falls back to the stored pattern data.
+    void dispatchGenerativeStep(size_t patternIndex, uint32_t stepIndex,
+                                 GenerativeStep& step);
+
+    // Reset the per-pattern generative RUNTIME positions (step counter,
+    // generated-gate edge memory, duration countdown). The generative
+    // CONFIGURATION (generativeStates_) is Working State and is preserved.
+    void resetGenerativeRuntime();
+
+    // Registry every generator id is resolved through (task 3).
+    GeneratorRegistry& generatorRegistry_;
+    // Per-pattern generative state, parallel to `patterns` (fixed slots —
+    // no heap; addPattern/removePattern keep the slots aligned).
+    PatternGenerativeState generativeStates_[common::PATTERN_CAPACITY] = {};
+    // Per-pattern generative RUNTIME, parallel to generativeStates_: the
+    // step counter fed to generate(), the last generated gate value for
+    // edge detection, and the armed auto-release countdown (transport ticks)
+    // a DURATION generator set at Note On. Runtime only — never snapshotted.
+    uint32_t generativeSteps_[common::PATTERN_CAPACITY] = {};
+    bool generativeGateLast_[common::PATTERN_CAPACITY] = {};
+    uint16_t generativeDurationLeft_[common::PATTERN_CAPACITY] = {};
 
     void sendMidiByte(uint8_t byte);
     bool canApplyCommand(const commands::CommandMessage& msg) const;

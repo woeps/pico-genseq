@@ -18,18 +18,51 @@ namespace sequencer {
 // read lock-free by core0 for H:dump.
 volatile uint32_t g_soundingNotes = 0;
 
-Sequencer::Sequencer(IMidiOutput& output, IMonotonicClock& clock)
+namespace {
+
+// Deterministic per-(pattern, role, step) dispatch seed (global constraint:
+// deterministic, seedable randomness). The pattern's STABLE identity (slot +
+// generation) seeds the mix so removing/reordering patterns never retargets
+// another pattern's stream; the step index distinguishes steps; the role
+// ordinal keeps each role's stream independent of the other roles' draws.
+// splitmix64 finalizes; 0 maps to 1 (GeneratorRng's fixed-point guard).
+uint64_t splitmix64(uint64_t x) {
+    x += 0x9E3779B97F4A7C15ULL;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    return x ^ (x >> 31);
+}
+
+uint64_t generatorSeed(common::PatternId id, uint8_t roleOrdinal, uint32_t stepIndex) {
+    const uint64_t mixed = splitmix64(
+        (static_cast<uint64_t>(id.index) << 40) ^
+        (static_cast<uint64_t>(id.generation) << 8) ^
+        (static_cast<uint64_t>(roleOrdinal) << 60) ^
+        static_cast<uint64_t>(stepIndex));
+    return (mixed == 0) ? 1u : mixed;
+}
+
+}  // namespace
+
+Sequencer::Sequencer(IMidiOutput& output, IMonotonicClock& clock,
+                     GeneratorRegistry& generatorRegistry)
     : output(output),
       clock(clock),
       meteredOutput(output, metrics.midiBytesDispatched),
       patterns({common::Pattern()}),
       playing(false),
       midiClockEnabled(true),
-      noteLifecycle(meteredOutput) {
+      noteLifecycle(meteredOutput),
+      generatorRegistry_(generatorRegistry) {
     // MIDI transport and monotonic time are injected; no hardware setup here.
     timeline.setBpm(120);
     // Allocate a stable identity for the initial pattern slot.
     patternIds.push_back(idAllocator.allocate());
+    // Populate the registry with the built-in generator list (task 3, AC1).
+    // The ONLY call site in the core: registerGenerators is defined in
+    // generators/RegisterGenerators.cpp and add()'s duplicate guard makes
+    // repeated construction safe. No concrete generator type is named here.
+    registerGenerators(generatorRegistry_);
 }
 
 void MeteredMidiOutput::write(uint8_t byte) {
@@ -64,6 +97,10 @@ void Sequencer::init() {
         pattern.getPitchSet().reset();
         pattern.getVelocitySet().reset();
     }
+    // Generative RUNTIME positions restart from their defined start; the
+    // generative CONFIGURATION (generativeStates_) is Working State and is
+    // preserved (task 3).
+    resetGenerativeRuntime();
 }
 
 void Sequencer::update() {
@@ -146,13 +183,61 @@ void Sequencer::serviceTick(bool reconcileOnly) {
         common::PitchSet& pitchSet = pattern.getPitchSet();
         common::VelocitySet& velocitySet = pattern.getVelocitySet();
 
-        if (pitchSet.getPitches().empty() || velocitySet.getVelocities().empty() ||
-            gateSet.getGates().empty()) {
-            continue;
+        // Duration-driven auto-release (task 3): a DURATION generator arms a
+        // bounded countdown at Note On; when the boundary is crossed the
+        // recorded onset is released by its identity. Honored during
+        // reconciliation like any crossed release (task 5.2, Req 3.5). Never
+        // armed when no DURATION generator produced a decision, so pure
+        // stored-gate playback (Milestone 2) is untouched by this path.
+        if (generativeDurationLeft_[i] > 0) {
+            --generativeDurationLeft_[i];
+            if (generativeDurationLeft_[i] == 0) {
+                noteLifecycle.releasePattern(patternIds[i]);
+            }
         }
 
+        // Generative dispatch (task 3, AC1): resolve the pattern's assigned
+        // generators through the registry — the ONLY coupling point to the
+        // plugins; no concrete generator type is named here. Pure stored-data
+        // playback (no role assigned) skips dispatch entirely.
+        GenerativeStep gen;
+        if (generativeStates_[i].anyGeneratorAssigned()) {
+            dispatchGenerativeStep(i, generativeSteps_[i], gen);
+        }
+
+        const bool gateFromGenerator = gen.gateResolved;
+        // Source checks (task 3): each role participates from its generator
+        // (when one resolved and produced a decision) or from the stored
+        // pattern data. With no generators assigned this reduces EXACTLY to
+        // the Milestone 2 participation rule (all three stored sets
+        // non-empty), so existing behavior is preserved.
+        if (!gateFromGenerator && gateSet.getGates().empty()) continue;
+        if (!gen.pitchResolved && pitchSet.getPitches().empty()) continue;
+        if (!gen.velocityResolved && velocitySet.getVelocities().empty()) continue;
+
         const common::PatternId id = patternIds[i];
-        const common::Flank flank = gateSet.getFlank();
+
+        // Gate decision for this step: the GATE generator's output, edge-
+        // detected against the last generated value, or — without a gate
+        // generator — the stored GateSet flank exactly as before (tasks 2.4,
+        // 5.2 semantics preserved). The edge memory updates on every tick,
+        // including reconciled ones, so the next authoritative tick is
+        // phase-correct.
+        common::Flank flank;
+        if (gateFromGenerator) {
+            const bool was = generativeGateLast_[i];
+            const bool now = gen.gate;
+            if (!was && now) {
+                flank = common::RISING;
+            } else if (was && !now) {
+                flank = common::FALLING;
+            } else {
+                flank = now ? common::HIGH : common::LOW;
+            }
+            generativeGateLast_[i] = now;
+        } else {
+            flank = gateSet.getFlank();
+        }
 
         if (flank == common::RISING) {
             // A reconciled (missed) tick must NOT emit an obsolete Note On
@@ -160,10 +245,20 @@ void Sequencer::serviceTick(bool reconcileOnly) {
             // this onset. Advance the material so the next authoritative tick is
             // phase-correct, but emit nothing on the wire.
             if (!reconcileOnly) {
-                // Record ownership at onset by the pattern's canonical channel and
-                // the exact pitch sounding NOW (task 2.4, Req 5.1).
-                noteLifecycle.noteOn(id, pattern.getCanonicalChannel(), pitchSet.getPitch(),
-                                     velocitySet.getVelocity());
+                // Generated material wins per role; a role without a decision
+                // falls back to the stored pattern data unchanged (task 3).
+                const uint8_t pitch =
+                    gen.pitchResolved ? gen.pitch : pitchSet.getPitch();
+                const uint8_t velocity =
+                    gen.velocityResolved ? gen.velocity : velocitySet.getVelocity();
+                // Record ownership at onset by the pattern's canonical channel
+                // and the exact pitch sounding NOW (task 2.4, Req 5.1).
+                noteLifecycle.noteOn(id, pattern.getCanonicalChannel(), pitch,
+                                     velocity);
+                // Arm the duration countdown when a DURATION generator
+                // produced one (in transport ticks; minimum 1).
+                generativeDurationLeft_[i] =
+                    gen.durationResolved ? (gen.duration > 0 ? gen.duration : 1) : 0;
             }
         } else if (flank == common::FALLING) {
             // Release the captured onset via its recorded identity, NOT the
@@ -173,10 +268,93 @@ void Sequencer::serviceTick(bool reconcileOnly) {
             noteLifecycle.releasePattern(id);
             pitchSet.advance();
             velocitySet.advance();
+            // The boundary release already happened; disarm any pending
+            // duration countdown so it cannot fire a second (no-op) release.
+            generativeDurationLeft_[i] = 0;
         }
-        const uint32_t nextGatePosition = static_cast<uint32_t>(
-            (gateSet.getPosition() + 1) % gateSet.getGates().size());
-        gateSet.setPosition(nextGatePosition);
+
+        // Advance the per-pattern step counter (the dispatch stepIndex) and,
+        // when the gate comes from the stored set, its position — on
+        // reconciled ticks too, so the authoritative phase stays correct.
+        ++generativeSteps_[i];
+        if (!gateFromGenerator) {
+            const uint32_t nextGatePosition = static_cast<uint32_t>(
+                (gateSet.getPosition() + 1) % gateSet.getGates().size());
+            gateSet.setPosition(nextGatePosition);
+        }
+    }
+}
+
+PatternGenerativeState* Sequencer::generativeState(size_t patternIndex) {
+    return (patternIndex < common::PATTERN_CAPACITY) ? &generativeStates_[patternIndex]
+                                                     : nullptr;
+}
+
+const PatternGenerativeState* Sequencer::generativeState(size_t patternIndex) const {
+    return (patternIndex < common::PATTERN_CAPACITY) ? &generativeStates_[patternIndex]
+                                                     : nullptr;
+}
+
+void Sequencer::dispatchGenerativeStep(size_t patternIndex, uint32_t stepIndex,
+                                       GenerativeStep& step) {
+    const PatternGenerativeState& state = generativeStates_[patternIndex];
+    // The pattern length the generator context reports: the stored gate set's
+    // tick length (scaffold for step-based generators), clamped to the
+    // context's uint8 field.
+    const uint32_t storedLength = patterns[patternIndex].getGateSet().getLength();
+    const uint8_t patternLength =
+        static_cast<uint8_t>(storedLength > 255u ? 255u : storedLength);
+    const common::Scale scale = state.scale();
+
+    for (uint8_t r = 0; r < kGeneratorRoleCount; ++r) {
+        const GeneratorRole role = static_cast<GeneratorRole>(r);
+        if (!state.hasGenerator(role)) continue;  // unassigned: stored data
+        // Lookup by id through the registry ONLY (task 3, AC1). An assigned id
+        // nothing registered falls back to the stored pattern data.
+        IGenerator* generator = generatorRegistry_.find(state.generatorId(role));
+        if (generator == nullptr) continue;
+        // Fresh deterministic RNG per (pattern, role, step): identical inputs
+        // always replay identical decisions (global constraint).
+        GeneratorRng rng(generatorSeed(patternIds[patternIndex], r, stepIndex));
+        GeneratorContext context(patternLength, &scale, rng);
+        GeneratorOutput output;
+        generator->generate(stepIndex, context, output);
+        // Apply the decision for THIS role only — a role never consumes
+        // another role's output.
+        switch (role) {
+            case GeneratorRole::GATE:
+                if (output.hasGate) {
+                    step.gateResolved = true;
+                    step.gate = output.gate;
+                }
+                break;
+            case GeneratorRole::PITCH:
+                if (output.hasPitch) {
+                    step.pitchResolved = true;
+                    step.pitch = static_cast<uint8_t>(output.pitch & 0x7F);
+                }
+                break;
+            case GeneratorRole::VELOCITY:
+                if (output.hasVelocity) {
+                    step.velocityResolved = true;
+                    step.velocity = static_cast<uint8_t>(output.velocity & 0x7F);
+                }
+                break;
+            case GeneratorRole::DURATION:
+                if (output.hasDuration) {
+                    step.durationResolved = true;
+                    step.duration = output.duration;
+                }
+                break;
+        }
+    }
+}
+
+void Sequencer::resetGenerativeRuntime() {
+    for (uint8_t i = 0; i < common::PATTERN_CAPACITY; ++i) {
+        generativeSteps_[i] = 0;
+        generativeGateLast_[i] = false;
+        generativeDurationLeft_[i] = 0;
     }
 }
 
@@ -352,6 +530,9 @@ void Sequencer::play() {
         pattern.getPitchSet().reset();
         pattern.getVelocitySet().reset();
     }
+    // Generative runtime restarts from step 0 with clean edge memory (task 3);
+    // the generative configuration is Working State and is preserved.
+    resetGenerativeRuntime();
 
     // Begin one monotonic Transport Timeline shared by every pattern (Req 1.1).
     timeline.start(clock.nowMicros());
@@ -385,6 +566,9 @@ void Sequencer::stop() {
         pattern.getPitchSet().reset();
         pattern.getVelocitySet().reset();
     }
+    // Generative runtime restarts from step 0 with clean edge memory (task 3);
+    // the generative configuration is Working State and is preserved.
+    resetGenerativeRuntime();
 }
 
 void Sequencer::setBPM(uint16_t bpm) {
@@ -398,6 +582,13 @@ void Sequencer::addPattern(const common::Pattern& pattern) {
     if (patterns.size() >= common::PATTERN_CAPACITY) return;  // fixed capacity
     patterns.push_back(pattern);
     patternIds.push_back(idAllocator.allocate());
+    // The new slot owns a FRESH generative state: defaults, no generators
+    // assigned (task 3). Runtime arrays start from their defined start.
+    const size_t slot = patterns.size() - 1;
+    generativeStates_[slot] = PatternGenerativeState{};
+    generativeSteps_[slot] = 0;
+    generativeGateLast_[slot] = false;
+    generativeDurationLeft_[slot] = 0;
 }
 
 void Sequencer::removePattern(size_t index) {
@@ -408,6 +599,20 @@ void Sequencer::removePattern(size_t index) {
     idAllocator.release(patternIds[index]);
     patterns.erase(patterns.begin() + index);
     patternIds.erase(patternIds.begin() + index);
+    // Keep the per-slot generative state and runtime aligned with the surviving
+    // patterns: shift everything above the removed slot down one (task 3). The
+    // state is trivially copyable, so slot moves are plain assignments.
+    const size_t surviving = patterns.size();
+    for (size_t j = index; j < surviving; ++j) {
+        generativeStates_[j] = generativeStates_[j + 1];
+        generativeSteps_[j] = generativeSteps_[j + 1];
+        generativeGateLast_[j] = generativeGateLast_[j + 1];
+        generativeDurationLeft_[j] = generativeDurationLeft_[j + 1];
+    }
+    generativeStates_[surviving] = PatternGenerativeState{};
+    generativeSteps_[surviving] = 0;
+    generativeGateLast_[surviving] = false;
+    generativeDurationLeft_[surviving] = 0;
 }
 
 void Sequencer::activatePattern(size_t index) {
