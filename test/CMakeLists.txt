@@ -1072,14 +1072,20 @@ add_test(NAME test_pattern_generative_state COMMAND genseq_test_pattern_generati
 # (FR2, AC1).
 #
 # Golden-output tests: the step patterns were captured from the PRE-refactor
-# common::GateSet::createEuclidean and pinned as literals, so the plugin (and
-# gate_set.cpp's delegation to it) is verified against the ORIGINAL algorithm.
-# Covers representative (steps, pulses, rotation) tuples plus the edge cases
-# 0 pulses, pulses == steps, pulses > steps and steps == 1, the wrapped second
-# pattern revolution, GATE-only capabilities, paramDefs matching the existing
-# UI limits (steps 1..64, pulses 0..64, rotation 0..63), and the registration
+# common::GateSet::createEuclidean and pinned as literals, so the plugin
+# (delegating to the shared common::euclideanPulseAt free function in
+# gate_set.h, which createEuclidean also uses) is verified against the
+# ORIGINAL algorithm. Covers representative (steps, pulses, rotation)
+# tuples plus the edge cases 0 pulses, pulses == steps, pulses > steps and
+# steps == 1, the wrapped second pattern revolution, an enumeration over
+# the FULL supported ranges (steps 1..64, pulses 0..steps, rotation
+# 0..steps-1) comparing the legacy createEuclidean output against the
+# plugin output, GATE-only capabilities, paramDefs matching the existing
+# UI limits (steps 1..64, pulses 0..64, rotation 0..63), the registration
 # of "builtin.euclidean" by RegisterGenerators.cpp (the only built-in
-# listing, AC1).
+# listing, AC1), and the default-id constant
+# PatternGenerativeState::kDefaultGateGeneratorId naming that registered
+# plugin (the default gate generator).
 set(UNIT_EUCLIDEAN_GENERATOR_SRC "${TEST_DIR}/unit/test_euclidean_generator.cpp")
 
 add_executable(genseq_test_euclidean_generator "${UNIT_EUCLIDEAN_GENERATOR_SRC}")

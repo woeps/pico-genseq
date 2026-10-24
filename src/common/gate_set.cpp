@@ -1,5 +1,4 @@
 #include "gate_set.h"
-#include "../sequencer/generators/EuclideanGateGenerator.h"
 #include <algorithm>
 #include <map>
 
@@ -89,18 +88,19 @@ namespace common {
 
     GateSet GateSet::createEuclidean(uint8_t numSteps, uint8_t numPulses, uint8_t rotation,
                                      uint8_t stepLength, uint8_t gateLength) {
-        // Euclidean algorithm (Bjorklund's algorithm). Since task 4 the
-        // step-level decisions — which of the numSteps positions carry a
-        // pulse — come from the EuclideanGateGenerator plugin; GateSet keeps
-        // only the shared gate data handling: the tick-level expansion
-        // (step length, gate length) below. The plugin implements the exact
-        // historical bucket algorithm, so the output is bit-identical.
+        // Euclidean algorithm (Bjorklund's algorithm). The step-level
+        // decisions — which of the numSteps positions carry a pulse — come
+        // from the shared euclideanPulseAt free function (gate_set.h);
+        // GateSet keeps only the shared gate data handling: the tick-level
+        // expansion (step length, gate length) below. The sequencer's
+        // EuclideanGateGenerator plugin delegates to the same function, so
+        // the plugin path and this legacy path are bit-identical by
+        // construction.
         if (numSteps == 0 || stepLength == 0) return GateSet();
         std::vector<bool> pattern(numSteps, false);
 
         for (uint8_t step = 0; step < numSteps; step++) {
-            pattern[step] = sequencer::EuclideanGateGenerator::pulseAt(
-                numSteps, numPulses, rotation, step);
+            pattern[step] = euclideanPulseAt(numSteps, numPulses, rotation, step);
         }
 
         const uint32_t patternLength = static_cast<uint32_t>(numSteps) * stepLength;

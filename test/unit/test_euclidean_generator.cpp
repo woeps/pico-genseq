@@ -19,16 +19,26 @@
 //      decisions (stepIndex wraps);
 //   2. the delegated GateSet::createEuclidean still produces the exact
 //      golden tick patterns (bit-identical output);
-//   3. rotation >= steps wraps modulo steps, as the historical algorithm
+//   3. the shared free function common::euclideanPulseAt (the algorithm's
+//      single home since task 4) reproduces the golden step decisions
+//      directly, and an enumeration over the FULL supported ranges
+//      (steps 1..64, pulses 0..steps, rotation 0..steps-1) compares the
+//      legacy gate_set Euclidean output position by position against the
+//      plugin output — zero divergence (task 4, step 1);
+//   4. rotation >= steps wraps modulo steps, as the historical algorithm
 //      did through (i + rotation) % steps;
-//   4. steps == 0 (outside the parameter range) is total: no pulse, the
+//   5. steps == 0 (outside the parameter range) is total: no pulse, the
 //      analog of the historical empty gate set;
-//   5. capabilities are GATE only (AC8);
-//   6. paramDefs match the existing UI limits: steps 1..64 (default 16),
+//   6. capabilities are GATE only (AC8);
+//   7. paramDefs match the existing UI limits: steps 1..64 (default 16),
 //      pulses 0..64 (default 4), rotation 0..63 (default 0);
-//   7. the generator is registered by registerGenerators() under
+//   8. the generator is registered by registerGenerators() under
 //      "builtin.euclidean" (AC1: the ONLY built-in listing lives in
-//      RegisterGenerators.cpp).
+//      RegisterGenerators.cpp), and the default-id constant
+//      PatternGenerativeState::kDefaultGateGeneratorId names exactly that
+//      registered plugin, so the Euclidean generator is the default gate
+//      generator (while the default-constructed state stays inert,
+//      keeping Milestone 2 playback stable).
 //
 // Standalone unit test (own main(), no RapidCheck). It lives in test/unit/
 // so the property-test glob (test/*.cpp) never sweeps it; registered in the
@@ -37,6 +47,7 @@
 #include "GeneratorCapabilities.h"
 #include "GeneratorRegistry.h"
 #include "IGenerator.h"
+#include "sequencer/PatternGenerativeState.h"
 #include "sequencer/generators/EuclideanGateGenerator.h"
 
 #include "common/gate_set.h"
@@ -151,7 +162,63 @@ void test_golden_step_decisions() {
         check(stale.hasGate && !stale.hasPitch && !stale.hasVelocity &&
                   !stale.hasDuration,
               "generate() clears every field it does not produce");
+
+        // The shared free function — the algorithm's single home, which
+        // the plugin delegates to — reproduces the same golden decisions.
+        bool sharedMatches = true;
+        for (uint32_t step = 0; step < 2u * len; ++step) {
+            if (common::euclideanPulseAt(c.steps, c.pulses, c.rotation, step) !=
+                goldenAt(c, step)) {
+                sharedMatches = false;
+            }
+        }
+        check(sharedMatches,
+              "the shared common::euclideanPulseAt reproduces the golden "
+              "Euclidean pattern");
     }
+}
+
+// --- 2b: enumerate the supported ranges: plugin == legacy gate_set output --
+
+void test_enumerate_supported_ranges() {
+    // Task 4, step 1: enumerate the legacy gate_set Euclidean output over
+    // the supported ranges — steps 1..64, pulses 0..steps, rotation
+    // 0..steps-1 — and compare it against the plugin output, position by
+    // position (with stepLength=1 and gateLength=1 the tick pattern IS
+    // the step pattern, so createEuclidean exposes the legacy step
+    // decisions exactly). Any divergence is a bit-identity break between
+    // the two consumers of the shared algorithm.
+    bool matches = true;
+    for (uint8_t steps = 1; steps <= 64; ++steps) {
+        for (uint8_t pulses = 0; pulses <= steps; ++pulses) {
+            for (uint8_t rotation = 0; rotation < steps; ++rotation) {
+                const common::GateSet legacy = common::GateSet::createEuclidean(
+                    steps, pulses, rotation, 1, 1);
+                const std::vector<bool>& gates = legacy.getGates();
+                if (gates.size() != steps) {
+                    matches = false;
+                    continue;
+                }
+                const sequencer::EuclideanGateGenerator plugin(steps, pulses,
+                                                                rotation);
+                const sequencer::IGenerator& byBase = plugin;
+                for (uint32_t p = 0; p < steps; ++p) {
+                    GeneratorRng rng(1u);
+                    GeneratorContext context(steps, nullptr, rng);
+                    GeneratorOutput output;
+                    byBase.generate(p, context, output);
+                    if (!output.hasGate || output.gate != gates[p] ||
+                        common::euclideanPulseAt(steps, pulses, rotation, p) !=
+                            gates[p]) {
+                        matches = false;
+                    }
+                }
+            }
+        }
+    }
+    check(matches, "plugin output == legacy createEuclidean output over "
+                    "the full supported ranges (steps 1..64, pulses "
+                    "0..steps, rotation 0..steps-1)");
 }
 
 // --- 2: the delegated GateSet still produces the golden tick patterns ----------
@@ -331,17 +398,62 @@ void test_registration() {
     check(registry.count() == 1, "a repeated registerGenerators adds nothing");
 }
 
+// --- 9: the default-id constant names the registered plugin -------------
+
+void test_default_gate_generator_id() {
+    // Task 4, step 5: the default gate generator id is set ONLY via the
+    // default-id constant, and the constant names the registered
+    // Euclidean plugin — so the plugin IS the default gate generator.
+    check(std::strcmp(sequencer::kDefaultGateGeneratorId, "builtin.euclidean") == 0,
+          "the default-id constant is builtin.euclidean");
+
+    sequencer::GeneratorRegistry registry;
+    sequencer::registerGenerators(registry);
+    const sequencer::IGenerator* def =
+        registry.find(sequencer::kDefaultGateGeneratorId);
+    check(def != nullptr,
+          "the default gate generator id resolves through the registry");
+    check(def != nullptr && def->capabilities().has(GeneratorCapability::GATE),
+          "the default gate generator is gate-capable");
+    check(def != nullptr &&
+              std::strcmp(def->id(), sequencer::kDefaultGateGeneratorId) == 0,
+          "the resolved default gate generator carries the constant's id");
+
+    // The constant fits the fixed id storage (assignable to the GATE
+    // role).
+    sequencer::PatternGenerativeState assigned;
+    check(assigned.setGeneratorId(sequencer::GeneratorRole::GATE,
+                                  sequencer::kDefaultGateGeneratorId),
+          "the default-id constant fits the fixed generator id storage");
+    check(assigned.hasGenerator(sequencer::GeneratorRole::GATE),
+          "the gate role accepts the default-id constant");
+
+    // The default-CONSTRUCTED state stays inert: with no generator
+    // configured, playback is identical to Milestone 2 (the global
+    // default-behavior-stability constraint, pinned by
+    // test_pattern_generative_state). The constant is what a consumer
+    // assigns when the default gate generator is requested.
+    const sequencer::PatternGenerativeState fresh;
+    check(!fresh.hasGenerator(sequencer::GeneratorRole::GATE),
+          "the default-constructed state keeps the gate role unassigned "
+          "(Milestone 2 playback stays stable)");
+    check(!fresh.anyGeneratorAssigned(),
+          "the default-constructed state assigns no generator");
+}
+
 }  // namespace
 
 int main() {
     test_golden_step_decisions();
     test_golden_delegation();
+    test_enumerate_supported_ranges();
     test_rotation_wrap();
     test_zero_steps_total();
     test_capabilities();
     test_param_defs();
     test_identity_and_config();
     test_registration();
+    test_default_gate_generator_id();
 
     if (failures == 0) {
         std::printf("test_euclidean_generator: all checks passed\n");

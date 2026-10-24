@@ -3,21 +3,24 @@
 #include <cstdint>
 #include <type_traits>
 
+#include "../../common/gate_set.h"
 #include "../GeneratorCapabilities.h"
 #include "../IGenerator.h"
 
 // Euclidean gate generator plugin (generative-engine-expansion task 4,
 // FR2, AC1).
 //
-// The Euclidean pattern logic that lived in common::GateSet::createEuclidean
-// moves here, into the plugin layer: which of `steps` pattern positions carry
-// a pulse, distributed as evenly as possible (the historical bucket
-// algorithm) and rotated by `rotation`. Decisions surface per step through
-// IGenerator::generate(); the tick-level expansion (step length, gate
-// length) stays shared gate data in GateSet, which delegates its step
-// decisions here — so the plugin path and the legacy createEuclidean path
-// are bit-identical by construction (the golden tests in
-// test_euclidean_generator.cpp pin the pre-refactoring outputs).
+// The IGenerator adapter around the SHARED Euclidean algorithm that lives
+// in src/common/gate_set.h as the free function common::euclideanPulseAt:
+// which of `steps` pattern positions carry a pulse, distributed as evenly
+// as possible (the historical bucket algorithm) and rotated by `rotation`.
+// The plugin does NOT duplicate the algorithm — generate() delegates to the
+// shared function, the same one common::GateSet::createEuclidean uses — so
+// the plugin path and the legacy createEuclidean path are bit-identical by
+// construction (the golden tests in test_euclidean_generator.cpp pin the
+// pre-refactoring outputs, and an in-test enumeration over the full
+// supported (steps, pulses, rotation) range compares the plugin output
+// against GateSet::createEuclidean position by position).
 //
 //   - capability: GATE only (the UI shows just the gate controls, AC8);
 //   - parameters: steps (id 0), pulses (id 1), rotation (id 2), with the
@@ -29,15 +32,14 @@
 //     context's RNG is never touched.
 //
 // Values outside the declared parameter ranges keep the HISTORICAL
-// semantics exactly (see pulseAt): steps 0 or pulses 0 -> no pulse anywhere,
-// pulses >= steps -> every position, rotation wraps modulo steps. That
-// totality is what lets GateSet::createEuclidean delegate with bit-identical
-// output for every input it has ever accepted.
+// semantics exactly (totality of common::euclideanPulseAt): steps 0 or
+// pulses 0 -> no pulse anywhere, pulses >= steps -> every position,
+// rotation wraps modulo steps.
 //
 // Global constraints honored here: no heap allocation, no RTTI, no
 // exceptions on the generation path; fixed-size members with a
-// static_assert bound below. SDK-free: <cstdint> plus the SDK-free generator
-// interface headers only.
+// static_assert bound below. SDK-free: <cstdint> plus the SDK-free
+// generator interface and common gate_set headers only.
 
 namespace sequencer {
 
@@ -65,9 +67,10 @@ public:
     EuclideanGateGenerator(uint8_t steps, uint8_t pulses, uint8_t rotation);
 
     // Set the pattern configuration. Values are stored EXACTLY as given —
-    // the algorithm is total with the historical semantics for any uint8
-    // input, and GateSet::createEuclidean relies on that for bit-identical
-    // delegation; callers wanting the UI limits clamp before configuring.
+    // the shared algorithm is total with the historical semantics for any
+    // uint8 input, and GateSet::createEuclidean relies on that for
+    // bit-identical output; callers wanting the UI limits clamp before
+    // configuring.
     void configure(uint8_t steps, uint8_t pulses, uint8_t rotation);
 
     // The stored configuration.
@@ -84,22 +87,10 @@ public:
     }
     const GeneratorParamSet& paramDefs() const override;
     // One step's decision: hasGate is always true (the generator always
-    // owns the gate), gate is the Euclidean pulse decision at the wrapped
-    // pattern position stepIndex % steps.
+    // owns the gate), gate is the shared Euclidean pulse decision at the
+    // wrapped pattern position stepIndex % steps.
     void generate(uint32_t stepIndex, const GeneratorContext& context,
                   GeneratorOutput& output) const override;
-
-    // The moved Euclidean core: does pattern position `position` carry a
-    // pulse in the E(pulses, steps) pattern rotated by `rotation`?
-    //
-    // Exactly the decision of the historical createEuclidean bucket
-    // algorithm (which marked pattern[(i + rotation) % steps] when the
-    // pulse bucket crossed a step boundary), total for every uint8 input:
-    //   - steps == 0 or pulses == 0  -> false (no pulse anywhere);
-    //   - pulses >= steps            -> true (every position carries one);
-    //   - otherwise position and rotation wrap modulo steps.
-    static bool pulseAt(uint8_t steps, uint8_t pulses, uint8_t rotation,
-                        uint32_t position);
 
 private:
     // The generator's configuration. Values may lie outside the declared
@@ -120,35 +111,19 @@ inline void EuclideanGateGenerator::configure(uint8_t steps, uint8_t pulses,
     rotation_ = rotation;
 }
 
-inline bool EuclideanGateGenerator::pulseAt(uint8_t steps, uint8_t pulses,
-                                            uint8_t rotation, uint32_t position) {
-    // Historical edge cases first: an empty pattern (steps 0) and a silent
-    // one (pulses 0) carry no pulse at any position; pulses >= steps fills
-    // every position.
-    if (steps == 0 || pulses == 0) return false;
-    if (pulses >= steps) return true;
-    // The historical loop marked position (i + rotation) % steps when the
-    // pulse bucket for i crossed a step boundary, i.e. when
-    // ((i + 1) * pulses) mod steps < pulses. Invert the rotation to find
-    // the bucket index for this position, then apply the same condition.
-    const uint32_t r = static_cast<uint32_t>(rotation) % steps;
-    const uint32_t i = (position % steps + steps - r) % steps;
-    // (i + 1) * pulses <= 255 * 255: fits in 32 bits, no overflow.
-    const uint32_t bucket = (i + 1u) * static_cast<uint32_t>(pulses);
-    return (bucket % steps) < static_cast<uint32_t>(pulses);
-}
-
 inline void EuclideanGateGenerator::generate(uint32_t stepIndex,
                                             const GeneratorContext& /*context*/,
                                             GeneratorOutput& output) const {
     // Reset the output so stale caller fields never leak (the same
-    // convention as the other plugins), then emit only the gate decision.
+    // convention as the other plugins), then emit only the gate decision —
+    // delegating to the SHARED gate_set function (task 4: the algorithm is
+    // shared, never duplicated; the pattern repeats every `steps`
+    // decisions because euclideanPulseAt wraps the position and is total
+    // for every configuration, including the legacy steps == 0, the
+    // empty-pattern analog).
     output = GeneratorOutput{};
     output.hasGate = true;
-    // The pattern repeats every `steps` decisions; pulseAt wraps the
-    // position and is total for every configuration, including the
-    // legacy steps == 0 (no pulse anywhere — the empty-pattern analog).
-    output.gate = pulseAt(steps_, pulses_, rotation_, stepIndex);
+    output.gate = common::euclideanPulseAt(steps_, pulses_, rotation_, stepIndex);
 }
 
 // The fixed parameter table, declared at namespace scope so the constexpr

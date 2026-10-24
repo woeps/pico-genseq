@@ -55,6 +55,24 @@ constexpr uint8_t kGeneratorRoleCount = 4;
 // truncated prefix could alias a different generator.
 constexpr uint8_t kGeneratorIdCapacity = 24;
 
+// The default gate generator id (generative-engine-expansion task 4):
+// the built-in Euclidean gate generator — FR2's "existing" gate
+// algorithm, now the plugin registered in generators/RegisterGenerators.cpp.
+// This is the default-id constant: every place that needs "the default
+// gate generator" (the UI, persistence, command handling) names it through
+// this constant, never a hardcoded string.
+//
+// The default-CONSTRUCTED state deliberately stays INERT (all role ids
+// empty): with no generator configured, a pattern plays its stored
+// material exactly as in Milestone 2 (the global "default behavior must
+// remain stable" constraint; pinned by test_pattern_generative_state and
+// the sequencer tests). The constant is the id to ASSIGN when a pattern's
+// gate role asks for the default generator — so the Euclidean plugin is
+// the default gate generator, without any core sequencer dispatch edit.
+constexpr char kDefaultGateGeneratorId[] = "builtin.euclidean";
+static_assert(sizeof(kDefaultGateGeneratorId) <= kGeneratorIdCapacity,
+              "the default gate generator id fits the fixed id storage");
+
 // Fixed capacity for the generative value sets, matching the wire-protocol
 // set limit (commands::MAX_PITCH_SET_LENGTH = 16).
 constexpr uint8_t kGenerativeSetCapacity = 16;
