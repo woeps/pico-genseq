@@ -1472,3 +1472,36 @@ add_executable(genseq_test_mutation_view
 target_include_directories(genseq_test_mutation_view PRIVATE ${EMISSION_INCLUDE_DIRS})
 target_link_libraries(genseq_test_mutation_view PRIVATE genseq_emission)
 add_test(NAME test_mutation_view COMMAND genseq_test_mutation_view)
+
+# Task 21 (generative-engine-expansion): modulation pattern/target UI view
+# (FR11-FR14).
+#
+# Validates the ModulationPatternView: the pattern editor's variable length
+# clamped to 1-16 (writing through to the global ModulationPattern), only
+# steps within the current length editable/highlighted (the cursor confined
+# to the length), shortening + re-lengthening restoring the stored values,
+# step values clamped to 0-127, the target picker listing EVERY ParameterBus
+# parameter including the global BPM (names/ranges/scopes verbatim from the
+# task-16 table), the FR13 scope defaulting to per-pattern and toggling to
+# global with scope-mismatched parameters re-pointed so the address stays
+# valid (a fresh target keeping its deliberately invalid factory address),
+# and the FR14 scaling/balance/step-duration/playing-order edits writing to
+# the ModulationTarget in the registry.
+#
+# ModulationPatternView.cpp (the view's SDK-free model + render logic) is
+# compiled directly into this target; its render path targets the real
+# LedMatrix driver, so the test TU supplies host-safe no-op LedMatrix member
+# seams (the same pattern as test_generator_config_view /
+# test_scale_selection_view / test_mutation_view) instead of compiling the
+# SDK-dependent LedMatrix.cpp. The modulation registry/targets, the parameter
+# addressing and the bus are header-only and SDK-free. NONE of the Pico SDK
+# libs and NO RapidCheck.
+set(UNIT_MODULATION_PATTERN_VIEW_SRC "${TEST_DIR}/unit/test_modulation_pattern_view.cpp")
+
+add_executable(genseq_test_modulation_pattern_view
+    "${UNIT_MODULATION_PATTERN_VIEW_SRC}"
+    "${SRC_DIR}/ui/views/ModulationPatternView.cpp"
+)
+target_include_directories(genseq_test_modulation_pattern_view PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_test_modulation_pattern_view PRIVATE genseq_emission)
+add_test(NAME test_modulation_pattern_view COMMAND genseq_test_modulation_pattern_view)
