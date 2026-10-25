@@ -88,8 +88,7 @@ void test_step_values_clamped() {
           "a rejected setStep leaves the pattern unchanged");
 }
 
-// The active length constrains traversal: stepAt() wraps modulo the length and
-// invalid lengths are rejected.
+// The active length constrains traversal: stepAt() wraps modulo the length.
 void test_length_and_wrap() {
     ModulationPattern p;
     for (size_t i = 0; i < ModulationPattern::MAX_STEPS; ++i) {
@@ -101,9 +100,14 @@ void test_length_and_wrap() {
     check(p.stepAt(4) == 10, "stepAt wraps modulo the active length");
     check(p.stepAt(9) == 20, "stepAt wraps for any monotonic counter");
     check(p.stepAt(10) == 30, "stepAt wrap lands on the reduced index");
-    check(!p.setLength(0), "length 0 is rejected");
-    check(!p.setLength(ModulationPattern::MAX_STEPS + 1), "length beyond capacity is rejected");
-    check(p.length() == 4, "a rejected setLength leaves the length unchanged");
+    check(p.setLength(0), "setLength accepts any value (clamping)");
+    check(p.length() == 1, "length 0 clamps to 1");
+    check(p.setLength(ModulationPattern::MAX_STEPS + 1),
+          "setLength accepts any value (clamping)");
+    check(p.length() == ModulationPattern::MAX_STEPS,
+          "length beyond capacity clamps to 16");
+    check(p.setLength(4), "an in-range length is kept as-is");
+    check(p.length() == 4, "the length round-trips after clamping");
     p.clear();
     check(p.length() == ModulationPattern::MAX_STEPS, "clear restores full length");
     check(p.stepAt(5) == 0, "clear zeroes every step");
@@ -273,24 +277,40 @@ void test_targets_on_same_pattern_advance_independently() {
     }
 }
 
+// FR11 clamp rule: the active length is CLAMPED into 1..MAX_STEPS — 0
+// becomes 1, 17 (and any larger value) becomes 16 — exactly like the step
+// values clamp into 0-127.
+void test_length_clamp_1_16() {
+    ModulationPattern p;
+    check(p.setLength(0), "setLength(0) is accepted and clamped");
+    check(p.length() == 1, "length 0 becomes 1");
+    check(p.setLength(1) && p.length() == 1, "length 1 passes through");
+    check(p.setLength(17), "setLength(17) is accepted and clamped");
+    check(p.length() == 16, "length 17 becomes 16");
+    check(p.setLength(255), "an extreme length is accepted and clamped");
+    check(p.length() == 16, "length 255 becomes 16");
+    check(p.setLength(5) && p.length() == 5, "an in-range length passes through");
+    check(p.stepAt(5) == p.stepAt(0), "the clamped length drives the wrap");
+}
+
 // FR11: variable length 1-16 — stepAt(i) == values[i % length] exactly,
-// checked at lengths 1, 7 and 16 over a long monotonic index range. Step
+// checked at lengths 1, 5, 7 and 16 over a long monotonic index range. Step
 // values are multiples of 8, so they are pairwise distinct both mod 16 and
 // mod 7 (8 ≡ 1 mod 7): any wrong wrap modulus reads back the wrong value.
-void test_wrap_at_lengths_1_7_16() {
+void test_wrap_at_lengths_1_5_7_16() {
     ModulationPattern p;
     uint8_t values[ModulationPattern::MAX_STEPS];
     for (size_t i = 0; i < ModulationPattern::MAX_STEPS; ++i) {
         values[i] = static_cast<uint8_t>(i * 8);  // 0..120, all <= 127
         check(p.setStep(i, values[i]), "fill the 16 step slots");
     }
-    const uint8_t lengths[] = {1, 7, 16};
+    const uint8_t lengths[] = {1, 5, 7, 16};
     for (uint8_t len : lengths) {
         check(p.setLength(len), "every length 1-16 is accepted");
         check(p.length() == len, "the length round-trips");
         for (size_t i = 0; i < 64; ++i) {
             check(p.stepAt(i) == values[i % len],
-                  "stepAt(i) == values[i % length] for lengths 1, 7 and 16");
+                  "stepAt(i) == values[i % length] for lengths 1, 5, 7 and 16");
         }
     }
 }
@@ -307,7 +327,8 @@ void test_shrink_grow_preserves_hidden_steps() {
     check(p.setLength(1), "shrink to length 1");
     check(p.stepAt(0) == 1 && p.stepAt(3) == 1,
           "length 1 reads a constant value (index 0)");
-    check(!p.setLength(0), "length 0 is rejected while shrunk");
+    check(p.setLength(0), "length 0 clamps to 1 while shrunk");
+    check(p.length() == 1, "length 0 became 1");
     check(p.setLength(ModulationPattern::MAX_STEPS), "grow back to full length");
     for (size_t i = 0; i < ModulationPattern::MAX_STEPS; ++i) {
         check(p.stepAt(i) == static_cast<uint8_t>(i + 1),
@@ -508,7 +529,8 @@ void test_global_registry_singleton() {
 int main() {
     test_step_values_clamped();
     test_length_and_wrap();
-    test_wrap_at_lengths_1_7_16();
+    test_length_clamp_1_16();
+    test_wrap_at_lengths_1_5_7_16();
     test_shrink_grow_preserves_hidden_steps();
     test_step_index_beat_duration();
     test_step_index_bar_duration();

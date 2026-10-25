@@ -33,10 +33,17 @@ public:
     }
 
     // Active step count (1..MAX_STEPS). Traversal wraps within `length`.
+    // FR11 clamp rule — the length field is CLAMPED into 1..MAX_STEPS: 0
+    // becomes 1, anything above MAX_STEPS becomes MAX_STEPS (exactly like the
+    // step values clamp into 0-127). Never refused, always total: the
+    // invariant 1 <= length <= 16 holds for every call. Returns true (kept
+    // for source compatibility with call sites that check the result).
     uint8_t length() const { return length_; }
     bool setLength(uint8_t length) {
-        if (length == 0 || length > MAX_STEPS) return false;
-        length_ = length;
+        length_ = (length == 0) ? 1
+                                : ((length > MAX_STEPS)
+                                       ? static_cast<uint8_t>(MAX_STEPS)
+                                       : length);
         return true;
     }
 
