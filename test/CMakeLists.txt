@@ -1505,3 +1505,51 @@ add_executable(genseq_test_modulation_pattern_view
 target_include_directories(genseq_test_modulation_pattern_view PRIVATE ${EMISSION_INCLUDE_DIRS})
 target_link_libraries(genseq_test_modulation_pattern_view PRIVATE genseq_emission)
 add_test(NAME test_modulation_pattern_view COMMAND genseq_test_modulation_pattern_view)
+
+# Task 22 (generative-engine-expansion): END-TO-END integration test of the
+# ASSEMBLED generative engine (AC1-AC8) against the real sequencer.
+#
+# Standalone integration test with its own main() (NO RapidCheck), driving
+# the REAL Sequencer (genseq_emission: sequencer.cpp + generators + common)
+# through its public API with a fake monotonic clock and a recording MIDI
+# sink: test-only generator plugins registered into a local GeneratorRegistry
+# and PLAYED by the unmodified core (AC1), pitch mutations ending in-scale for
+# EVERY built-in template/root through the real command path (AC2), modulation
+# targeting EVERY UI-settable parameter one by one plus the global BPM with the
+# stored bases never modified and the transport's tick duration following the
+# effective tempo (AC3), the composites' instrumentation counter pinned at the
+# documented worst-case bound plus host wall-clock sanity for the heaviest
+# single operator, both composites and 1000 worst-case commands through the
+# full sequencer path (AC4), cross-pattern LIFO undo on the ONE global stack
+# (AC5), baseline revert + the Keep re-anchor (AC6), the three-level timing
+# policy with quantized boundaries at the next beat/bar (AC7), and the
+# capability-driven GeneratorConfigView rendering exactly the selected
+# generator's controls — including a test-only plugin's own parameter table
+# with zero view changes — writing through the ParameterBus base values into
+# the LIVE sequencer state (AC8). Every driven transport also runs a
+# note-ownership audit over the emitted stream: Note Ons pair with Note Offs
+# (no hung notes, no duplicate note-offs) and nothing outside Note On/Off and
+# System Real-Time ever appears (no MIDI CC output — out of scope). A final
+# guard suite pins the remaining out-of-scope exclusions host-observably: no
+# automatic mutation (100 ticks leave the working state byte-identical), no
+# user-definable scales (the fixed template table clamps, never invents), no
+# per-pattern undo history (the single global LIFO, pinned by AC5).
+#
+# GeneratorConfigView.cpp (the view's SDK-free model + render logic) is
+# compiled directly into this target (AC8); the render path targets the real
+# LedMatrix driver, so the test TU supplies host-safe no-op LedMatrix member
+# seams (the same pattern as test_generator_config_view) instead of compiling
+# the SDK-dependent LedMatrix.cpp. RegisterGenerators.cpp (the ONLY built-in
+# listing, AC1) arrives through genseq_emission. NONE of the Pico SDK libs
+# and NO RapidCheck. Lives in test/integration/ so the property-test glob
+# (test/*.cpp) never sweeps it.
+set(INTEGRATION_GENERATIVE_ENGINE_SRC
+    "${TEST_DIR}/integration/generative_engine_test.cpp")
+
+add_executable(genseq_integration_generative_engine
+    "${INTEGRATION_GENERATIVE_ENGINE_SRC}"
+    "${SRC_DIR}/ui/views/GeneratorConfigView.cpp"
+)
+target_include_directories(genseq_integration_generative_engine PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_integration_generative_engine PRIVATE genseq_emission)
+add_test(NAME generative_engine_test COMMAND genseq_integration_generative_engine)

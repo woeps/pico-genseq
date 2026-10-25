@@ -70,10 +70,13 @@ constexpr SequenceId kInvalidSequence = 0;  // 0 == no sequence
 // application pushing its own undo snapshot.
 constexpr uint8_t kAllPatterns = 0xFF;
 
-// Fixed storage for one mutation operator id (bytes incl. the NUL). Mirrors
-// PatternGenerativeState's kGeneratorIdCapacity so every registered operator
-// id is addressable; kept local so this header stays self-contained.
-constexpr uint8_t kMutationOpIdCapacity = 24;
+// Fixed storage for one mutation operator id (bytes incl. the NUL). The
+// bound is the LONGEST built-in operator id ("builtin.mutate-velocity-set",
+// 27 chars + NUL) — an id at or over this capacity is refused (emptied) by
+// copyMutationOpId, and the dispatch then rejects the command, so the
+// integration test sweep (AC2, over every built-in id) guards this
+// boundary. Kept local so this header stays self-contained.
+constexpr uint8_t kMutationOpIdCapacity = 28;
 
 // Level-1 timing override for ONE generative command invocation (FR10).
 // `mode` carries the OperationTimingMode ordinal (OperationTimingConfig.h):
