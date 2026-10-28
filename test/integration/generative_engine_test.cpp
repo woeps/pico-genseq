@@ -153,6 +153,21 @@ void LedMatrix::drawLabel(const char (&)[4], uint32_t) { dirty = true; }
 void LedMatrix::drawNote(const char (&)[4], uint32_t) { dirty = true; }
 }  // namespace hardware
 
+// ---------------------------------------------------------------------------
+// Host-safe commands:: seam (RECORDING double, ui-integration T5):
+// GeneratorConfigView.cpp posts its writes through
+// commands::sendGenParamCommand; command.cpp (the multicore FIFO) is not
+// compiled host-side, so this TU links against this recording definition
+// instead. The AC8 edit-path test asserts on the recorded payloads.
+// ---------------------------------------------------------------------------
+namespace commands {
+std::vector<std::vector<int>> g_genParamCalls;  // {patternIndex, paramId, value}
+
+void sendGenParamCommand(uint8_t patternIndex, uint8_t paramId, int16_t value) {
+    g_genParamCalls.push_back({patternIndex, paramId, value});
+}
+}  // namespace commands
+
 namespace {
 
 namespace midi = sequencer::midi;
@@ -401,6 +416,15 @@ struct Harness {
         m.cmd = commands::Command::STOP;
         seq.processCommand(m);
     }
+    // Commit the GLOBAL scale through the real command path (ui-integration
+    // T16: the single source every pattern's generation and mutation read).
+    void setScale(uint8_t root, uint8_t templateIndex) {
+        commands::CommandMessage m;
+        m.cmd = commands::Command::SCALE_SET;
+        m.scaleRoot = root;
+        m.scaleTemplateIndex = templateIndex;
+        seq.processCommand(m);
+    }
 
     uint64_t deadline(uint64_t n) const {
         return base + (n * 60ULL * 1000000ULL) / (bpm * 24ULL);
@@ -609,7 +633,9 @@ void test_ac1_test_only_generator_plays() {
 // intervals — for EVERY built-in template and root, through the real
 // command path (inbox -> dispatch -> operator), with the SCALE_LOCK
 // invariant requested (FR8) and the post-state verified against
-// common::Scale::containsNote.
+// common::Scale::containsNote. The selected scale is the ONE global
+// (ui-integration T16): committed through SCALE_SET and read by every
+// pattern's generation and mutation from the single source.
 // ---------------------------------------------------------------------------
 
 void test_ac2_scale_lock_all_templates_and_roots() {
@@ -646,8 +672,9 @@ void test_ac2_scale_lock_all_templates_and_roots() {
         for (int r = 0; r < 12; ++r) {
             ++combinations;
             sequencer::PatternGenerativeState* st = h.state(0);
-            st->scaleRoot = static_cast<uint8_t>(r);
-            st->scaleTemplateIndex = static_cast<uint8_t>(t);
+            // The scale is the ONE global (T16): committed through the
+            // command path, read by the mutation's scale lock.
+            h.setScale(static_cast<uint8_t>(r), static_cast<uint8_t>(t));
 
             // Seed the pitch material with values whose pitch class lies
             // OUTSIDE the (root, template) scale wherever the template has
@@ -736,8 +763,7 @@ void test_ac2_scale_lock_all_templates_and_roots() {
     // (same applied/rejected semantics; retry within the bounded budget).
     {
         sequencer::PatternGenerativeState* st = h.state(0);
-        st->scaleRoot = 0;
-        st->scaleTemplateIndex = 0;  // C major
+        h.setScale(0, 0);  // C major
         st->pitchSet.count = sequencer::kGenerativeSetCapacity;
         for (uint8_t i = 0; i < sequencer::kGenerativeSetCapacity; ++i) {
             st->pitchSet.values[i] =
@@ -829,9 +855,11 @@ void test_ac3_modulation_every_ui_parameter() {
     // --- Part A: every per-pattern parameter ------------------------------
     for (uint8_t id = 1; id < sequencer::kParamIdCount; ++id) {
         const sequencer::ParamInfo* info = sequencer::paramInfoOf(id);
-        check(info != nullptr && info->scope == sequencer::ParameterScope::Pattern,
-              "ac3: the swept id names a per-pattern parameter");
+        check(info != nullptr, "ac3: the swept id names a real parameter");
         if (info == nullptr) continue;
+        // Global-scope parameters (BPM + the global scale pair) are swept
+        // in Part B; this part covers only the per-pattern scope.
+        if (info->scope != sequencer::ParameterScope::Pattern) continue;
 
         sequencer::ParameterAddress address;
         address.scope = sequencer::ParameterScope::Pattern;
@@ -1433,9 +1461,10 @@ void test_ac7_timing_policy() {
 // ---------------------------------------------------------------------------
 // AC8: the capability-driven GeneratorConfigView shows ONLY the controls
 // the selected generator declares. The view is constructed over the
-// harness's LIVE registry (built-ins + the two test-only plugins) and the
-// SEQUENCER'S OWN bound ParameterBus, so its edits write into the same
-// working state the transport reads.
+// harness's LIVE registry (built-ins + the two test-only plugins); its
+// edits cross to the sequencer as GEN_PARAM_SET COMMANDS (ui-integration
+// T5) — the view holds NO ParameterBus reference — so the full-stack edit
+// path here is the same command hop the firmware UI takes.
 // ---------------------------------------------------------------------------
 
 void test_ac8_capability_driven_controls() {
@@ -1446,7 +1475,7 @@ void test_ac8_capability_driven_controls() {
           "ac8: the test-only plugins register alongside the built-ins");
 
     hardware::LedMatrix matrix{16};
-    ui::GeneratorConfigView view(h.registry, h.seq.parameterBus(), matrix);
+    ui::GeneratorConfigView view(h.registry, matrix);
 
     // Capability-filtered generator lists per role: a role offers exactly
     // the registered generators whose capability set contains its bit.
@@ -1533,38 +1562,54 @@ void test_ac8_capability_driven_controls() {
     check(view.controlCount() == 0,
           "ac8: a role without a generator shows no controls");
 
-    // Full-stack edit path: an UP key press on the Euclidean Steps control
-    // writes through the ParameterBus BASE value into the LIVE sequencer
-    // working state (the same state the transport dispatches from).
+    // Full-stack edit path (ui-integration T5): the view holds NO
+    // ParameterBus reference — an UP key press on the Euclidean Steps
+    // control posts a GEN_PARAM_SET COMMAND onto the cross-core queue,
+    // and the sequencer-side handler applies it as a ParameterBus BASE
+    // write into the LIVE working state (the same state the transport
+    // dispatches from).
     view.selectRole(GeneratorRole::GATE);
     check(view.selectGeneratorForRole(
               GeneratorRole::GATE, static_cast<uint8_t>(euclideanIndex)),
           "ac8: re-selecting the Euclidean generator succeeds");
     check(view.selectControl(0), "ac8: the Steps control is selectable");
 
-    sequencer::ParameterAddress stepsAddress;
-    stepsAddress.scope = sequencer::ParameterScope::Pattern;
-    stepsAddress.patternIndex = 0;
-    stepsAddress.paramId = sequencer::ParamId::GateSteps;
-    // The UI write path: a committed base value (the working state starts
-    // zeroed; users set the value through the same bus surface).
-    check(h.seq.parameterBus().setBase(stepsAddress, 16),
-          "ac8: the Steps base is set through the bus write path");
-    check(h.state(0)->generatorParams[static_cast<uint8_t>(GeneratorRole::GATE)]
-                              [0] == 16,  // the Euclidean generator's Steps param id
-          "ac8: the base write reaches the live sequencer working state");
-
+    commands::g_genParamCalls.clear();
     ui::state::UIState uiState;  // selectedPattern == 0
     const ui::events::Event up =
         ui::events::Event::keyPressed(ui::KeyId::UP, ui::mod::NONE, 0);
     view.handleEvent(uiState, up);
+
+    // Core0 posted exactly one GEN_PARAM_SET: the UI cache starts at the
+    // Steps factory default (16), so the press carries 17.
+    check(commands::g_genParamCalls.size() == 1,
+          "ac8: the key press posts exactly one GEN_PARAM_SET command");
+    const std::vector<int> posted = commands::g_genParamCalls.back();
+    check(posted.size() == 3 && posted[0] == 0 &&
+              posted[1] == static_cast<int>(sequencer::ParamId::GateSteps) &&
+              posted[2] == 17,
+          "ac8: the command carries (pattern 0, GateSteps, 17) from the UI cache");
+
+    // Core1 applies the decoded message — the same CommandMessage shape
+    // the multicore FIFO delivers — through the sequencer's public API.
+    commands::CommandMessage paramSet;
+    paramSet.cmd = commands::Command::GEN_PARAM_SET;
+    paramSet.param1 = static_cast<uint8_t>(posted[0]);
+    paramSet.param2 = static_cast<uint8_t>(posted[1]);
+    paramSet.paramValue = static_cast<int16_t>(posted[2]);
+    h.seq.processCommand(paramSet);
+
+    sequencer::ParameterAddress stepsAddress;
+    stepsAddress.scope = sequencer::ParameterScope::Pattern;
+    stepsAddress.patternIndex = 0;
+    stepsAddress.paramId = sequencer::ParamId::GateSteps;
     check(h.seq.parameterBus().baseValue(stepsAddress) == 17,
-          "ac8: an UP key press adjusts the control through the live bus (+1)");
+          "ac8: the applied command writes the live bus BASE value (+1)");
     check(h.state(0)->generatorParams[static_cast<uint8_t>(GeneratorRole::GATE)]
                               [0] == 17,  // the Euclidean generator's Steps param id
           "ac8: the edit reached the LIVE sequencer working state");
 
-    // The edit is a BASE write: no modulation overlay was armed by the view.
+    // The applied edit is a BASE write: no modulation overlay was armed.
     check(!h.seq.parameterBus().hasOverlay(stepsAddress),
           "ac8: the view never arms a modulation overlay");
 }

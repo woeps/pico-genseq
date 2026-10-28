@@ -5,7 +5,7 @@
 //   - MutationConstraints: the FR7 target bitmask set/test/clear for every
 //     target, the FR6 intensity clamped to 0-127, the FR8 distance-limit
 //     helper over two PatternGenerativeState snapshots, and the FR8
-//     invariant checks (scale lock via the T1 Scale, locked fields,
+//     invariant checks (scale lock via the request's global scale, locked
 //     preserved pulse count);
 //   - IMutationOperator: a test-only stub operator reports its
 //     supportedTargets, its changed-target mask and its status
@@ -75,8 +75,8 @@ const MutationTarget kTargets[] = {
     MutationTarget::EUCLIDEAN_PARAMS,
 };
 
-// A well-formed working state: C-E-G pitch material (in the default C-Major
-// scale constraint), two velocities, two durations.
+// A well-formed working state: C-E-G pitch material (in the factory global
+// C-Major scale), two velocities, two durations.
 PatternGenerativeState majorPitchState() {
     PatternGenerativeState s;
     s.pitchSet.count = 3;
@@ -208,11 +208,6 @@ void test_distance_limit() {
           "one changed generator parameter costs distance 1");
 
     b = a;
-    b.scaleRoot = 7;
-    check(sequencer::mutationDistance(a, b) == 1,
-          "a changed scale root costs distance 1");
-
-    b = a;
     b.setGeneratorId(GeneratorRole::GATE, "fake.gate");
     check(sequencer::mutationDistance(a, b) == 1,
           "a changed generator assignment costs distance 1");
@@ -253,7 +248,9 @@ void test_distance_limit() {
 void test_invariants() {
     const PatternGenerativeState base = majorPitchState();
 
-    // Scale lock (AC2): every pitch must stay in the pattern's scale.
+    // Scale lock (AC2): every pitch must stay in the GLOBAL scale the
+    // request carries (ui-integration T16 — never a per-pattern field).
+    // The factory default is C-Major, which majorPitchState() is in.
     MutationConstraints scaleLock;
     scaleLock.setInvariant(MutationInvariant::SCALE_LOCK);
     check(scaleLock.hasInvariant(MutationInvariant::SCALE_LOCK),
@@ -278,6 +275,22 @@ void test_invariants() {
     velocityOnly.velocitySet.values[0] = 90;
     check(scaleLock.invariantsHold(base, velocityOnly),
           "a non-pitch change never trips the scale lock");
+
+    // The check reads the REQUEST's global scale, not the factory default:
+    // under a G-Major request, F (in C-Major) is the out-of-scale note.
+    MutationConstraints gLock;
+    gLock.setInvariant(MutationInvariant::SCALE_LOCK);
+    gLock.scale = common::Scale(7, 0);  // G Major: G A B C D E F#
+    PatternGenerativeState gMajor = base;
+    gMajor.pitchSet.values[0] = 67;  // G
+    gMajor.pitchSet.values[1] = 71;  // B
+    gMajor.pitchSet.values[2] = 74;  // D
+    check(gLock.invariantsHold(gMajor, gMajor),
+          "in-scale material satisfies the request's global scale");
+    PatternGenerativeState fNatural = gMajor;
+    fNatural.pitchSet.values[1] = 65;  // F natural: in C-Major, NOT in G-Major
+    check(!gLock.invariantsHold(gMajor, fNatural),
+          "the lock checks the request's global scale, not the factory default");
 
     // Locked fields: pitch contents.
     MutationConstraints lockContents;
@@ -351,16 +364,9 @@ void test_invariants() {
     check(lockEuclid.invariantsHold(euclid, pitchParam),
           "a pitch-role parameter change leaves the gate-role euclidean lock satisfied");
 
-    // Locked fields: scale and generator assignments.
-    MutationConstraints lockScale;
-    lockScale.setInvariant(MutationInvariant::LOCK_SCALE);
-    PatternGenerativeState rekeyed = base;
-    rekeyed.scaleRoot = 7;
-    check(!lockScale.invariantsHold(base, rekeyed),
-          "a root change violates the scale-field lock");
-    check(lockScale.invariantsHold(base, base),
-          "an untouched scale satisfies the field lock");
-
+    // Locked fields: generator assignments. (The former LOCK_SCALE bit is
+    // gone — ui-integration T16: the scale is a global no mutation can
+    // touch, so there is no per-pattern scale left to lock.)
     MutationConstraints lockGenerators;
     lockGenerators.setInvariant(MutationInvariant::LOCK_GENERATORS);
     PatternGenerativeState regen = base;
@@ -393,11 +399,11 @@ void test_invariants() {
     // clearInvariant removes one bit without touching the others.
     MutationConstraints clearable;
     clearable.setInvariant(MutationInvariant::SCALE_LOCK);
-    clearable.setInvariant(MutationInvariant::LOCK_SCALE);
+    clearable.setInvariant(MutationInvariant::LOCK_GENERATORS);
     clearable.clearInvariant(MutationInvariant::SCALE_LOCK);
     check(!clearable.hasInvariant(MutationInvariant::SCALE_LOCK),
           "clearInvariant clears the requested bit");
-    check(clearable.hasInvariant(MutationInvariant::LOCK_SCALE),
+    check(clearable.hasInvariant(MutationInvariant::LOCK_GENERATORS),
           "clearInvariant leaves the other bits set");
 }
 

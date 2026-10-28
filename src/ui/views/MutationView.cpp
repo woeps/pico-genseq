@@ -1,10 +1,12 @@
 // Mutation trigger view (generative-engine-expansion task 20, FR5-FR10,
-// FR15). See MutationView.h for the design; this translation unit holds the
-// request-assembly logic, the CommandInbox posting and the key-event front
-// end.
+// FR15; refactored onto the command queue by ui-integration T6). See
+// MutationView.h for the design; this translation unit holds the fixed
+// metadata copy of the built-in operators, the request-assembly logic,
+// the command-queue posting and the key-event front end.
 
 #include "MutationView.h"
 
+#include "../../commands/command.h"
 #include "../Types.h"
 
 #include <cstdio>
@@ -19,7 +21,49 @@ constexpr char kOperatorLabel[4] = {'O', 'p', 'r', '\0'};
 constexpr char kTargetLabel[4] = {'T', 'g', 't', '\0'};
 constexpr char kIntensityLabel[4] = {'I', 'n', 't', '\0'};
 constexpr char kTimingLabel[4] = {'T', 'i', 'm', '\0'};
-constexpr char kNoneLabel[4] = {'N', 'o', 'n', '\0'};
+
+// Core0's OWN fixed metadata copy of the built-in mutation operators
+// (ui-integration T6): each operator's stable id, display name and
+// supported-target mask, in the SAME registration order the sequencer
+// core's registerBuiltInMutations() uses. The sequencer keeps its own
+// registry and resolves the operator INDEX a MUTATE command carries
+// through it — no operator object, no registry and no other data
+// structure crosses the cores; both sides agree only on this order
+// (test_mutation_view pins the mirror against the real registry).
+struct OperatorInfo {
+    const char* id;
+    const char* name;
+    sequencer::MutationTargetMask targets;
+};
+
+// The shared target mask of the three transform operators (mirrors
+// TransformMutations.h's kTransformTargets: they reorder the pitch
+// ordering, the velocity ordering and the gate ordering).
+constexpr sequencer::MutationTargetMask kTransformTargets =
+    sequencer::maskOf(sequencer::MutationTarget::PITCH_ORDERING) |
+    sequencer::maskOf(sequencer::MutationTarget::VELOCITY_ORDERING) |
+    sequencer::maskOf(sequencer::MutationTarget::EUCLIDEAN_PARAMS);
+
+constexpr OperatorInfo kBuiltInOperators[] = {
+    {"builtin.mutate-density", "Density",
+     sequencer::maskOf(sequencer::MutationTarget::GATE_DENSITY)},
+    {"builtin.mutate-pitch-set", "Pitch Set",
+     sequencer::maskOf(sequencer::MutationTarget::PITCH_CONTENTS)},
+    {"builtin.mutate-velocity-set", "Velocity Set",
+     sequencer::maskOf(sequencer::MutationTarget::VELOCITY_CONTENTS)},
+    {"builtin.mutate-duration", "Duration",
+     sequencer::maskOf(sequencer::MutationTarget::NOTE_DURATION)},
+    {"builtin.mutate-euclidean", "Euclidean Params",
+     sequencer::maskOf(sequencer::MutationTarget::EUCLIDEAN_PARAMS)},
+    {"builtin.rotate", "Rotate", kTransformTargets},
+    {"builtin.invert", "Invert", kTransformTargets},
+    {"builtin.shuffle", "Shuffle", kTransformTargets},
+    {"builtin.mutate-all", "Mutate All", sequencer::kAllMutationTargets},
+    {"builtin.evolve", "Evolve", sequencer::kAllMutationTargets},
+};
+
+constexpr uint8_t kBuiltInOperatorCount =
+    sizeof(kBuiltInOperators) / sizeof(kBuiltInOperators[0]);
 
 // The seven FR7 targets in the fixed documented order the target cursor
 // walks (matches MutationConstraints.h's bit order).
@@ -51,22 +95,26 @@ uint8_t clampIntensity(int value) {
 
 }  // namespace
 
-MutationView::MutationView(sequencer::MutationOperatorRegistry& registry,
-                           sequencer::CommandInbox& inbox,
-                           hardware::LedMatrix& ledMatrix)
-    : registry_(registry), inbox_(inbox), ledMatrix_(ledMatrix) {
-    // A fresh view shows the first registered operator with all of its
-    // supported targets selected (an empty registry simply has none).
+MutationView::MutationView(hardware::LedMatrix& ledMatrix) : ledMatrix_(ledMatrix) {
+    // A fresh view shows the first built-in operator with all of its
+    // supported targets selected.
     refreshOperatorDefaults();
 }
 
 // --- operator selection (FR5) -----------------------------------------------------
 
-uint8_t MutationView::operatorCount() const { return registry_.count(); }
+uint8_t MutationView::operatorCount() { return kBuiltInOperatorCount; }
 
-const sequencer::IMutationOperator* MutationView::operatorAt(
-    uint8_t index) const {
-    return registry_.at(index);
+const char* MutationView::operatorIdAt(uint8_t index) {
+    return (index < kBuiltInOperatorCount) ? kBuiltInOperators[index].id : "";
+}
+
+const char* MutationView::operatorNameAt(uint8_t index) {
+    return (index < kBuiltInOperatorCount) ? kBuiltInOperators[index].name : "";
+}
+
+sequencer::MutationTargetMask MutationView::operatorTargetsAt(uint8_t index) {
+    return (index < kBuiltInOperatorCount) ? kBuiltInOperators[index].targets : 0;
 }
 
 bool MutationView::selectOperator(uint8_t index) {
@@ -77,21 +125,19 @@ bool MutationView::selectOperator(uint8_t index) {
 }
 
 void MutationView::cycleOperator(int delta) {
-    const int count = operatorCount();
-    if (count == 0) return;  // nothing to cycle
+    // The fixed metadata table is never empty (it is a compile-time
+    // constant), so the wrap always lands on a real operator.
     operatorIndex_ = static_cast<uint8_t>(
-        wrapMod(static_cast<int>(operatorIndex_) + delta, count));
+        wrapMod(static_cast<int>(operatorIndex_) + delta, operatorCount()));
     refreshOperatorDefaults();
 }
 
 const char* MutationView::selectedOperatorId() const {
-    const sequencer::IMutationOperator* op = selectedOperator();
-    return (op != nullptr) ? op->id() : "";
+    return operatorIdAt(operatorIndex_);
 }
 
 const char* MutationView::selectedOperatorName() const {
-    const sequencer::IMutationOperator* op = selectedOperator();
-    return (op != nullptr) ? op->name() : "";
+    return operatorNameAt(operatorIndex_);
 }
 
 uint8_t MutationView::selectedOperatorIndex() const { return operatorIndex_; }
@@ -99,8 +145,7 @@ uint8_t MutationView::selectedOperatorIndex() const { return operatorIndex_; }
 // --- target selection (FR7, restricted by FR8 operator control) -------------------
 
 sequencer::MutationTargetMask MutationView::supportedTargets() const {
-    const sequencer::IMutationOperator* op = selectedOperator();
-    return (op != nullptr) ? op->supportedTargets() : 0;
+    return operatorTargetsAt(operatorIndex_);
 }
 
 sequencer::MutationTargetMask MutationView::targetMask() const {
@@ -128,7 +173,7 @@ void MutationView::clearTargets() { targetMask_ = 0; }
 
 // --- the FR7 target cursor ---------------------------------------------------------
 
-sequencer::MutationTarget MutationView::targetAt(uint8_t index) const {
+sequencer::MutationTarget MutationView::targetAt(uint8_t index) {
     if (index >= sequencer::kMutationTargetCount) {
         return sequencer::MutationTarget::NONE;  // total accessor
     }
@@ -189,38 +234,32 @@ void MutationView::cycleTimingOverride(int delta) {
     }
 }
 
-// --- actions: posts to the CommandInbox (FR5/FR9/FR15) ---------------------------
+// --- actions: posts over the command queue (FR5/FR9/FR15) -----------------------
 
-sequencer::SequenceId MutationView::trigger(uint8_t patternIndex) {
-    const sequencer::IMutationOperator* op = selectedOperator();
-    if (op == nullptr) {
-        // Nothing is registered: a rejected action, nothing posted.
-        lastActionRejected_ = true;
-        return sequencer::kInvalidSequence;
-    }
-    return post(sequencer::makeMutateCommand(op->id(), patternIndex, targetMask_,
-                                             intensity_, /*invariants=*/0,
-                                             sequencer::kUnlimitedMutationDistance,
-                                             timingOverrideForPost()));
+void MutationView::trigger(uint8_t patternIndex) {
+    // The MUTATE command (ui-integration T6): the ONLY cross-core path for
+    // a mutation request. The operator goes by its INDEX into the shared
+    // registration order; the FR7 mask, the FR6 intensity and the packed
+    // FR10 override ride the command's payload words.
+    commands::sendMutateCommand(operatorIndex_, patternIndex, targetMask_, intensity_,
+                               packedTimingForPost());
 }
 
-sequencer::SequenceId MutationView::triggerAllPatterns() {
-    return trigger(sequencer::kAllPatterns);
+void MutationView::triggerAllPatterns() {
+    trigger(commands::ALL_PATTERNS);
 }
 
-sequencer::SequenceId MutationView::requestUndo() {
-    return post(sequencer::makeUndoCommand(timingOverrideForPost()));
+void MutationView::requestUndo() {
+    commands::sendUndoCommand(packedTimingForPost());
 }
 
-sequencer::SequenceId MutationView::requestRevert() {
-    return post(sequencer::makeRevertCommand(timingOverrideForPost()));
+void MutationView::requestRevert() {
+    commands::sendRevertCommand(packedTimingForPost());
 }
 
-sequencer::SequenceId MutationView::requestKeep() {
-    return post(sequencer::makeKeepCommand(timingOverrideForPost()));
+void MutationView::requestKeep() {
+    commands::sendKeepCommand(packedTimingForPost());
 }
-
-bool MutationView::lastActionRejected() const { return lastActionRejected_; }
 
 // --- field selection ------------------------------------------------------------------
 
@@ -247,9 +286,18 @@ void MutationView::onEnter() {
 
 state::UIState MutationView::handleEvent(const state::UIState& state,
                                          const events::Event& event) {
+    // ESCAPE (pressed once) returns to the PATTERNS parent view; held
+    // repeats and releases are ignored, matching the sibling views.
+    if (event.type == events::EventType::KEY_PRESSED &&
+        event.data.key.id == KeyId::ESCAPE) {
+        state::UIState next = state;
+        next.currentView = state::ViewId::PATTERNS;
+        return next;
+    }
+
     // The request is assembled view-locally and handed over as a command;
-    // UIState carries no mutation fields, so every path here returns the
-    // state unchanged.
+    // UIState carries no mutation fields, so every other path here returns
+    // the state unchanged.
     if (event.type != events::EventType::KEY_PRESSED &&
         event.type != events::EventType::KEY_HELD) {
         return state;
@@ -297,10 +345,6 @@ state::UIState MutationView::handleEvent(const state::UIState& state,
 void MutationView::render(const state::UIState& state) {
     (void)state;  // the request state is view-local (see the class comment)
     ledMatrix_.clear();
-    if (operatorCount() == 0) {
-        ledMatrix_.drawLabel(kNoneLabel, 0xFFFFEE00);
-        return;
-    }
     switch (field_) {
         case Field::Operator:
             ledMatrix_.drawLabel(kOperatorLabel, 0xFFFFEE00);
@@ -324,18 +368,9 @@ void MutationView::render(const state::UIState& state) {
                 0xFFEE0011);
             break;
     }
-    if (lastActionRejected_) {
-        // The rejected-action indicator: a lit corner pixel (a full inbox /
-        // an impossible request), never a blocked retry.
-        ledMatrix_.setPixel(15, 15, 0xFFFF0000);
-    }
 }
 
 // --- private helpers -----------------------------------------------------------------
-
-const sequencer::IMutationOperator* MutationView::selectedOperator() const {
-    return registry_.at(operatorIndex_);  // nullptr past the count (total)
-}
 
 void MutationView::refreshOperatorDefaults() {
     // A newly selected operator starts with ALL of its supported targets
@@ -345,20 +380,13 @@ void MutationView::refreshOperatorDefaults() {
     targetMask_ = supportedTargets();
 }
 
-sequencer::GenerativeTimingOverride MutationView::timingOverrideForPost() const {
-    sequencer::GenerativeTimingOverride timing{};
-    if (timingActive_) {
-        timing.active = true;
-        timing.mode = static_cast<uint8_t>(timingMode_);
-    }
-    return timing;
-}
-
-sequencer::SequenceId MutationView::post(sequencer::InboxCommand cmd) {
-    // tryPush never blocks: a full ring returns kInvalidSequence at once.
-    const sequencer::SequenceId seq = inbox_.tryPush(cmd);
-    lastActionRejected_ = (seq == sequencer::kInvalidSequence);
-    return seq;
+uint8_t MutationView::packedTimingForPost() const {
+    // The wire form of the FR10 override (command.h): bit 0 active,
+    // bits 1-2 the OperationTimingMode ordinal. An ABSENT override packs
+    // to 0, so the sequencer's three-level policy applies its own levels.
+    if (!timingActive_) return 0;
+    return commands::packGenerativeTiming(true,
+                                           static_cast<uint8_t>(timingMode_));
 }
 
 void MutationView::adjustSelectedField(int step) {

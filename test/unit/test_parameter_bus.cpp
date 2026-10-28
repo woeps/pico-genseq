@@ -2,7 +2,8 @@
 // FR13, AC3).
 //
 // Validates the parameter addressing that lets modulation target ANY
-// UI-settable parameter, including global BPM:
+// UI-settable parameter, including the global pair (BPM and the global
+// scale, ui-integration T3: FR12/AC10/AC11):
 //   - ParameterAddress: scope (FR13: per-pattern by default, global the
 //     option) + pattern slot + a ParamId from the task-16 parameter table;
 //     every table entry (the UI-settable scalars — global BPM, the Euclidean
@@ -91,8 +92,9 @@ ParameterAddress canonicalAddress(uint16_t paramId) {
 // --- 1. every UI-settable parameter resolves with min/max metadata ---------
 
 void test_parameter_table_metadata() {
-    check(kParamIdCount == 17,
-          "the table covers BPM + 10 generator/scale params + 4 set params");
+    check(kParamIdCount == 19,
+          "the table covers BPM + the global scale pair + 10 generator/scale "
+          "params + 4 set params");
 
     for (uint16_t id = 0; id < kParamIdCount; ++id) {
         const ParamInfo* info = paramInfoOf(id);
@@ -156,8 +158,11 @@ void test_address_validity() {
     check(validAddress(bpm), "global BPM resolves under the global scope");
 
     // FR13: every per-pattern parameter resolves under the PATTERN scope,
-    // in every pattern slot, and only there.
+    // in every pattern slot, and only there (the global scale pair joins
+    // BPM in the Global scope — see test_global_scale_parameters).
     for (uint16_t id = 1; id < kParamIdCount; ++id) {
+        const ParamInfo* info = paramInfoOf(id);
+        if (info != nullptr && info->scope == ParameterScope::Global) continue;
         ParameterAddress a = canonicalAddress(id);
         check(validAddress(a), "every per-pattern parameter resolves in slot 0");
         a.patternIndex = ParameterBus::kPatternCount - 1;
@@ -172,6 +177,12 @@ void test_address_validity() {
     mismatched.paramId = ParamId::GlobalBpm;
     check(!validAddress(mismatched),
           "the global-only BPM is rejected under the per-pattern scope");
+    mismatched.paramId = ParamId::GlobalScaleRoot;
+    check(!validAddress(mismatched),
+          "the global-only scale root is rejected under the per-pattern scope");
+    mismatched.paramId = ParamId::GlobalScaleTemplate;
+    check(!validAddress(mismatched),
+          "the global-only scale template is rejected under the per-pattern scope");
 
     // The pattern index is bounded by the fixed pattern capacity.
     ParameterAddress oob;
@@ -462,7 +473,120 @@ void test_invalid_addresses_rejected() {
     check(unbound.baseValue(bpm) == 120, "the late-bound bus reads the live base");
 }
 
-// --- 9. the real Sequencer exposes the bus over its own live state ----------
+// --- 9. the global scale pair (ui-integration T3: FR12/AC10/AC11) -----------
+
+void test_global_scale_parameters() {
+    // Table metadata: Global scope, the same bounds the UI enforces.
+    const ParamInfo* root =
+        paramInfoOf(static_cast<uint16_t>(ParamId::GlobalScaleRoot));
+    const ParamInfo* tmpl =
+        paramInfoOf(static_cast<uint16_t>(ParamId::GlobalScaleTemplate));
+    check(root != nullptr && root->scope == ParameterScope::Global,
+          "the global scale root is a GLOBAL-scope parameter");
+    check(root != nullptr && root->minValue == 0 && root->maxValue == 11,
+          "the global scale root spans the 12 pitch classes");
+    check(root != nullptr && root->defaultValue == 0,
+          "the global scale root defaults to C");
+    check(tmpl != nullptr && tmpl->scope == ParameterScope::Global,
+          "the global scale template is a GLOBAL-scope parameter");
+    check(tmpl != nullptr && tmpl->minValue == 0 &&
+              tmpl->maxValue ==
+                  static_cast<int16_t>(common::scaleTemplateCount() - 1),
+          "the global scale template spans the fixed built-in template table");
+
+    // Validity: both halves resolve under the Global scope (the pattern
+    // index is ignored there).
+    ParameterAddress rootAddress;
+    rootAddress.scope = ParameterScope::Global;
+    rootAddress.patternIndex = 15;  // ignored by the Global scope
+    rootAddress.paramId = ParamId::GlobalScaleRoot;
+    ParameterAddress tmplAddress;
+    tmplAddress.scope = ParameterScope::Global;
+    tmplAddress.paramId = ParamId::GlobalScaleTemplate;
+    check(validAddress(rootAddress),
+          "the global scale root resolves under the global scope");
+    check(validAddress(tmplAddress),
+          "the global scale template resolves under the global scope");
+
+    // readBase routes to the TransportTimeline: the timeline IS the single
+    // source of the global scale.
+    TransportTimeline timeline;
+    WorkingStateManager working;
+    ParameterBus bus;
+    check(bus.bind(&timeline, &working), "the bus binds to live sequencer state");
+    check(bus.baseValue(rootAddress) == 0,
+          "the scale root base reads the timeline");
+    check(bus.baseValue(tmplAddress) == 0,
+          "the scale template base reads the timeline");
+    check(timeline.setScale(5, 3), "seed the timeline's global scale");
+    check(bus.baseValue(rootAddress) == 5, "the root base follows the timeline");
+    check(bus.baseValue(tmplAddress) == 3,
+          "the template base follows the timeline");
+
+    // writeBase routes to the TransportTimeline: setBase writes through to
+    // the timeline's single source, preserving the other half of the pair.
+    check(bus.setBase(rootAddress, 7), "setBase accepts the global root address");
+    check(timeline.scaleRoot() == 7,
+          "setBase writes the root through to the timeline");
+    check(timeline.scaleTemplateIndex() == 3, "a root write preserves the template");
+    check(bus.setBase(tmplAddress, 2),
+          "setBase accepts the global template address");
+    check(timeline.scaleTemplateIndex() == 2,
+          "setBase writes the template through to the timeline");
+    check(timeline.scaleRoot() == 7, "a template write preserves the root");
+    check(bus.baseValue(rootAddress) == 7, "the written root base reads back");
+    check(bus.baseValue(tmplAddress) == 2,
+          "the written template base reads back");
+
+    // setBase clamps into the UI range before it stores.
+    check(bus.setBase(rootAddress, 99), "setBase accepts an out-of-range root");
+    check(timeline.scaleRoot() == 11,
+          "setBase clamps the root to its range max");
+    check(bus.setBase(rootAddress, -9), "setBase accepts an under-range root");
+    check(timeline.scaleRoot() == 0,
+          "setBase clamps the root to its range min");
+    check(bus.setBase(tmplAddress, 999),
+          "setBase accepts an out-of-range template");
+    check(timeline.scaleTemplateIndex() ==
+              static_cast<uint8_t>(common::scaleTemplateCount() - 1),
+          "setBase clamps the template to its range max");
+
+    // Overlays: the modulation write path works on the global scale with
+    // Global scope (AC11) and never moves the stored scale.
+    check(bus.setOverlay(rootAddress, 9), "setOverlay accepts the global root");
+    check(bus.effectiveValue(rootAddress) == 9,
+          "the overlay drives the effective root");
+    check(timeline.scaleRoot() == 0,
+          "the overlay never modifies the stored root");
+    check(bus.baseValue(rootAddress) == 0,
+          "the overlay leaves baseValue untouched");
+    check(bus.clearOverlay(rootAddress), "clearOverlay accepts the global root");
+    check(bus.effectiveValue(rootAddress) == 0,
+          "clearing restores the scale root base");
+    check(bus.setOverlay(tmplAddress, 4),
+          "setOverlay accepts the global template");
+    check(bus.effectiveValue(tmplAddress) == 4,
+          "the overlay drives the effective template");
+    check(bus.clearOverlay(tmplAddress),
+          "clearOverlay accepts the global template");
+
+    // The sequencer's OWN bus addresses its OWN timeline (the single
+    // source every pattern reads the global scale from).
+    FakeMonotonicClock clock{1000};
+    RecordingMidiOutput out;
+    sequencer::GeneratorRegistry registry;
+    sequencer::Sequencer seq{out, clock, registry};
+    ParameterBus& seqBus = seq.parameterBus();
+    check(seqBus.setBase(rootAddress, 6),
+          "the sequencer's bus accepts the global root");
+    check(seqBus.setBase(tmplAddress, 4),
+          "the sequencer's bus accepts the global template");
+    check(seqBus.baseValue(rootAddress) == 6 &&
+              seqBus.baseValue(tmplAddress) == 4,
+          "the sequencer's own timeline backs the global scale pair");
+}
+
+// --- 10. the real Sequencer exposes the bus over its own live state ----------
 
 void test_sequencer_exposes_bound_bus() {
     FakeMonotonicClock clock{1000};
@@ -498,11 +622,19 @@ void test_sequencer_exposes_bound_bus() {
         sequencer::GeneratorRole::GATE, 0, 24);
     check(bus.baseValue(steps) == 24,
           "a working-state edit is visible through the bus (live backing)");
+    // The scale is the ONE global (ui-integration T16): a Pattern-scope
+    // scale address reads/writes the single global source, never a
+    // per-pattern field — the same timeline the Global-scope addresses
+    // read (FR13: every pattern reads the scale from the single source).
     ParameterAddress root;
     root.paramId = ParamId::ScaleRoot;
-    check(bus.setBase(root, 7), "the bus writes a per-pattern base");
-    check(seq.workingStateManager().working(0)->scaleRoot == 7,
-          "the bus base write reached the stored working state");
+    check(bus.setBase(root, 7), "the bus writes a pattern-scope scale base");
+    check(bus.baseValue(root) == 7, "the scale base reads back");
+    ParameterAddress globalRoot;
+    globalRoot.scope = ParameterScope::Global;
+    globalRoot.paramId = ParamId::GlobalScaleRoot;
+    check(bus.baseValue(globalRoot) == 7,
+          "a pattern-scope scale write reaches the ONE global source");
 
     // Modulation overlays never touch that stored state.
     check(bus.setOverlay(steps, 40), "arm an overlay through the sequencer's bus");
@@ -524,6 +656,7 @@ int main() {
     test_overlay_isolation_and_clear_all();
     test_modulation_target_binds_address();
     test_invalid_addresses_rejected();
+    test_global_scale_parameters();
     test_sequencer_exposes_bound_bus();
 
     if (failures == 0) {

@@ -45,4 +45,27 @@ void sendPitchSet(uint8_t patternIndex, uint8_t count,
 
 CommandMessage receiveCommand() { return {}; }
 
+void sendVelocitySet(uint8_t patternIndex, uint8_t count,
+                     common::PlayingOrder order,
+                     const std::vector<uint8_t>& velocities) {
+    CommandMessage msg;
+    msg.cmd = Command::PATTERN_VELOCITY_SET;
+    msg.param1 = patternIndex;
+    msg.pitchCount = static_cast<uint8_t>(
+        std::min(static_cast<size_t>(count), velocities.size()));
+    msg.pitchCount = std::min(msg.pitchCount, MAX_PITCH_SET_LENGTH);
+    msg.pitchOrder = order;
+    msg.pitches.assign(velocities.begin(),
+                       velocities.begin() + msg.pitchCount);
+    testing::sentCommands().push_back(msg);
+}
+
+void sendScaleCommand(uint8_t root, uint8_t templateIndex) {
+    CommandMessage msg;
+    msg.cmd = Command::SCALE_SET;
+    msg.param1 = root;
+    msg.param2 = templateIndex;
+    testing::sentCommands().push_back(msg);
+}
+
 } // namespace commands

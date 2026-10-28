@@ -1385,16 +1385,22 @@ add_test(NAME test_modulation_applier COMMAND genseq_test_modulation_applier)
 # (Euclidean -> steps/pulses/rotation, probability -> exactly the one
 # probability control, scale-aware pitch -> low/high note, duration -> its
 # four controls), a test-only stub generator with custom ParameterDefs
-# rendering its params WITHOUT view code changes, edits writing through the
-# ParameterBus BASE values into the per-pattern generative working state
-# (never arming a modulation overlay), and every edit clamped to the
-# ParameterDef min/max.
+# rendering its params WITHOUT view code changes, edits posting GEN_PARAM_SET
+# commands onto the cross-core queue (ui-integration T5 — verified through a
+# RECORDING commands::sendGenParamCommand host double; the view holds NO
+# ParameterBus reference and reads its own factory-seeded local UI cache),
+# the sequencer-side processCommand handler applying decoded messages as
+# per-pattern ParameterBus BASE writes (never arming a modulation overlay,
+# never a non-generator parameter), ESCAPE returning to the GATE_SET parent
+# view, and every edit clamped to the ParameterDef min/max.
 #
 # GeneratorConfigView.cpp (the view's SDK-free model + render logic) is
 # compiled directly into this target; its render path targets the real
-# LedMatrix driver, so the test TU supplies host-safe no-op LedMatrix member
-# seams (the same pattern as the reducer property test's commands:: seams)
-# instead of compiling the SDK-dependent LedMatrix.cpp. RegisterGenerators.cpp
+# LedMatrix driver and its writes target commands::sendGenParamCommand, so
+# the test TU supplies host-safe no-op LedMatrix member seams AND a RECORDING
+# commands::sendGenParamCommand double (the same pattern as the reducer
+# property test's commands:: seams) instead of compiling the SDK-dependent
+# LedMatrix.cpp / command.cpp. RegisterGenerators.cpp
 # (the ONLY built-in listing, AC1) arrives through genseq_emission. NONE of
 # the Pico SDK libs and NO RapidCheck.
 set(UNIT_GENERATOR_CONFIG_VIEW_SRC "${TEST_DIR}/unit/test_generator_config_view.cpp")
@@ -1407,27 +1413,30 @@ target_include_directories(genseq_test_generator_config_view PRIVATE ${EMISSION_
 target_link_libraries(genseq_test_generator_config_view PRIVATE genseq_emission)
 add_test(NAME test_generator_config_view COMMAND genseq_test_generator_config_view)
 
-# Task 19 (generative-engine-expansion): per-pattern scale selection UI view
-# (FR4).
+# Task 19 (generative-engine-expansion): per-pattern scale selection UI
+# view (FR4); ui-integration T8 — command-based writes.
 #
 # Validates the ScaleSelectionView: the root cycles through the 12 pitch
 # classes 0-11 with wrap in both directions (and through the key front end),
 # the scale index cycles through ALL built-in templates with the displayed
 # names taken verbatim from the common ScaleTemplates table (a total,
 # clamping name accessor; out-of-range selections refused, never clamped),
-# every selection writes the pattern's scaleRoot/scaleTemplateIndex through
-# the ParameterBus BASE values (the per-pattern generative working state;
-# never arming a modulation overlay), and changing pattern A's scale never
-# affects pattern B.
+# every committed selection posts ONE PATTERN_SCALE_SET command carrying
+# the pattern's full (root, template) pair onto the cross-core queue
+# (ui-integration T8 — verified through a RECORDING
+# commands::sendPatternScaleCommand host double; the view holds NO
+# ParameterBus reference and reads its own factory-seeded local UI cache),
+# refused selections cache and post nothing, changing pattern A's scale
+# never affects pattern B, and ESCAPE returns to the PATTERNS parent view.
 #
 # ScaleSelectionView.cpp (the view's SDK-free model + render logic) is
 # compiled directly into this target; its render path targets the real
-# LedMatrix driver, so the test TU supplies host-safe no-op LedMatrix member
-# seams (the same pattern as test_generator_config_view) instead of
-# compiling the SDK-dependent LedMatrix.cpp. The scale templates and the
-# parameter addressing/bus are header-only and SDK-free; the backing working
-# state arrives through genseq_emission. NONE of the Pico SDK libs and NO
-# RapidCheck.
+# LedMatrix driver and its writes target commands::sendPatternScaleCommand,
+# so the test TU supplies host-safe no-op LedMatrix member seams AND a
+# RECORDING commands::sendPatternScaleCommand double (the same pattern as
+# test_generator_config_view) instead of compiling the SDK-dependent
+# LedMatrix.cpp / command.cpp. The scale templates are header-only and
+# SDK-free. NONE of the Pico SDK libs and NO RapidCheck.
 set(UNIT_SCALE_SELECTION_VIEW_SRC "${TEST_DIR}/unit/test_scale_selection_view.cpp")
 
 add_executable(genseq_test_scale_selection_view
@@ -1438,31 +1447,70 @@ target_include_directories(genseq_test_scale_selection_view PRIVATE ${EMISSION_I
 target_link_libraries(genseq_test_scale_selection_view PRIVATE genseq_emission)
 add_test(NAME test_scale_selection_view COMMAND genseq_test_scale_selection_view)
 
-# Task 20 (generative-engine-expansion): mutation trigger UI view (FR5-
-# FR10, FR15).
+# Task T14 (ui-integration): Settings global scale (FR4, FR12-FR14, AC7/AC10).
 #
-# Validates the MutationView against the REAL mutation plugin contract and
-# the bounded CommandInbox: the operator list enumerated exactly from
-# MutationOperatorRegistry (id/name verbatim, over-range refused), the
-# target mask restricted to the selected operator's supportedTargets
-# (unsupported toggles refused, operator switches re-masked — FR8 operator
-# control), the FR6 intensity clamped to 0-127, Trigger posting a MutateCmd
-# with the correct payload (operator id, pattern index / the all-patterns
-# sentinel, target mask, intensity, default invariants / distance),
-# Undo/Revert/Keep posting the matching commands, the FR10 level-1 timing
-# override absent by default (levels 2/3 apply) and carried in the command
-# when set, and a full inbox surfaced as a rejected action without
-# blocking (kInvalidSequence, nothing enqueued, the rejection latched for
-# the render path).
+# Validates the combined Scale field on the global SettingsView and the
+# Reducer::setScale state setter: ENTER cycles the edited field (bPM <->
+# Scale), on the Scale field UP/DOWN adjust the global scaleRoot with wrap
+# across the 12 pitch classes (rendered as note names C..B) and LEFT/RIGHT
+# adjust the global scaleTemplateIndex with wrap across ALL built-in
+# templates (rendered as their ScaleTemplates names), every change dispatches
+# ONE SCALE_SET command through the Reducer (setScale ->
+# commands::sendScaleCommand — verified through a RECORDING host double; the
+# view holds NO ParameterBus reference and touches only the UIState mirror,
+# honoring the no-shared-state-between-cores constraint), the reducer wraps
+# the cyclic root and clamps the template to the fixed table, and the BPM
+# field keeps its BPM_SET behavior.
+#
+# SettingsView.cpp + Reducer.cpp are compiled directly into this target; the
+# render path targets the real LedMatrix driver and the writes target the
+# commands:: FIFO seam, so the test TU supplies a RECORDING LedMatrix double,
+# a no-op Led double, a RECORDING commands::sendScaleCommand double, a
+# RECORDING commands::sendCommand double and no-op sendGateSet/sendPitchSet/
+# sendVelocitySet doubles (the same pattern as test_scale_selection_view)
+# instead of compiling the SDK-dependent LedMatrix.cpp/Led.cpp/command.cpp.
+# NONE of the Pico SDK libs and NO RapidCheck.
+set(UNIT_SETTINGS_VIEW_SRC "${TEST_DIR}/unit/test_settings_view.cpp")
+
+add_executable(genseq_test_settings_view
+    "${UNIT_SETTINGS_VIEW_SRC}"
+    "${SRC_DIR}/ui/views/SettingsView.cpp"
+    "${SRC_DIR}/ui/state/Reducer.cpp"
+)
+target_include_directories(genseq_test_settings_view PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_test_settings_view PRIVATE genseq_emission)
+add_test(NAME test_settings_view COMMAND genseq_test_settings_view)
+
+# generative-engine-expansion task 20 / ui-integration T6: mutation trigger
+# UI view (FR5-FR10, FR15) on the command queue.
+#
+# Validates the MutationView against the command-queue contract: the view
+# holds NO registry and NO CommandInbox (no shared data between the cores)
+# — the metadata table it offers mirrors the REAL built-in registry
+# exactly (id/name/targets verbatim, same registration order — pinned
+# against registerBuiltInMutations), the target mask is restricted to the
+# selected operator's supportedTargets (FR8), the FR6 intensity is
+# clamped, and Trigger/Undo/Revert/Keep post their MUTATE/UNDO/REVERT/KEEP
+# commands — verified through RECORDING host doubles of the
+# commands::send* senders (command.cpp / the multicore FIFO is not compiled
+# host-side). ESCAPE returns the UIState to the PATTERNS parent view.
+# The target ALSO drives the sequencer core's FIFO generative handlers
+# directly (processCommand with the decoded CommandMessage): MUTATE
+# resolves the operator index through the sequencer's OWN registry and
+# applies to the working state (undo snapshot first), the timing override
+# routes (Immediate executes at once, the factory QuantizeBeat default
+# stages), the recovery commands drive the undo/revert/keep state model,
+# an unknown operator index is refused untouched, and the ALL_PATTERNS
+# sentinel fans out.
 #
 # MutationView.cpp (the view's SDK-free model + render logic) is compiled
 # directly into this target; its render path targets the real LedMatrix
 # driver, so the test TU supplies host-safe no-op LedMatrix member seams
 # (the same pattern as test_generator_config_view /
 # test_scale_selection_view) instead of compiling the SDK-dependent
-# LedMatrix.cpp. The mutation operator registry, the operators and the
-# CommandInbox are header-only and SDK-free. NONE of the Pico SDK libs and
-# NO RapidCheck.
+# LedMatrix.cpp. The mutation operator registry (header-only, SDK-free)
+# is included directly; the sequencer dispatch rides genseq_emission. NONE
+# of the Pico SDK libs and NO RapidCheck.
 set(UNIT_MUTATION_VIEW_SRC "${TEST_DIR}/unit/test_mutation_view.cpp")
 
 add_executable(genseq_test_mutation_view
@@ -1473,29 +1521,37 @@ target_include_directories(genseq_test_mutation_view PRIVATE ${EMISSION_INCLUDE_
 target_link_libraries(genseq_test_mutation_view PRIVATE genseq_emission)
 add_test(NAME test_mutation_view COMMAND genseq_test_mutation_view)
 
-# Task 21 (generative-engine-expansion): modulation pattern/target UI view
-# (FR11-FR14).
+# generative-engine-expansion task 21 / ui-integration T7: the modulation
+# pattern list + target configuration view (FR7-FR14, FR16), refactored
+# onto the command queue.
 #
-# Validates the ModulationPatternView: the pattern editor's variable length
-# clamped to 1-16 (writing through to the global ModulationPattern), only
-# steps within the current length editable/highlighted (the cursor confined
-# to the length), shortening + re-lengthening restoring the stored values,
-# step values clamped to 0-127, the target picker listing EVERY ParameterBus
-# parameter including the global BPM (names/ranges/scopes verbatim from the
-# task-16 table), the FR13 scope defaulting to per-pattern and toggling to
-# global with scope-mismatched parameters re-pointed so the address stays
-# valid (a fresh target keeping its deliberately invalid factory address),
-# and the FR14 scaling/balance/step-duration/playing-order edits writing to
-# the ModulationTarget in the registry.
+# Validates the ModulationPatternView against the command-queue contract:
+# the view holds NO ModulationRegistry and NO ParameterBus — it keeps a
+# local mirror of the fixed target pool and posts every action as
+# MOD_TARGET_ADD / MOD_TARGET_SET_PARAM words (verified through a
+# RECORDING commands::sendCommand double — the one primitive the header's
+# inline senders funnel into). Coverage: the pattern-list page on entry
+# (FR16) with a wrapping cursor, ENTER drilling into the drilled pattern's
+# first bound target (FR8), TAB/LEFT/RIGHT cycling the drilled pattern's
+# targets only, the picker mirroring the task-16 table verbatim (including
+# the global BPM), the FR13 scope rule (an explicit selection always
+# validly addressed; a scope switch re-pointing a mismatched parameter;
+# the deliberately invalid factory address), the FR14 config edits with
+# their clamps (scale 0-127, balance as a signed byte, duration 1-16) and
+# the two-level ESCAPE (config page -> pattern list -> the previous global
+# view). The linked genseq_emission adds the SEQUENCER-side half: the
+# FIFO handlers claiming/releasing slots of the process-wide
+# g_modulationRegistry and writing one validated field per
+# MOD_TARGET_SET_PARAM word.
 #
 # ModulationPatternView.cpp (the view's SDK-free model + render logic) is
 # compiled directly into this target; its render path targets the real
 # LedMatrix driver, so the test TU supplies host-safe no-op LedMatrix member
 # seams (the same pattern as test_generator_config_view /
 # test_scale_selection_view / test_mutation_view) instead of compiling the
-# SDK-dependent LedMatrix.cpp. The modulation registry/targets, the parameter
-# addressing and the bus are header-only and SDK-free. NONE of the Pico SDK
-# libs and NO RapidCheck.
+# SDK-dependent LedMatrix.cpp. command.cpp (the multicore FIFO) is NOT
+# compiled host-side — the recording sendCommand double replaces it. NONE
+# of the Pico SDK libs and NO RapidCheck.
 set(UNIT_MODULATION_PATTERN_VIEW_SRC "${TEST_DIR}/unit/test_modulation_pattern_view.cpp")
 
 add_executable(genseq_test_modulation_pattern_view
@@ -1505,6 +1561,23 @@ add_executable(genseq_test_modulation_pattern_view
 target_include_directories(genseq_test_modulation_pattern_view PRIVATE ${EMISSION_INCLUDE_DIRS})
 target_link_libraries(genseq_test_modulation_pattern_view PRIVATE genseq_emission)
 add_test(NAME test_modulation_pattern_view COMMAND genseq_test_modulation_pattern_view)
+
+# ---------------------------------------------------------------------------
+# Task 4 (ui-integration): T2 Add Global Scale to Timeline (FR12, FR13, FR14).
+#
+# Validates the TransportTimeline global scale storage (scaleRoot_ and
+# scaleTemplateIndex_) and accessors: the factory defaults, setScale()
+# accepting only valid combinations and rejecting everything else without
+# changing stored state, the scaleRoot()/scaleTemplateIndex()/scale()
+# round-trip, and independence from the transport tick/BPM state.
+# TransportTimeline.h is header-only and SDK-free.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_TRANSPORT_TIMELINE_SCALE_SRC "${TEST_DIR}/unit/test_transport_timeline_scale.cpp")
+
+add_executable(genseq_test_transport_timeline_scale "${EXAMPLE_TRANSPORT_TIMELINE_SCALE_SRC}")
+target_include_directories(genseq_test_transport_timeline_scale PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_test_transport_timeline_scale PRIVATE genseq_emission)
+add_test(NAME test_transport_timeline_scale COMMAND genseq_test_transport_timeline_scale)
 
 # Task 22 (generative-engine-expansion): END-TO-END integration test of the
 # ASSEMBLED generative engine (AC1-AC8) against the real sequencer.
@@ -1525,8 +1598,9 @@ add_test(NAME test_modulation_pattern_view COMMAND genseq_test_modulation_patter
 # policy with quantized boundaries at the next beat/bar (AC7), and the
 # capability-driven GeneratorConfigView rendering exactly the selected
 # generator's controls — including a test-only plugin's own parameter table
-# with zero view changes — writing through the ParameterBus base values into
-# the LIVE sequencer state (AC8). Every driven transport also runs a
+# with zero view changes — posting GEN_PARAM_SET commands that the harness
+# applies through the sequencer's command API into the LIVE state (AC8,
+# ui-integration T5). Every driven transport also runs a
 # note-ownership audit over the emitted stream: Note Ons pair with Note Offs
 # (no hung notes, no duplicate note-offs) and nothing outside Note On/Off and
 # System Real-Time ever appears (no MIDI CC output — out of scope). A final
@@ -1537,9 +1611,11 @@ add_test(NAME test_modulation_pattern_view COMMAND genseq_test_modulation_patter
 #
 # GeneratorConfigView.cpp (the view's SDK-free model + render logic) is
 # compiled directly into this target (AC8); the render path targets the real
-# LedMatrix driver, so the test TU supplies host-safe no-op LedMatrix member
-# seams (the same pattern as test_generator_config_view) instead of compiling
-# the SDK-dependent LedMatrix.cpp. RegisterGenerators.cpp (the ONLY built-in
+# LedMatrix driver and the writes target commands::sendGenParamCommand, so
+# the test TU supplies host-safe no-op LedMatrix member seams plus a RECORDING
+# commands::sendGenParamCommand double (the same pattern as
+# test_generator_config_view) instead of compiling the SDK-dependent
+# LedMatrix.cpp / command.cpp. RegisterGenerators.cpp (the ONLY built-in
 # listing, AC1) arrives through genseq_emission. NONE of the Pico SDK libs
 # and NO RapidCheck. Lives in test/integration/ so the property-test glob
 # (test/*.cpp) never sweeps it.
@@ -1553,3 +1629,170 @@ add_executable(genseq_integration_generative_engine
 target_include_directories(genseq_integration_generative_engine PRIVATE ${EMISSION_INCLUDE_DIRS})
 target_link_libraries(genseq_integration_generative_engine PRIVATE genseq_emission)
 add_test(NAME generative_engine_test COMMAND genseq_integration_generative_engine)
+
+# ---------------------------------------------------------------------------
+# Task T10 (ui-integration): HostControl view-name mapping (FR10, AC9).
+#
+# Validates that H:dump renders a real name for EVERY ViewId, including the
+# Milestone-3 views GENERATOR_CONFIG / MUTATION / MODULATION / SCALE_SELECTION
+# that previously fell through viewName()'s "?" fallback, so a bench script
+# can identify the view a dump was taken in.
+#
+# viewName() is file-local to the GENSEQ_HOST_CONTROL-gated
+# src/ui/hardware/HostControl.cpp, so the test TU includes that translation
+# unit directly (unity-style) and supplies the host doubles it links against:
+# no-op commands:: FIFO seams plus the core0 UI telemetry globals (firmware
+# owns both in SDK-only TUs). StateManager.cpp + Reducer.cpp are compiled
+# alongside as the real, SDK-free dispatch path; common/ symbols arrive
+# through genseq_emission, and pico/stdlib.h + hardware/watchdog.h come from
+# test/pico_stubs. NONE of the Pico SDK libs and NO RapidCheck. Lives in
+# test/unit/ so the property-test glob (test/*.cpp) never sweeps it.
+set(UNIT_HOST_CONTROL_VIEW_NAMES_SRC "${TEST_DIR}/unit/test_host_control_view_names.cpp")
+
+add_executable(genseq_test_host_control_view_names
+    "${UNIT_HOST_CONTROL_VIEW_NAMES_SRC}"
+    "${SRC_DIR}/ui/state/StateManager.cpp"
+    "${SRC_DIR}/ui/state/Reducer.cpp"
+)
+target_include_directories(genseq_test_host_control_view_names PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_test_host_control_view_names PRIVATE genseq_emission)
+add_test(NAME test_host_control_view_names COMMAND genseq_test_host_control_view_names)
+
+# Task T11 (ui-integration): F4 navigation to the MODULATION global view
+# (FR3, AC1).
+#
+# Validates the Reducer's function-key table: a pressed F4 (no modifiers) sets
+# currentView to MODULATION from any starting view, the FUNCTION_KEY_VIEWS
+# cycle grew from 3 to 4 entries (F1 -> INIT, F2 -> SETTINGS, F3 -> PATTERNS,
+# F4 -> MODULATION), F4 stays a globally consumed reserved key (held and
+# modified presses navigate nowhere and never reach the active view), keys
+# past the table (F5) stay reserved, and F4 leaves through setCurrentView so
+# a dirty GATE_SET draft is restored exactly like the pre-existing F1/F2/F3
+# navigation. A plain F4 posts no command: navigation is pure UI state.
+#
+# Reducer.cpp is compiled directly into this target (the real, SDK-free
+# dispatch path); its writes target the commands:: FIFO seam, so the test TU
+# supplies host-safe commands:: doubles (a RECORDING sendCommand, no-op set
+# senders — the same pattern as genseq_example_save_combo) instead of
+# compiling the SDK-dependent command.cpp. common/ symbols arrive through
+# genseq_emission, and pico/multicore.h comes from test/pico_stubs. NONE of
+# the Pico SDK libs and NO RapidCheck. Lives in test/unit/ so the
+# property-test glob (test/*.cpp) never sweeps it.
+set(UNIT_REDUCER_F4_NAVIGATION_SRC "${TEST_DIR}/unit/test_reducer_f4_navigation.cpp")
+
+add_executable(genseq_test_reducer_f4_navigation
+    "${UNIT_REDUCER_F4_NAVIGATION_SRC}"
+    "${SRC_DIR}/ui/state/Reducer.cpp"
+)
+target_include_directories(genseq_test_reducer_f4_navigation PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_test_reducer_f4_navigation PRIVATE genseq_emission)
+add_test(NAME test_reducer_f4_navigation COMMAND genseq_test_reducer_f4_navigation)
+
+# Task T12 (ui-integration): TAB navigation from GATE_SET to
+# GENERATOR_CONFIG (FR5, AC5).
+#
+# Validates the GateSetView's TAB drill-in and the navigation roundtrip:
+# a pressed TAB sets currentView to GENERATOR_CONFIG (and posts NO command
+# — navigation is pure UI state, nothing crosses the command queue), TAB
+# leaves through setCurrentView so a dirty GATE_SET draft is restored
+# exactly like the pre-existing F1..F4 navigation (the draft reverts to the
+# committed config and the restore posts the one sendGateSet sync), a held
+# TAB repeat does not navigate, and the roundtrip closes: a pressed ESCAPE
+# handled by the GeneratorConfigView returns currentView to GATE_SET (FR11:
+# ESCAPE returns to the appropriate parent view). Regression: the
+# pre-existing GATE_SET bindings survive (plain ESCAPE still returns to
+# PATTERNS, UP still adjusts the draft without navigating).
+#
+# GateSetView.cpp + GeneratorConfigView.cpp + Reducer.cpp (the real,
+# SDK-free dispatch path) are compiled directly into this target; their
+# render paths target the real LedMatrix driver and their writes target the
+# commands:: FIFO seam, so the test TU supplies host-safe no-op LedMatrix
+# member seams, a RECORDING commands::sendGateSet double and no-op
+# sendCommand / sendGenParamCommand / sendPitchSet / sendVelocitySet /
+# sendScaleCommand doubles (the same pattern as test_generator_config_view)
+# instead of compiling the SDK-dependent LedMatrix.cpp / command.cpp.
+# common/ symbols (registerGenerators) arrive through genseq_emission. NONE
+# of the Pico SDK libs and NO RapidCheck. Lives in test/unit/ so the
+# property-test glob (test/*.cpp) never sweeps it.
+set(UNIT_GATE_SET_VIEW_TAB_SRC "${TEST_DIR}/unit/test_gate_set_view_tab.cpp")
+
+add_executable(genseq_test_gate_set_view_tab
+    "${UNIT_GATE_SET_VIEW_TAB_SRC}"
+    "${SRC_DIR}/ui/views/GateSetView.cpp"
+    "${SRC_DIR}/ui/views/GeneratorConfigView.cpp"
+    "${SRC_DIR}/ui/state/Reducer.cpp"
+)
+target_include_directories(genseq_test_gate_set_view_tab PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_test_gate_set_view_tab PRIVATE genseq_emission)
+add_test(NAME test_gate_set_view_tab COMMAND genseq_test_gate_set_view_tab)
+
+# ui-integration task T13 (FR6, AC6): M key navigation from PATTERNS to
+# the MUTATION view.
+#
+# Validates the PatternsView's M drill-in: a pressed M with a real pattern
+# selected sets currentView to MUTATION while posting NO command (pure UI
+# state, FR17 — the selected pattern travels with the state, MutationView
+# reads it from selectedPattern), M is REFUSED when no pattern is selected
+# (the new-slot cursor selectedPattern == patternCount, the same guard the
+# ENTER add-path uses — AC6), a held M repeat does not navigate (one-shot
+# gesture, matching ENTER and the sibling TAB binding), M works from any
+# real pattern (the guard is the existence check, not index 0), and the
+# pre-existing PatternsView bindings survive (ENTER still drills into
+# GATE_SET, DOWN still switches the pattern-set lane without navigating).
+#
+# PatternsView.cpp + Reducer.cpp (the real, SDK-free setCurrentView path)
+# are compiled directly into this target; the render path targets the real
+# LedMatrix driver and the setters target the commands:: FIFO seam, so the
+# test TU supplies host-safe no-op LedMatrix member seams, a RECORDING
+# commands::sendCommand double and no-op sendGateSet / sendPitchSet /
+# sendVelocitySet / sendScaleCommand doubles (the same pattern as
+# test_gate_set_view_tab). pico/multicore.h comes from test/pico_stubs
+# (EMISSION_INCLUDE_DIRS). NONE of the Pico SDK libs and NO RapidCheck.
+# Lives in test/unit/ so the property-test glob (test/*.cpp) never sweeps it.
+set(UNIT_PATTERNS_VIEW_M_SRC "${TEST_DIR}/unit/test_patterns_view_m.cpp")
+
+add_executable(genseq_test_patterns_view_m
+    "${UNIT_PATTERNS_VIEW_M_SRC}"
+    "${SRC_DIR}/ui/views/PatternsView.cpp"
+    "${SRC_DIR}/ui/state/Reducer.cpp"
+)
+target_include_directories(genseq_test_patterns_view_m PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_test_patterns_view_m PRIVATE genseq_emission)
+add_test(NAME test_patterns_view_m COMMAND genseq_test_patterns_view_m)
+
+# ui-integration task T15 (ui-integration): S key navigation from PATTERNS
+# to the SCALE_SELECTION view.
+#
+# Validates the PatternsView's S drill-in: a pressed S with a real pattern
+# selected sets currentView to SCALE_SELECTION while posting NO command (pure
+# UI state, FR17 — the selected pattern travels with the state,
+# ScaleSelectionView reads it from selectedPattern and ESCAPE returns to
+# PATTERNS, FR11), S is REFUSED when no pattern is selected (the new-slot
+# cursor selectedPattern == patternCount, the same guard the ENTER add-path
+# and the sibling M drill-in use), a held S repeat does not navigate (one-shot
+# gesture, matching ENTER and M), S works from any real pattern (the guard
+# is the existence check, not index 0), a CTRL-modified S does NOT drill in
+# (the reducer consumes Ctrl+S globally as the Save_Combo before routing),
+# and the pre-existing PatternsView bindings survive (M still reaches
+# MUTATION, ENTER still drills into GATE_SET, DOWN still switches the
+# pattern-set lane without navigating).
+#
+# PatternsView.cpp + Reducer.cpp (the real, SDK-free setCurrentView path)
+# are compiled directly into this target; the render path targets the real
+# LedMatrix driver and the setters target the commands:: FIFO seam, so the
+# test TU supplies host-safe no-op LedMatrix member seams, a RECORDING
+# commands::sendCommand double and no-op sendGateSet / sendPitchSet /
+# sendVelocitySet / sendScaleCommand doubles (the same pattern as
+# test_patterns_view_m). pico/multicore.h comes from test/pico_stubs
+# (EMISSION_INCLUDE_DIRS). NONE of the Pico SDK libs and NO RapidCheck.
+# Lives in test/unit/ so the property-test glob (test/*.cpp) never sweeps it.
+set(UNIT_PATTERNS_VIEW_S_SRC "${TEST_DIR}/unit/test_patterns_view_s.cpp")
+
+add_executable(genseq_test_patterns_view_s
+    "${UNIT_PATTERNS_VIEW_S_SRC}"
+    "${SRC_DIR}/ui/views/PatternsView.cpp"
+    "${SRC_DIR}/ui/state/Reducer.cpp"
+)
+target_include_directories(genseq_test_patterns_view_s PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_test_patterns_view_s PRIVATE genseq_emission)
+add_test(NAME test_patterns_view_s COMMAND genseq_test_patterns_view_s)

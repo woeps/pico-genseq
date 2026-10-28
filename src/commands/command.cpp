@@ -80,6 +80,62 @@ namespace commands {
         }
     }
 
+    void sendScaleCommand(uint8_t root, uint8_t templateIndex) {
+        // Global scale update: same single-word shape as BPM_SET. The receiving
+        // side (ui-integration T4) applies it to the TransportTimeline, the
+        // single source of truth for the global scale.
+        sendCommand(Command::SCALE_SET, root, templateIndex);
+    }
+
+    void sendPatternScaleCommand(uint8_t patternIndex, uint8_t root,
+                                 uint8_t templateIndex) {
+        // Per-pattern scale override, packed into one FIFO word:
+        //   cmd | patternIndex<<8 | root<<16 | templateIndex<<24
+        const uint32_t packed = static_cast<uint32_t>(Command::PATTERN_SCALE_SET) |
+            (static_cast<uint32_t>(patternIndex) << 8) |
+            (static_cast<uint32_t>(root) << 16) |
+            (static_cast<uint32_t>(templateIndex) << 24);
+        multicore_fifo_push_blocking(packed);
+    }
+
+    void sendGenParamCommand(uint8_t patternIndex, uint8_t paramId, int16_t value) {
+        // One generator parameter write (ui-integration T5): the UI's ONLY
+        // cross-core write path for generator configuration. Two words —
+        // the header names the (pattern, parameter) address, the second
+        // word carries the 16-bit value.
+        const uint32_t packed = static_cast<uint32_t>(Command::GEN_PARAM_SET) |
+            (static_cast<uint32_t>(patternIndex) << 8) |
+            (static_cast<uint32_t>(paramId) << 16);
+        multicore_fifo_push_blocking(packed);
+        multicore_fifo_push_blocking(static_cast<uint32_t>(
+            static_cast<uint16_t>(value)));
+    }
+
+    void sendMutateCommand(uint8_t operatorIndex, uint8_t patternIndex,
+                           uint16_t targets, uint8_t intensity, uint8_t timing) {
+        // One mutation request (ui-integration T6): the MutationView's ONLY
+        // cross-core path. Two words — the header names the operator by its
+        // INDEX into the built-in registration order (both cores list the
+        // same order independently; no registry crosses the cores) and the
+        // pattern (or the ALL_PATTERNS sentinel) with the FR6 intensity in
+        // the top byte; the payload word carries the FR7 target mask and
+        // the packed FR10 level-1 timing override.
+        const uint32_t packed = static_cast<uint32_t>(Command::MUTATE) |
+            (static_cast<uint32_t>(operatorIndex) << 8) |
+            (static_cast<uint32_t>(patternIndex) << 16) |
+            (static_cast<uint32_t>(intensity) << 24);
+        multicore_fifo_push_blocking(packed);
+        multicore_fifo_push_blocking(
+            static_cast<uint32_t>(targets & 0xFFFFu) |
+            (static_cast<uint32_t>(timing & 0x7u) << 16));
+    }
+
+    void sendUndoCommand(uint8_t timing) { sendCommand(Command::UNDO, timing); }
+
+    void sendRevertCommand(uint8_t timing) { sendCommand(Command::REVERT, timing); }
+
+    void sendKeepCommand(uint8_t timing) { sendCommand(Command::KEEP, timing); }
+
     CommandMessage receiveCommand() {
         commands::CommandMessage msg;
         if (multicore_fifo_rvalid()) {
@@ -131,6 +187,34 @@ namespace commands {
                         }
                     }
                 }
+            }
+            if (msg.cmd == Command::SCALE_SET) {
+                msg.scaleRoot = msg.param1;
+                msg.scaleTemplateIndex = msg.param2;
+            }
+            if (msg.cmd == Command::PATTERN_SCALE_SET) {
+                msg.scaleRoot = msg.param2;
+                msg.scaleTemplateIndex = static_cast<uint8_t>((raw_cmd >> 24) & 0xFF);
+            }
+            if (msg.cmd == Command::GEN_PARAM_SET) {
+                // The value word follows the header (pushed by the sender).
+                msg.paramValue = static_cast<int16_t>(
+                    static_cast<uint16_t>(multicore_fifo_pop_blocking() & 0xFFFFu));
+            }
+            if (msg.cmd == Command::MUTATE) {
+                // The payload word pushed by sendMutateCommand: the FR7
+                // target mask plus the packed FR10 override; the FR6
+                // intensity rode in the header's top byte.
+                msg.mutateIntensity = static_cast<uint8_t>((raw_cmd >> 24) & 0xFFu);
+                const uint32_t payload = multicore_fifo_pop_blocking();
+                msg.mutateTargets = static_cast<uint16_t>(payload & 0xFFFFu);
+                msg.genTiming = static_cast<uint8_t>((payload >> 16) & 0x7u);
+            }
+            if (msg.cmd == Command::UNDO || msg.cmd == Command::REVERT ||
+                msg.cmd == Command::KEEP) {
+                // The recovery commands carry the packed FR10 override in
+                // the header's param1 byte.
+                msg.genTiming = msg.param1;
             }
         }
         return msg;
@@ -198,6 +282,29 @@ namespace commands {
                     }
                 }
             }
+        } else if (msg.cmd == Command::SCALE_SET) {
+            msg.scaleRoot = msg.param1;
+            msg.scaleTemplateIndex = msg.param2;
+        } else if (msg.cmd == Command::PATTERN_SCALE_SET) {
+            msg.scaleRoot = msg.param2;
+            msg.scaleTemplateIndex = static_cast<uint8_t>((raw_cmd >> 24) & 0xFF);
+        } else if (msg.cmd == Command::GEN_PARAM_SET) {
+            // The value word follows the header (pushed by the sender).
+            msg.paramValue = static_cast<int16_t>(
+                static_cast<uint16_t>(multicore_fifo_pop_blocking() & 0xFFFFu));
+        } else if (msg.cmd == Command::MUTATE) {
+            // The payload word pushed by sendMutateCommand (ui-integration
+            // T6): the FR7 target mask plus the packed FR10 override; the
+            // FR6 intensity rode in the header's top byte.
+            msg.mutateIntensity = static_cast<uint8_t>((raw_cmd >> 24) & 0xFFu);
+            const uint32_t payload = multicore_fifo_pop_blocking();
+            msg.mutateTargets = static_cast<uint16_t>(payload & 0xFFFFu);
+            msg.genTiming = static_cast<uint8_t>((payload >> 16) & 0x7u);
+        } else if (msg.cmd == Command::UNDO || msg.cmd == Command::REVERT ||
+                   msg.cmd == Command::KEEP) {
+            // The recovery commands carry the packed FR10 override in the
+            // header's param1 byte.
+            msg.genTiming = msg.param1;
         }
         return msg;
     }

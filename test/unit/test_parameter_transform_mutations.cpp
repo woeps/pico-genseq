@@ -433,8 +433,6 @@ void test_scale_lock_all_templates() {
         for (int root = 0; root < 12; ++root) {
             const common::Scale scale(static_cast<uint8_t>(root), static_cast<uint8_t>(t));
             PatternGenerativeState s;
-            s.scaleRoot = static_cast<uint8_t>(root);
-            s.scaleTemplateIndex = static_cast<uint8_t>(t);
             s.pitchSet.count = 8;
             for (uint8_t i = 0; i < 8; ++i) {
                 s.pitchSet.values[i] = scale.nearestNoteInScale(static_cast<uint8_t>(i * 16));
@@ -444,6 +442,7 @@ void test_scale_lock_all_templates() {
                 const PatternGenerativeState before = working;
                 MutationConstraints c(maskOf(MutationTarget::PITCH_CONTENTS), 96,
                                       maskOf(MutationInvariant::SCALE_LOCK));
+                c.scale = scale;  // the request's global scale (T16)
                 const MutationResult r = runOnce(pitchMut, working, before, c,
                                                  static_cast<uint64_t>(seed + 1));
                 check(r.status != MutationStatus::REJECTED,
@@ -834,11 +833,13 @@ void test_invert_involution() {
     }
 
     // The pitch inversion mirrors scale DEGREES, so the result is in scale
-    // (AC2) while the involution still holds exactly.
+    // (AC2) while the involution still holds exactly. The scale is the
+    // request's global one (T16): default-constructed constraints carry the
+    // factory C-Major, which baseState() is in.
     {
         PatternGenerativeState working = baseState();
         const PatternGenerativeState original = working;
-        const common::Scale cMajor = original.scale();
+        const common::Scale cMajor = common::Scale(0, 0);
         MutationConstraints c(maskOf(MutationTarget::PITCH_ORDERING), 127);
         runOnce(invert, working, original, c, 29u);
         for (uint8_t i = 0; i < working.pitchSet.count; ++i) {

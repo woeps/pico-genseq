@@ -81,6 +81,22 @@ void UIController::initialize()
     gateSetView = std::make_unique<GateSetView>(*ledMatrix);
     pitchSetView = std::make_unique<PitchSetView>(*ledMatrix);
     velocitySetView = std::make_unique<VelocitySetView>(*ledMatrix);
+    // Generative-engine views (ui-integration T9/FR2). Each keeps its OWN
+    // core0-side state and talks to the sequencer core exclusively through
+    // the command queue — no shared working structures, no ParameterBus.
+    // The GeneratorConfigView needs the generator registry for its read-only
+    // capability/param metadata: it uses the process-wide
+    // sequencer::g_generatorRegistry, the same fixed POD instance the
+    // Sequencer itself defaults to. That registry is populated exactly once
+    // at boot (Sequencer's constructor inside createSequencerTask() on core0,
+    // strictly before the UI task starts) and is read-only afterwards, so
+    // sharing it violates neither the no-shared-mutable-state rule nor the
+    // single-writer discipline.
+    generatorConfigView = std::make_unique<GeneratorConfigView>(
+        sequencer::g_generatorRegistry, *ledMatrix);
+    mutationView = std::make_unique<MutationView>(*ledMatrix);
+    modulationPatternView = std::make_unique<ModulationPatternView>(*ledMatrix);
+    scaleSelectionView = std::make_unique<ScaleSelectionView>(*ledMatrix);
 
     // Initialize view array
     views[static_cast<size_t>(state::ViewId::INIT)] = initView.get();
@@ -89,6 +105,10 @@ void UIController::initialize()
     views[static_cast<size_t>(state::ViewId::GATE_SET)] = gateSetView.get();
     views[static_cast<size_t>(state::ViewId::PITCH_SET)] = pitchSetView.get();
     views[static_cast<size_t>(state::ViewId::VELOCITY_SET)] = velocitySetView.get();
+    views[static_cast<size_t>(state::ViewId::GENERATOR_CONFIG)] = generatorConfigView.get();
+    views[static_cast<size_t>(state::ViewId::MUTATION)] = mutationView.get();
+    views[static_cast<size_t>(state::ViewId::MODULATION)] = modulationPatternView.get();
+    views[static_cast<size_t>(state::ViewId::SCALE_SELECTION)] = scaleSelectionView.get();
 
     // Register views with StateManager so it can look up active view during dispatch
     state::getStateManager().setViews(views);

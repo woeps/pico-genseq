@@ -63,6 +63,11 @@ void sendVelocitySet(uint8_t /*patternIndex*/, uint8_t /*count*/,
     // No-op host double.
 }
 
+void sendScaleCommand(uint8_t /*root*/, uint8_t /*templateIndex*/) {
+    // No-op host double (ui-integration T14: Reducer::setScale posts the
+    // global SCALE_SET through this seam).
+}
+
 }  // namespace commands
 
 namespace {

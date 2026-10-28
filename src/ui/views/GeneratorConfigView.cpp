@@ -1,10 +1,11 @@
 // Capability-driven generator configuration view (generative-engine-expansion
 // task 18, FR1, AC8). See GeneratorConfigView.h for the design; this
-// translation unit holds the control-list construction, the ParameterBus
-// write-through and the key-event front end.
+// translation unit holds the control-list construction, the GEN_PARAM_SET
+// command write-through (ui-integration T5) and the key-event front end.
 
 #include "GeneratorConfigView.h"
 
+#include "../../commands/command.h"
 #include "../../sequencer/generators/EuclideanGateGenerator.h"
 #include "../../sequencer/generators/NoteDurationGenerator.h"
 #include "../../sequencer/generators/ProbabilityGateGenerator.h"
@@ -96,9 +97,18 @@ const char (&roleLabel(GeneratorRole role))[4] {
 }  // namespace
 
 GeneratorConfigView::GeneratorConfigView(sequencer::GeneratorRegistry& registry,
-                                        sequencer::ParameterBus& bus,
                                         hardware::LedMatrix& ledMatrix)
-    : registry_(registry), bus_(bus), ledMatrix_(ledMatrix) {}
+    : registry_(registry), ledMatrix_(ledMatrix) {
+    // Seed Core0's UI cache with the task-16 factory defaults (the fixed
+    // parameter table IS shared metadata — constexpr ROM data — while the
+    // VALUES are the view's own Core0 state; the sequencer core keeps its
+    // separate working state). Bounded: pattern slots x table entries.
+    for (uint8_t p = 0; p < common::PATTERN_CAPACITY; ++p) {
+        for (uint8_t id = 0; id < sequencer::kParamIdCount; ++id) {
+            cache_[p][id] = sequencer::kParamInfos[id].defaultValue;
+        }
+    }
+}
 
 // --- role selection -----------------------------------------------------------
 
@@ -231,11 +241,10 @@ int32_t GeneratorConfigView::controlValue(uint8_t patternIndex, uint8_t index) c
     if (def == nullptr) return 0;
     sequencer::ParameterAddress address;
     if (!resolveAddress(*def, address)) return def->defaultValue;
-    address.patternIndex = patternIndex;
-    // The stored configuration the edit path writes: the BASE value, never
-    // the modulation overlay (this is a configuration view; overlays are
-    // the modulation layer's business and are never armed here).
-    return bus_.baseValue(address);
+    if (patternIndex >= common::PATTERN_CAPACITY) return def->defaultValue;
+    // Core0's own mirror of the edited values — never a live sequencer
+    // read (no shared data structures between the cores).
+    return cache_[patternIndex][static_cast<uint8_t>(address.paramId)];
 }
 
 bool GeneratorConfigView::setControlValue(uint8_t patternIndex, uint8_t index,
@@ -243,11 +252,18 @@ bool GeneratorConfigView::setControlValue(uint8_t patternIndex, uint8_t index,
     const sequencer::GeneratorParamDef* def = selectedDef(index);
     if (def == nullptr) return false;
     sequencer::ParameterAddress address;
-    if (!resolveAddress(*def, address)) return false;  // no bus address
-    address.patternIndex = patternIndex;
-    // Clamp into the ParameterDef range first (the bus clamps again into
-    // its own table range — identical bounds for every mapped parameter).
-    return bus_.setBase(address, clampToDef(value, *def));
+    if (!resolveAddress(*def, address)) return false;  // no parameter address
+    if (patternIndex >= common::PATTERN_CAPACITY) return false;
+    // Clamp into the ParameterDef range first (the sequencer's bus clamps
+    // again into the table range — identical bounds for every mapped
+    // parameter).
+    const int16_t clamped = clampToDef(value, *def);
+    // Update Core0's cache first, then post the cross-core write as a
+    // GEN_PARAM_SET command (the UI's only write path — never the bus).
+    cache_[patternIndex][static_cast<uint8_t>(address.paramId)] = clamped;
+    commands::sendGenParamCommand(
+        patternIndex, static_cast<uint8_t>(address.paramId), clamped);
+    return true;
 }
 
 bool GeneratorConfigView::adjustControl(uint8_t patternIndex, uint8_t index,
@@ -267,9 +283,10 @@ void GeneratorConfigView::onEnter() {
 
 state::UIState GeneratorConfigView::handleEvent(const state::UIState& state,
                                                const events::Event& event) {
-    // The edited values live in the authoritative sequencer state through
-    // the bus, not in the UIState (which carries no generator fields), so
-    // every path here returns the state unchanged.
+    // The edited values live in the view's local UI cache and cross the
+    // cores only as GEN_PARAM_SET commands — not in the UIState (which
+    // carries no generator fields) — so every path here returns the state
+    // unchanged except the ESCAPE back-out to the parent view.
     if (event.type != events::EventType::KEY_PRESSED &&
         event.type != events::EventType::KEY_HELD) {
         return state;
@@ -279,6 +296,16 @@ state::UIState GeneratorConfigView::handleEvent(const state::UIState& state,
     const bool coarse = (event.data.key.mods & mod::SHIFT) != 0;
     const int step = coarse ? 5 : 1;
     switch (combo(event.data.key.id, event.data.key.mods & ~mod::SHIFT)) {
+        case combo(KeyId::ESCAPE):
+            // Back out to the gate configuration view this view is drilled
+            // into from (FR11: ESCAPE returns to the appropriate parent).
+            // Held repeats are ignored, like the sibling views.
+            if (event.type == events::EventType::KEY_PRESSED) {
+                state::UIState next = state;
+                next.currentView = state::ViewId::GATE_SET;
+                return next;
+            }
+            break;
         case combo(KeyId::LEFT):
             // Previous control, wrapping within the selected generator's list.
             if (controlCount() > 0) {

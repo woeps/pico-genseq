@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "../common/Scale.h"
 #include "../common/TimeSignature.h"
 
 // Global Transport Timeline (performance-safe-foundation task 3.2,
@@ -12,7 +13,10 @@
 //   - the active Time Signature (meter);
 //   - the absolute logical tick index since the current Play;
 //   - the intended monotonic timestamp of each tick;
-//   - derived beat and bar indices.
+//   - derived beat and bar indices;
+//   - the global scale (root + template index), stored in this ONE place —
+//     the single source every pattern reads its scale constraint from
+//     (ui-integration T1b/T2: FR12, FR13, FR14, AC10, AC11).
 //
 // Phase preservation across BPM changes (Req 1.5): the duration of one tick in
 // microseconds is `60e6 / (bpm * PPQN)`, which is rarely integral. Rather than
@@ -118,7 +122,48 @@ public:
         return currentTickMicros_ + currentTickDurationMicros();
     }
 
+    // --- Global scale (ui-integration T1b/T2: FR12, FR13, FR14, AC10, AC11) --
+    // The global scale constraint, stored in ONE place (the transport
+    // timeline) and read by every pattern from this single source. A Scale
+    // pairs a root pitch class (0-11) with an index into the fixed built-in
+    // template table (common::SCALE_TEMPLATES) and constrains pitch
+    // generation and pitch mutation so every emitted note satisfies the
+    // pattern's selected scale (FR4, AC2). The scale is a TRUE GLOBAL
+    // setting stored in a single source (TransportTimeline) and modulatable
+    // with Global scope alongside BPM (AC10/AC11); Scale root itself shall
+    // not be modulated in M3 (pitch transpose provides the continuous
+    // target while the saved root stays stable).
+    uint8_t scaleRoot() const { return scaleRoot_; }
+    uint8_t scaleTemplateIndex() const { return scaleTemplateIndex_; }
+    // Set the global scale. Rejection, not rounding (Req 1.7): an
+    // out-of-range root (not a pitch class) or a template index naming no
+    // built-in template returns false and leaves the timeline unchanged.
+    bool setScale(uint8_t root, uint8_t templateIndex) {
+        if (root > 11) return false;  // root is a pitch class: 0-11 only
+        if (templateIndex >= static_cast<uint8_t>(common::scaleTemplateCount())) {
+            return false;  // must name a real built-in template
+        }
+        scaleRoot_ = static_cast<uint8_t>(root % 12);
+        scaleTemplateIndex_ = templateIndex;
+        scale_ = common::Scale(scaleRoot_, scaleTemplateIndex_);
+        return true;
+    }
+
+    // The pattern's global scale constraint as the value type the generator
+    // context carries (root + template index, normalized by common::Scale so
+    // a Scale is always valid, whatever data flows in — deterministic, never
+    // out of bounds).
+    common::Scale scale() const { return scale_; }
+
 private:
+    // --- Global scale (ui-integration T1b/T2: FR12, FR13, FR14) -------------
+    // The global scale constraint: root pitch class (0-11) and index into
+    // the built-in template table, plus the derived common::Scale value.
+    // A TRUE GLOBAL setting stored in a single source (TransportTimeline).
+    uint8_t scaleRoot_ = 0;           // root pitch class 0-11 (default C)
+    uint8_t scaleTemplateIndex_ = 0;  // index into common::SCALE_TEMPLATES
+    common::Scale scale_{};           // the derived scale constraint value
+
     common::TimeSignature meter_{};  // 4/4 default
     uint16_t bpm_ = 120;
     bool running_ = false;

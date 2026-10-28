@@ -14,6 +14,10 @@
 #include "views/GateSetView.h"
 #include "views/PitchSetView.h"
 #include "views/VelocitySetView.h"
+#include "views/GeneratorConfigView.h"
+#include "views/MutationView.h"
+#include "views/ModulationPatternView.h"
+#include "views/ScaleSelectionView.h"
 #include "state/UIState.h"
 #include "../persistence/Mb85rsFram.h"
 #include "../persistence/Mb85rsFramSpi.h"
@@ -58,6 +62,10 @@ private:
     std::unique_ptr<GateSetView> gateSetView;
     std::unique_ptr<PitchSetView> pitchSetView;
     std::unique_ptr<VelocitySetView> velocitySetView;
+    std::unique_ptr<GeneratorConfigView> generatorConfigView;
+    std::unique_ptr<MutationView> mutationView;
+    std::unique_ptr<ModulationPatternView> modulationPatternView;
+    std::unique_ptr<ScaleSelectionView> scaleSelectionView;
     std::array<IView*, state::VIEW_COUNT> views{};
     IView* activeView;
 

@@ -88,6 +88,36 @@ state::UIState PatternsView::handleEvent(const state::UIState& state, const even
                 state::setCurrentView(newState, state::ViewId::VELOCITY_SET);
             }
             break;
+        case combo(KeyId::M):
+            // FR6 / AC6 (ui-integration T13): M drills from PATTERNS into the
+            // per-pattern MUTATION view — ONLY when a real pattern is
+            // selected. The new-slot cursor (selectedPattern == patternCount)
+            // is refused, mirroring the ENTER add-path. Like the ENTER
+            // drill-in, M is a one-shot gesture: held repeats do nothing, and
+            // navigation is pure UI state through setCurrentView (no command
+            // crosses the inter-core queue — FR17). The mutation view reads
+            // the pattern from the unchanged selectedPattern field.
+            if (isPressed && isPattern) {
+                state::setCurrentView(newState, state::ViewId::MUTATION);
+            }
+            break;
+        case combo(KeyId::S):
+            // ui-integration T15: S drills from PATTERNS into the
+            // SCALE_SELECTION view (the per-pattern root/template editor;
+            // the global scale lives in SETTINGS). Same shape as the sibling
+            // M drill-in above: ONLY when a real pattern is selected — the
+            // new-slot cursor (selectedPattern == patternCount) is refused,
+            // the gesture is one-shot (held repeats do nothing), and the
+            // navigation is pure UI state through setCurrentView, so nothing
+            // crosses the inter-core queue (FR17). ScaleSelectionView reads
+            // the pattern to edit from the unchanged selectedPattern field
+            // and ESCAPE returns here (FR11). Note: a PLAIN S reaches this
+            // view — the global Ctrl+S Save_Combo is consumed by the reducer
+            // before routing, so the two bindings never collide.
+            if (isPressed && isPattern) {
+                state::setCurrentView(newState, state::ViewId::SCALE_SELECTION);
+            }
+            break;
         case combo(KeyId::DELETE_KEY):
             if (isPressed && isPattern) state::removePattern(newState, state.selectedPattern);
             break;

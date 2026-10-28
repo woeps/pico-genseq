@@ -453,16 +453,16 @@ void test_invariants() {
     }
 
     // AC2 SCALE_LOCK over EVERY built-in template and root: every pitch in
-    // an APPLIED composite result stays in the pattern's selected scale.
+    // an APPLIED composite result stays in the request's global scale
+    // (ui-integration T16: carried by the constraints, not the state).
     {
         const int templates = common::scaleTemplateCount();
-        const MutationConstraints c(kAllMutationTargets, 127,
-                                    maskOf(MutationInvariant::SCALE_LOCK));
+        MutationConstraints c(kAllMutationTargets, 127,
+                              maskOf(MutationInvariant::SCALE_LOCK));
         for (int t = 0; t < templates; ++t) {
             for (uint8_t root = 0; root < 12; ++root) {
                 PatternGenerativeState working = richState();
-                working.scaleRoot = root;
-                working.scaleTemplateIndex = static_cast<uint8_t>(t);
+                c.scale = common::Scale(root, static_cast<uint8_t>(t));
                 const PatternGenerativeState before = working;
                 const MutationResult r = runOnce(mutateAll, working, c, kSeedBase + t * 12 + root);
                 if (r.status != MutationStatus::APPLIED) continue;
@@ -505,7 +505,7 @@ void test_invariants() {
             maskOf(MutationInvariant::LOCK_NOTE_DURATION) |
             maskOf(MutationInvariant::LOCK_EUCLIDEAN_PARAMS) |
             maskOf(MutationInvariant::PRESERVE_PULSE_COUNT) |
-            maskOf(MutationInvariant::LOCK_SCALE) | maskOf(MutationInvariant::LOCK_GENERATORS);
+            maskOf(MutationInvariant::LOCK_GENERATORS);
         const MutationConstraints c(kAllMutationTargets, 127, allLocks);
         for (int s = 0; s < 8; ++s) {
             PatternGenerativeState working = richState();

@@ -97,7 +97,8 @@ public:
 
     // Per-pattern generative state (task 3, task 14): each pattern owns ONE
     // fixed POD holding its generator assignments (per role), generator
-    // parameters, scale constraint (FR4) and generative material sets.
+    // parameters and generative material sets. The scale is NOT part of it
+    // (ui-integration T16): it is the ONE global in the transport timeline.
     // Returns nullptr when patternIndex is out of the fixed slot range.
     // This is the WORKING state the generative commands mutate and the
     // dispatch plays from (T12/T13): it is changed only by performer
@@ -170,6 +171,14 @@ private:
     void setPatternVelocitySet(size_t patternIndex, uint8_t count,
                                common::PlayingOrder order,
                                const std::vector<uint8_t>& velocities);
+
+    // Apply one GEN_PARAM_SET command (ui-integration T5): a plain
+    // ParameterBus BASE write of a generator parameter into the live
+    // per-pattern working state (clamped by the bus into the parameter's
+    // table range). paramId is the raw task-16 ParamId; ids outside the
+    // generator-parameter span are refused (the command never writes a
+    // scale or material-set parameter those other commands own).
+    void setGeneratorParameter(uint8_t patternIndex, uint8_t paramId, int16_t value);
 
     // Snapshot-reading appliers (task 6.4): construct the replacement set from
     // the fixed-capacity PatternSnapshot buffers, so no CommandMessage vector is

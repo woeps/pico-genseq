@@ -7,7 +7,8 @@
 //   1. PatternGenerativeState is trivially copyable + standard layout, with
 //      a static_assert bounding its fixed size (global constraint);
 //   2. default construction yields valid defaults (no generators assigned,
-//      C-Major scale constraint, empty material sets, FORWARDS order);
+//      empty material sets, FORWARDS order; the scale is NOT part of the
+//      state — it is the ONE global, ui-integration T16);
 //   3. the sequencer dispatches to a fake registered generator BY ID for the
 //      right role (gate edges, pitch, velocity, duration each observe their
 //      own role's generator, never another role's);
@@ -314,13 +315,6 @@ void test_defaults() {
           "an unassigned role stores an empty id");
     check(std::strcmp(s.generatorId(GeneratorRole::DURATION), "") == 0,
           "an unassigned DURATION role stores an empty id");
-
-    // FR4: the default scale constraint is C Major (root 0, template 0).
-    check(s.scaleRoot == 0, "default scale root is pitch class 0 (C)");
-    check(s.scaleTemplateIndex == 0, "default scale template is 0 (Major)");
-    const common::Scale scale = s.scale();
-    check(scale.root() == 0 && scale.templateIndex() == 0,
-          "scale() rebuilds the default C-Major constraint");
 
     // Material sets: empty, forwards traversal.
     check(s.pitchSet.count == 0 && s.pitchSet.empty(), "default pitch set is empty");

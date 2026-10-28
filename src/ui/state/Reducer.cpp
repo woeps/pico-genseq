@@ -2,12 +2,16 @@
 #include "../../commands/command.h"
 #include "../../common/gate_set.h"
 #include "../../common/pitch_set.h"
+#include "../../common/ScaleTemplates.h"
 #include <algorithm>
 #include <cstdio>
 
 namespace ui::state {
 
 namespace {
+
+// The 12 root pitch classes (C..B) of the global scale.
+constexpr uint8_t SCALE_ROOT_COUNT = 12;
 
 constexpr GateSetProperty EUCLIDEAN_PROPERTIES[] = {
     GateSetProperty::ALGORITHM,
@@ -87,6 +91,22 @@ void restoreVelocitySetDraft(UIState& state) {
 void setBpm(UIState& state, int bpm) {
     state.bpm = std::max(40, std::min(255, bpm));
     commands::sendCommand(commands::Command::BPM_SET, state.bpm);
+}
+
+void setScale(UIState& state, uint8_t root, uint8_t templateIdx) {
+    // The root is a CYCLIC pitch class 0-11 (C..B): wrap any byte so the
+    // setter is total. The template index selects one of the fixed built-in
+    // templates and CLAMPS at both ends (mirroring common::scaleTemplate's
+    // own clamping accessor).
+    state.scaleRoot = static_cast<uint8_t>(root % SCALE_ROOT_COUNT);
+    const int templateCount = common::scaleTemplateCount();
+    state.scaleTemplateIndex = static_cast<uint8_t>(
+        std::clamp(static_cast<int>(templateIdx), 0, templateCount - 1));
+    // Cross-core write path: ONE SCALE_SET word, exactly like BPM_SET. The
+    // single source of truth for the global scale lives on core1's
+    // TransportTimeline (every pattern reads it from there); the UIState
+    // only mirrors the UI-editable values (no shared data structure).
+    commands::sendScaleCommand(state.scaleRoot, state.scaleTemplateIndex);
 }
 
 void setPlaying(UIState& state, bool playing) {
@@ -421,9 +441,13 @@ namespace {
 constexpr uint8_t F1_USAGE  = static_cast<uint8_t>(KeyId::F1);
 constexpr uint8_t F12_USAGE = static_cast<uint8_t>(KeyId::F12);
 
-// F1 -> INIT, F2 -> SETTINGS. Keys past the end of this table are reserved
-// for future views: consumed, traced, but without effect.
-constexpr ViewId FUNCTION_KEY_VIEWS[] = { ViewId::INIT, ViewId::SETTINGS, ViewId::PATTERNS };
+// F1 -> INIT, F2 -> SETTINGS, F3 -> PATTERNS, F4 -> MODULATION
+// (ui-integration T11, FR3/AC1: MODULATION is a global view reached like
+// PATTERNS, so it joins the global function-key cycle). Keys past the end of
+// this table are reserved for future views: consumed, traced, but without
+// effect.
+constexpr ViewId FUNCTION_KEY_VIEWS[] = { ViewId::INIT, ViewId::SETTINGS,
+                                          ViewId::PATTERNS, ViewId::MODULATION };
 
 bool isFunctionKey(KeyId id) {
     const uint8_t usage = static_cast<uint8_t>(id);

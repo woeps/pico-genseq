@@ -244,7 +244,7 @@ protected:
                 Prng& /*rng*/) const override {
         if (constraints.hasTarget(MutationTarget::PITCH_ORDERING)) {
             mutation_transform_detail::invertPitchPrefix(
-                candidate.pitchSet, candidate.scale(),
+                candidate.pitchSet, constraints.scale,
                 mutation_transform_detail::activePrefix(candidate.pitchSet.count,
                                                        constraints.intensity));
         }

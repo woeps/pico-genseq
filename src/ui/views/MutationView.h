@@ -4,51 +4,54 @@
 
 #include "IView.h"
 #include "../hardware/LedMatrix.h"
-#include "../../sequencer/CommandInbox.h"
-#include "../../sequencer/IMutationOperator.h"
 #include "../../sequencer/MutationConstraints.h"
 #include "../../sequencer/OperationTimingConfig.h"
-#include "../../sequencer/mutations/MutationOperatorRegistry.h"
 
 namespace ui {
 
 // Mutation trigger view (generative-engine-expansion task 20, FR5-FR10,
-// FR15).
+// FR15; refactored onto the command queue by ui-integration T6).
 //
 // The operator's front end to the generative mutation layer: it assembles
-// ONE mutation request from the registered operators (FR5), the FR7 target
-// mask (restricted to the selected operator's supportedTargets — FR8
-// operator control), the FR6 intensity (0-127) and an optional FR10
-// level-1 per-invocation timing override; plus the three recovery
-// gestures Undo / Revert / Keep (FR9, FR15).
+// ONE mutation request from the built-in mutation operators (FR5), the FR7
+// target mask (restricted to the selected operator's supportedTargets —
+// FR8 operator control), the FR6 intensity (0-127) and an optional FR10
+// level-1 per-invocation timing override; plus the three recovery gestures
+// Undo / Revert / Keep (FR9, FR15).
 //
-// Every action is POSTED as a command to the bounded CommandInbox (task
-// 14) — the view never mutates the working state itself. The commands ride
-// the same fixed-capacity ring as every other cross-core operation as
-// fixed-size POD passengers (makeMutateCommand / makeUndoCommand / ...),
-// so posting is nonblocking and allocation-free. A FULL ring is surfaced
-// as a rejected action (the returned SequenceId is kInvalidSequence and
-// lastActionRejected() latches for the render path) — never a block, never
-// a retry loop.
+// Core discipline (ui-integration global constraint): the view holds NO
+// reference to the sequencer core's MutationOperatorRegistry and NO
+// CommandInbox — no operator object, no registry and no other data
+// structure crosses the cores. The view carries its OWN fixed metadata
+// copy of the built-in operators (id / display name / supported-target
+// mask, in the SAME registration order registerBuiltInMutations() uses —
+// test_mutation_view pins the mirror against the real registry), and
+// every action is POSTED over the inter-core command queue as one of the
+// four generative commands (MUTATE / UNDO / REVERT / KEEP): MUTATE names
+// the operator by its INDEX into that shared order, the pattern by its
+// slot index (or the all-patterns sentinel), and carries the FR7 target
+// mask, the FR6 intensity and the packed FR10 override; the recovery
+// commands carry the override alone. The sequencer core resolves the
+// index through its OWN registry, so both sides only ever agree on the
+// ORDER — the only thing the FIFO words encode.
 //
-// The timing override is ABSENT by default: with no override supplied, the
-// sequencer's three-level policy applies the operation's configured mode
-// (level 2) or the global default (level 3) — the posted command's
+// The timing override is ABSENT by default: with no override supplied,
+// the sequencer's three-level policy applies the operation's configured
+// mode (level 2) or the global default (level 3) — the posted command's
 // gen.timing.active stays false. setTimingOverride() arms level 1;
 // OperationTimingMode::Inherit is refused (an override that delegates is
 // not an override).
 //
 // Selection state is view-local by design (the request is assembled here
-// and handed over as a command; UIState carries no mutation fields), so
-// handleEvent returns the UIState unchanged. The mutated pattern comes
-// from the UI state's selected pattern (or the explicit kAllPatterns
-// sentinel through triggerAllPatterns()).
+// and handed over as a command; UIState carries no mutation fields). The
+// mutated pattern comes from the UI state's selected pattern (or the
+// explicit all-patterns sentinel through triggerAllPatterns()).
 //
 // Key mapping (documented, follows the sibling view conventions):
 //   LEFT / RIGHT   - cycle the edited field (Operator / Target / Intensity
 //                    / Timing, wrapping)
 //   UP / DOWN      - adjust the edited field (SHIFT: coarse step)
-//                      Operator: previous / next registered operator (wrap)
+//                      Operator: previous / next built-in operator (wrap)
 //                      Target:   walk the FR7 target cursor; ENTER toggles
 //                      Intensity: +/- 1 (SHIFT: +/- coarse step)
 //                      Timing:   cycle absent -> Immediate -> Beat -> Bar
@@ -56,12 +59,13 @@ namespace ui {
 //                    (refused for unsupported targets); otherwise: trigger
 //                    the mutation on the selected pattern
 //   U / R / K      - post Undo / Revert / Keep
+//   ESCAPE         - return to the PATTERNS parent view (pressed once)
 //
 // Global constraints honored here: no heap allocation, no unbounded loops
-// (every operation is a bounded sweep over the fixed registry / the seven
-// FR7 targets), fixed-capacity storage (scalar members only), never any
-// direct working-state mutation (commands only), never a block (tryPush).
-// The view never touches the tick path.
+// (every operation is a bounded sweep over the fixed metadata table / the
+// seven FR7 targets), fixed-capacity storage (scalar members only), never
+// any direct working-state mutation (commands only). The view never
+// touches the tick path.
 class MutationView : public IView {
 public:
     // The FR6 intensity range: 0 (deliberate no-change) .. 127 (drastic).
@@ -73,37 +77,38 @@ public:
 
     // The fields UP/DOWN adjust.
     enum class Field : uint8_t {
-        Operator = 0,  // which registered mutation operator runs
+        Operator = 0,  // which built-in mutation operator runs
         Target = 1,    // which FR7 targets the request may touch
         Intensity = 2, // how drastic the change may be (FR6)
         Timing = 3,    // the optional FR10 level-1 override
     };
     static constexpr uint8_t kFieldCount = 4;
 
-    MutationView(sequencer::MutationOperatorRegistry& registry,
-                 sequencer::CommandInbox& inbox,
-                 hardware::LedMatrix& ledMatrix);
+    explicit MutationView(hardware::LedMatrix& ledMatrix);
 
     // --- operator selection (FR5) -------------------------------------------
-    // How many REGISTERED operators the view offers (the registry's count,
-    // bounded by its fixed capacity).
-    uint8_t operatorCount() const;
-    // The index-th registered operator, or nullptr at / past the count.
-    const sequencer::IMutationOperator* operatorAt(uint8_t index) const;
+    // The view's OWN fixed metadata copy of the built-in operators — the
+    // SAME registration order the sequencer core's registry lists (both
+    // sides only agree on this order; nothing crosses the cores).
+    static uint8_t operatorCount();
+    // The index-th operator's stable id / display name / supported-target
+    // mask ("" / 0 / 0 past the count — total accessors).
+    static const char* operatorIdAt(uint8_t index);
+    static const char* operatorNameAt(uint8_t index);
+    static sequencer::MutationTargetMask operatorTargetsAt(uint8_t index);
     // Select the index-th operator; a fresh operator starts with ALL of its
     // supported targets selected. False (no change) when out of range.
     bool selectOperator(uint8_t index);
-    // Relative operator selection with wrap (a no-op on an empty registry).
+    // Relative operator selection with wrap.
     void cycleOperator(int delta);
-    // The selected operator's id / display name ("" when none is selected).
+    // The selected operator's id / display name.
     const char* selectedOperatorId() const;
     const char* selectedOperatorName() const;
-    // The selected operator's registry index (0 when none is registered).
+    // The selected operator's index into the shared registration order.
     uint8_t selectedOperatorIndex() const;
 
     // --- target selection (FR7, restricted by FR8 operator control) ---------
-    // The MutationTargetMask the SELECTED operator supports (0 with no
-    // operator selected).
+    // The MutationTargetMask the SELECTED operator supports.
     sequencer::MutationTargetMask supportedTargets() const;
     // The currently selected request target mask (always a subset of
     // supportedTargets()).
@@ -120,7 +125,7 @@ public:
     // --- the FR7 target cursor (which target ENTER toggles) -----------------
     // The seven FR7 targets in a fixed documented order, by index 0-6
     // (MutationTarget::NONE past the end — a total accessor).
-    sequencer::MutationTarget targetAt(uint8_t index) const;
+    static sequencer::MutationTarget targetAt(uint8_t index);
     bool selectTargetIndex(uint8_t index);
     uint8_t selectedTargetIndex() const;
 
@@ -145,21 +150,19 @@ public:
     // (the sign of `delta` picks the direction).
     void cycleTimingOverride(int delta);
 
-    // --- actions: posts to the CommandInbox (FR5/FR9/FR15) -------------------
-    // Each returns the posted command's SequenceId, or kInvalidSequence
-    // when the action was rejected WITHOUT blocking (a full ring, or no
-    // selected operator). lastActionRejected() latches the outcome for the
-    // render path (cleared by the next successful post).
-    // Trigger the mutation of `patternIndex` (or kAllPatterns).
-    sequencer::SequenceId trigger(uint8_t patternIndex);
-    sequencer::SequenceId triggerAllPatterns();
+    // --- actions: posts over the command queue (FR5/FR9/FR15) ---------------
+    // Each action posts its generative command to the sequencer core via
+    // the inter-core command queue — the ONLY cross-core path (a full
+    // queue blocks the UI core exactly like every other UI command; the
+    // bounded pending list on the sequencer side refuses overflow).
+    // Trigger the mutation of `patternIndex` (or the all-patterns
+    // sentinel, commands::ALL_PATTERNS).
+    void trigger(uint8_t patternIndex);
+    void triggerAllPatterns();
     // The three recovery gestures (FR9 / FR15).
-    sequencer::SequenceId requestUndo();
-    sequencer::SequenceId requestRevert();
-    sequencer::SequenceId requestKeep();
-    // True when the most recent action was rejected (a full inbox / no
-    // operator); the render path surfaces it.
-    bool lastActionRejected() const;
+    void requestUndo();
+    void requestRevert();
+    void requestKeep();
 
     // --- field selection -------------------------------------------------------
     bool selectField(Field field);
@@ -173,21 +176,14 @@ public:
     void render(const state::UIState& state) override;
 
 private:
-    // The selected operator, or nullptr when the registry is empty / the
-    // stored index is no longer registered (a cleared registry).
-    const sequencer::IMutationOperator* selectedOperator() const;
     // A newly selected operator starts with all of its supported targets.
     void refreshOperatorDefaults();
-    // The GenerativeTimingOverride carried by the next posted command
-    // (inactive when the override is absent).
-    sequencer::GenerativeTimingOverride timingOverrideForPost() const;
-    // Push one command, latching the rejected-action flag. Never blocks.
-    sequencer::SequenceId post(sequencer::InboxCommand cmd);
+    // The packed FR10 level-1 override carried by the next posted command
+    // (commands::packGenerativeTiming; 0 when the override is absent).
+    uint8_t packedTimingForPost() const;
     // Adjust the currently selected field by `step` (the key front end).
     void adjustSelectedField(int step);
 
-    sequencer::MutationOperatorRegistry& registry_;
-    sequencer::CommandInbox& inbox_;
     hardware::LedMatrix& ledMatrix_;
 
     // View-local request state (all fixed-size scalars; see the class comment).
@@ -198,7 +194,6 @@ private:
     uint8_t intensity_ = static_cast<uint8_t>(kDefaultIntensity);
     bool timingActive_ = false;
     sequencer::OperationTimingMode timingMode_ = sequencer::OperationTimingMode::Immediate;
-    bool lastActionRejected_ = false;
 };
 
 }  // namespace ui

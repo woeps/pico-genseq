@@ -18,26 +18,31 @@
 //     contents/ordering, note duration and the Euclidean parameters;
 //   - MutationInvariant — the FR8 bitmask of preserved properties: the
 //     scale lock (AC2), locked material fields (contents/ordering/duration),
-//     the locked Euclidean parameters, the preserved pulse count, the locked
-//     scale and the locked generator assignments. (Step-level locks are
-//     enforced by the concrete operators over the material they permute,
-//     task 9; this mask carries the field-level invariants.);
+//     the locked Euclidean parameters, the preserved pulse count and the
+//     locked generator assignments. (Step-level locks are enforced by the
+//     concrete operators over the material they permute, task 9; this mask
+//     carries the field-level invariants. The former LOCK_SCALE bit is
+//     gone — the scale is a TRUE GLOBAL no mutation can touch, so a
+//     "locked scale" invariant would be vacuous, ui-integration T16.);
 //   - MutationConstraints — one request's targets, intensity (FR6, always
-//     clamped to 0-127), invariants and maximum distance from the working
-//     state (FR8);
+//     clamped to 0-127), invariants, maximum distance from the working
+//     state (FR8) and the GLOBAL scale the request operates under — the
+//     single-source scale (TransportTimeline) every pattern's pitch
+//     generation and pitch mutation read (ui-integration T16, FR12/FR13);
 //   - mutationDistance — the documented distance metric between two
 //     PatternGenerativeState snapshots (the working-state snapshot type the
 //     undo stack stores, task 12);
 //   - the constraint checks: withinDistance (FR8 distance limit) and
-//     violatedInvariants / invariantsHold (FR8 invariants), the latter using
-//     the task-1 common::Scale for the scale lock (AC2).
+//     violatedInvariants / invariantsHold (FR8 invariants), the latter
+//     checking pitch material against the request's GLOBAL scale (AC2 —
+//     never a per-pattern field).
 //
 // Global constraints honored here: plain fixed-size value types — no heap,
 // no RTTI, no exceptions; every helper is a bounded loop over fixed
 // capacities (kGenerativeSetCapacity = 16 values, kGeneratorRoleCount = 4
 // roles, kMaxGeneratorParams = 8 parameters), so each check completes in a
 // documented bounded operation count (AC4: the distance metric costs at most
-// 137 comparisons; a contents-equality check costs at most 2 * 16^2 bounded
+// 135 comparisons; a contents-equality check costs at most 2 * 16^2 bounded
 // sort/compare steps — no unbounded loop, no blocking). SDK-free: standard
 // headers plus the SDK-free Scale / PatternGenerativeState / Euclidean gate
 // generator headers only, so this compiles unchanged in the firmware and the
@@ -99,7 +104,6 @@ enum class MutationInvariant : uint16_t {
     LOCK_NOTE_DURATION = 1u << 5,      // the duration material may not change
     LOCK_EUCLIDEAN_PARAMS = 1u << 6,   // gate-role generator params may not change
     PRESERVE_PULSE_COUNT = 1u << 7,    // the gate-role pulse count stays fixed
-    LOCK_SCALE = 1u << 8,              // the scale root/template may not change
     LOCK_GENERATORS = 1u << 9,        // role generator assignments may not change
 };
 
@@ -169,13 +173,14 @@ inline bool sameSetSequence(const GenerativeValueSet& a, const GenerativeValueSe
 //       +|countA - countB| for the size difference,
 //       +1 per differing value position below the smaller count;
 //   - +1 per differing generator parameter entry (all roles);
-//   - +1 per role whose generator id assignment differs;
-//   - +1 when scaleRoot differs, +1 when scaleTemplateIndex differs.
+//   - +1 per role whose generator id assignment differs.
 //
 // Identical snapshots have distance 0. The metric's maximum is
-// 3 * (1 + 16 + 16) + 4 * 8 + 4 + 2 = 137, so a maxDistance of 255 (the
+// 3 * (1 + 16 + 16) + 4 * 8 + 4 = 135, so a maxDistance of 255 (the
 // MutationConstraints default) is effectively unlimited. Bounded work: at
-// most 137 comparisons, no allocation, no unbounded loop (AC4).
+// most 135 comparisons, no allocation, no unbounded loop (AC4). The scale
+// is NOT counted: it is a global setting outside the per-pattern state
+// (ui-integration T16), so no mutation can change it.
 inline uint16_t mutationDistance(const PatternGenerativeState& a,
                                  const PatternGenerativeState& b) {
     uint16_t d = 0;
@@ -209,23 +214,22 @@ inline uint16_t mutationDistance(const PatternGenerativeState& a,
         }
     }
 
-    // Scale selection.
-    if (a.scaleRoot != b.scaleRoot) ++d;
-    if (a.scaleTemplateIndex != b.scaleTemplateIndex) ++d;
-
     return d;
 }
 
 // --- FR6/FR8: the constraints value object ------------------------------------
 
-// The maximum distance value (255): above the metric's maximum of 137, so a
+// The maximum distance value (255): above the metric's maximum of 135, so a
 // default-constructed limit means "no practical restriction".
 constexpr uint8_t kUnlimitedMutationDistance = 255;
 
 // One mutation request's constraints (FR6-FR8): what may change (targets),
-// how much (intensity), what must not change (invariants) and how far the
-// result may drift (maxDistance). A fixed POD: trivially copyable so it can
-// ride in commands, the undo flow and the UI state without any dynamic part.
+// how much (intensity), what must not change (invariants), how far the
+// result may drift (maxDistance) and the GLOBAL scale the request operates
+// under (`scale`, ui-integration T16 — read solely from the single global
+// source by whoever stages the request). A fixed POD: trivially copyable
+// so it can ride in commands, the undo flow and the UI state without any
+// dynamic part.
 //
 // `intensity` is ALWAYS in 0-127: assign through setIntensity() or the
 // constructor, which clamp (FR6's adjustable 0-127 parameter).
@@ -245,6 +249,13 @@ struct MutationConstraints {
     // Maximum mutationDistance from the reference state (FR8);
     // kUnlimitedMutationDistance means no practical restriction.
     uint8_t maxDistance = kUnlimitedMutationDistance;
+    // The GLOBAL scale this request operates under (ui-integration T16,
+    // FR12/FR13): a copy of the single-source scale (the transport
+    // timeline's, read overlay-aware through the ParameterBus) the
+    // scale-lock check and the scale-aware pitch operators use — the
+    // per-pattern state carries NO scale of its own. Default: C Major,
+    // the factory global.
+    common::Scale scale;
 
     MutationConstraints() = default;
 
@@ -299,9 +310,10 @@ struct MutationConstraints {
         MutationInvariantMask violated = 0;
 
         if (hasInvariant(MutationInvariant::SCALE_LOCK)) {
-            // AC2: the resulting pitch material must lie in the pattern's
-            // (current) selected scale.
-            const common::Scale scale = after.scale();
+            // AC2: the resulting pitch material must lie in the request's
+            // GLOBAL scale — the single source every pattern reads (T16:
+            // carried by the constraints, never a per-pattern field).
+            const common::Scale& scale = this->scale;
             for (uint8_t i = 0; i < after.pitchSet.count; ++i) {
                 if (!scale.containsNote(after.pitchSet.values[i])) {
                     violated |= maskOf(MutationInvariant::SCALE_LOCK);
@@ -347,11 +359,6 @@ struct MutationConstraints {
                                      [EuclideanGateGenerator::kParamPulses]) {
             violated |= maskOf(MutationInvariant::PRESERVE_PULSE_COUNT);
         }
-        if (hasInvariant(MutationInvariant::LOCK_SCALE) &&
-            (before.scaleRoot != after.scaleRoot ||
-             before.scaleTemplateIndex != after.scaleTemplateIndex)) {
-            violated |= maskOf(MutationInvariant::LOCK_SCALE);
-        }
         if (hasInvariant(MutationInvariant::LOCK_GENERATORS)) {
             for (uint8_t r = 0; r < kGeneratorRoleCount; ++r) {
                 if (std::memcmp(before.generatorIds[r], after.generatorIds[r],
@@ -373,8 +380,9 @@ struct MutationConstraints {
     }
 };
 
-// Size bounds on the new POD state (global constraint): two mask words plus
-// two bytes, trivially copyable for command payloads and undo flows.
+// Size bounds on the new POD state (global constraint): two mask words,
+// two limit bytes and the request's global scale pair, trivially copyable
+// for command payloads and undo flows.
 static_assert(std::is_trivially_copyable<MutationConstraints>::value,
               "MutationConstraints must be trivially copyable");
 static_assert(std::is_standard_layout<MutationConstraints>::value,

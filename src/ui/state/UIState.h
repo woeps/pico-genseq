@@ -14,6 +14,10 @@ enum class ViewId : uint8_t {
     GATE_SET,
     PITCH_SET,
     VELOCITY_SET,
+    GENERATOR_CONFIG,
+    MUTATION,
+    MODULATION,
+    SCALE_SELECTION,
     COUNT       // sentinel - keep last
 };
 
@@ -134,6 +138,10 @@ static_assert(MAX_PATTERNS <= 16);
 struct UIState {
     ViewId currentView = ViewId::INIT;
     uint8_t bpm = 120;
+    // Global scale settings (single source of truth lives in TransportTimeline;
+    // these mirror the UI-editable global values alongside BPM).
+    uint8_t scaleRoot = 0;
+    uint8_t scaleTemplateIndex = 0;
     bool playing = false;
     int value = 0;
     uint8_t patternCount = 1;

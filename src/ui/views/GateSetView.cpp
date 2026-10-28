@@ -46,6 +46,14 @@ state::UIState GateSetView::handleEvent(const state::UIState& state, const event
                 state::setCurrentView(newState, state::ViewId::PATTERNS);
             }
             break;
+        case combo(KeyId::TAB):
+            // Drill into the per-lane generator configuration view
+            // (ui-integration T12, FR5/AC5): TAB is the gate lane's path
+            // into GENERATOR_CONFIG. Held repeats are ignored, and leaving
+            // through setCurrentView restores a dirty draft exactly like
+            // every other exit from GATE_SET.
+            if (isPressed) state::setCurrentView(newState, state::ViewId::GENERATOR_CONFIG);
+            break;
         default: break;
     }
     return newState;

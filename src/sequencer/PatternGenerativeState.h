@@ -5,7 +5,6 @@
 #include <type_traits>
 
 #include "GeneratorCapabilities.h"  // kMaxGeneratorParams (fixed param capacity)
-#include "../common/Scale.h"        // FR4 scale constraint value type
 #include "../common/pitch_set.h"    // common::PlayingOrder
 
 // Per-pattern generative state (generative-engine-expansion task 3, FR1,
@@ -21,10 +20,13 @@
 //     back to the pattern's stored material;
 //   - the configured parameter values for each role's generator, indexed by
 //     the generator's GeneratorParamDef::id;
-//   - the scale constraint (FR4): root pitch class + built-in template index,
-//     constraining pitch generation and pitch mutation (AC2);
 //   - the generative material sets (pitch / velocity / duration): contents
 //     plus playing order, the substrate mutations permute (T9, FR7).
+//
+// The scale is deliberately NOT part of this state (ui-integration T16):
+// it is a TRUE GLOBAL stored in the single source — the transport
+// timeline — which pitch generation and pitch mutation read for every
+// pattern (FR12/FR13/FR14 of ui-integration-spec).
 //
 // Global constraints honored here: a plain fixed-capacity value type — no
 // heap, no pointers (generator ids are embedded char arrays so the whole
@@ -32,7 +34,7 @@
 // RTTI, no exceptions; static size bounds below. Runtime positions (step
 // counters, gate edge memory) live in the Sequencer, NEVER here, so
 // snapshots of this state stay replayable. SDK-free: standard headers plus
-// the SDK-free Scale/pitch_set headers only, so it compiles unchanged in the
+// the SDK-free pitch_set header only, so it compiles unchanged in the
 // firmware and the host test build.
 
 namespace sequencer {
@@ -90,8 +92,7 @@ struct GenerativeValueSet {
 
 // FR4: the per-pattern generative state (see file comment). Default
 // construction yields a VALID, inert configuration: no generators assigned
-// (pure stored-data playback), C-Major scale constraint, empty material
-// sets traversed forwards.
+// (pure stored-data playback), empty material sets traversed forwards.
 struct PatternGenerativeState {
     // Generator id per role ("" = unassigned: the role falls back to the
     // stored pattern data). Embedded char storage, not pointers.
@@ -100,11 +101,6 @@ struct PatternGenerativeState {
     // Configured parameter values for each role's generator, indexed by the
     // generator's GeneratorParamDef::id. int16 matches the param-def range.
     int16_t generatorParams[kGeneratorRoleCount][kMaxGeneratorParams] = {};
-
-    // Scale constraint (FR4): root pitch class 0-11 and index into the
-    // built-in template table (common::SCALE_TEMPLATES).
-    uint8_t scaleRoot = 0;
-    uint8_t scaleTemplateIndex = 0;
 
     // Generative material per role (contents + playing order).
     GenerativeValueSet pitchSet;
@@ -174,10 +170,6 @@ struct PatternGenerativeState {
         if (r >= kGeneratorRoleCount || paramId >= kMaxGeneratorParams) return;
         generatorParams[r][paramId] = value;
     }
-
-    // FR4: the scale constraint as the value type the generator context
-    // carries (root and template index, validated/clamped by Scale).
-    common::Scale scale() const { return common::Scale(scaleRoot, scaleTemplateIndex); }
 };
 
 // Size bounds on the new POD state (global constraint): trivially copyable,

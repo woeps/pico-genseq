@@ -8,7 +8,6 @@
 #include "../../sequencer/GeneratorRegistry.h"
 #include "../../sequencer/IGenerator.h"
 #include "../../sequencer/ParameterAddress.h"
-#include "../../sequencer/ParameterBus.h"
 #include "../../sequencer/PatternGenerativeState.h"
 
 namespace ui {
@@ -25,12 +24,17 @@ namespace ui {
 // concrete generator type, so a newly registered plugin renders its own
 // controls with no view code change (AC8's plugin half of AC1).
 //
-// Edits write through the ParameterBus BASE values (task 16): a committed
-// edit is a setBase on the parameter's address — the stored live sequencer
-// state (the per-pattern generative working state) changes; no modulation
-// overlay is ever armed (overlays belong to the modulation layer alone).
-// Every edit is clamped to the control's ParameterDef min/max before it
-// reaches the bus.
+// Edits ride the COMMAND QUEUE (ui-integration T5): a committed edit posts a
+// GEN_PARAM_SET command (pattern, paramId, value) to the sequencer core —
+// the view NEVER touches the ParameterBus. Core0 keeps its OWN local UI
+// cache of the edited values (seeded from the task-16 factory defaults,
+// updated by every write), so reads and relative adjustments stay pure
+// Core0 state — no data structure is shared between the cores. The
+// sequencer applies the command as a plain bus BASE write (the stored live
+// per-pattern generative working state changes; no modulation overlay is
+// ever armed — overlays belong to the modulation layer alone).
+// Every edit is clamped to the control's ParameterDef min/max before it is
+// cached and sent.
 //
 // Selection state is view-local by design: UIState carries no generator
 // configuration fields (adding them is outside task 18's declared scope),
@@ -43,12 +47,16 @@ namespace ui {
 //   UP / DOWN      - adjust the selected control by 1 (SHIFT: coarse 5)
 //   ENTER          - cycle to the next generator for the selected role
 //   TAB            - cycle the selected role (gate/pitch/velocity/duration)
+//   ESCAPE         - return to the GATE_SET view this view was drilled into
+//                    from (the ENTER drill-in path is GATE_SET -> TAB ->
+//                    GENERATOR_CONFIG; ESCAPE walks straight back)
 //
 // Global constraints honored here: no heap allocation, no unbounded loops
 // (every operation is a bounded sweep over the fixed registry / parameter
 // tables), fixed-capacity storage (the per-role id selections are embedded
-// char arrays sized by kGeneratorIdCapacity). The view never touches the
-// tick path.
+// char arrays sized by kGeneratorIdCapacity; the UI cache is a fixed
+// pattern x parameter table). The view never touches the tick path and
+// never shares state with the sequencer core — commands only.
 class GeneratorConfigView : public IView {
 public:
     // One visible control, mirroring one GeneratorParamDef of the selected
@@ -66,7 +74,6 @@ public:
     };
 
     GeneratorConfigView(sequencer::GeneratorRegistry& registry,
-                        sequencer::ParameterBus& bus,
                         hardware::LedMatrix& ledMatrix);
 
     // --- role selection --------------------------------------------------
@@ -110,18 +117,19 @@ public:
     bool selectControl(uint8_t index);
     uint8_t selectedControl() const;
 
-    // The control's current value for one pattern slot: the ParameterBus
-    // BASE value when the control has a bus address, otherwise the
-    // ParameterDef's factory default (an unaddressed control displays but
-    // cannot be edited).
+    // The control's current value for one pattern slot, read from the
+    // view's LOCAL UI CACHE (Core0's own mirror of the edited values,
+    // seeded with the factory defaults): the cache entry when the control
+    // has a parameter-table address, otherwise the ParameterDef's factory
+    // default (an unaddressed control displays but cannot be edited).
     int32_t controlValue(uint8_t patternIndex, uint8_t index) const;
     // Set the control's value for one pattern slot: clamps `value` into
-    // the ParameterDef min/max and writes it through the ParameterBus base
-    // value. False when the control has no bus address (nothing is
-    // written) or the bus rejects the address.
+    // the ParameterDef min/max, updates the local UI cache and posts a
+    // GEN_PARAM_SET command for the sequencer core. False when the control
+    // has no parameter-table address (nothing is cached or sent).
     bool setControlValue(uint8_t patternIndex, uint8_t index, int32_t value);
-    // Relative edit of the control's current value (clamped into the
-    // ParameterDef min/max, written through the bus base value).
+    // Relative edit of the control's current cached value (clamped into the
+    // ParameterDef min/max, cached and sent as a GEN_PARAM_SET command).
     bool adjustControl(uint8_t patternIndex, uint8_t index, int delta);
 
     // --- IView -------------------------------------------------------------
@@ -148,8 +156,15 @@ private:
     static int16_t clampToDef(int32_t value, const sequencer::GeneratorParamDef& def);
 
     sequencer::GeneratorRegistry& registry_;
-    sequencer::ParameterBus& bus_;
     hardware::LedMatrix& ledMatrix_;
+
+    // Core0's LOCAL UI cache of the edited values (ui-integration T5):
+    // one entry per (pattern slot, task-16 ParamId), seeded with the
+    // parameter table's factory defaults and updated by every write. This
+    // is the view's OWN state — the sequencer core keeps its separate
+    // working state and the two communicate only through the command
+    // queue. Fixed capacity: 16 pattern slots x the parameter-table count.
+    int16_t cache_[common::PATTERN_CAPACITY][sequencer::kParamIdCount] = {};
 
     // The role currently shown.
     sequencer::GeneratorRole role_ = sequencer::GeneratorRole::GATE;

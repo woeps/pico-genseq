@@ -16,8 +16,8 @@
 //   - paramId: which parameter, from the fixed table below.
 //
 // The table covers EVERY existing UI-settable scalar — global BPM, the
-// Euclidean gate configuration, the pitch/velocity set sizes and their
-// playing orders — plus the new generator parameters and the scale
+// global scale (root + template), the Euclidean gate configuration, the
+// pitch/velocity set sizes and their playing orders — plus the new generator
 // parameters, each with its min/max (the same bounds the UI enforces),
 // display name and factory default.
 //
@@ -41,10 +41,10 @@ enum class ParameterScope : uint8_t {
 // overlays) survives table edits; append new parameters before Count.
 //
 // Storage note: the per-pattern parameters are scalars of the generative
-// working state (PatternGenerativeState), except BPM which is the global
-// transport timeline's. Generator parameters share their per-role storage
-// slot with whatever generator currently occupies that role; a ParamId fixes
-// the semantic RANGE of the value addressed through it.
+// working state (PatternGenerativeState); BPM and the global scale pair
+// live in the global transport timeline. Generator parameters share their
+// per-role storage slot with whatever generator currently occupies that
+// role; a ParamId fixes the semantic RANGE of the value addressed through it.
 enum class ParamId : uint8_t {
     // --- Global scope (the transport timeline) ----------------------------
     GlobalBpm = 0,  // FR12: the global BPM, UI range 40-255 (default 120)
@@ -75,7 +75,12 @@ enum class ParamId : uint8_t {
     VelocitySetCount = 15,    // velocity set size, 0-16 (default 0)
     VelocityPlayingOrder = 16, // playing order 0-3
 
-    Count = 17,  // sentinel: number of table entries
+    // --- Global scope: the transport timeline's scale (ui-integration T3:
+    //     FR12, AC10/AC11) --------------------------------------------------
+    GlobalScaleRoot = 17,     // global root pitch class 0-11 (default 0)
+    GlobalScaleTemplate = 18, // global template index (default 0)
+
+    Count = 19,  // sentinel: number of table entries
 };
 
 // Number of table entries, as a plain integer for loop bounds and bit-level
@@ -127,6 +132,14 @@ inline constexpr ParamInfo kParamInfos[kParamIdCount] = {
     {"Pitch Order", 0, 3, 0, ParameterScope::Pattern},
     {"Velocity Set Size", 0, 16, 0, ParameterScope::Pattern},
     {"Velocity Order", 0, 3, 0, ParameterScope::Pattern},
+
+    // Global scope: the transport timeline's scale (ui-integration T3:
+    // FR12, AC10/AC11) — the TRUE GLOBAL root and template, stored in ONE
+    // place (the transport timeline) next to the BPM.
+    {"Global Scale Root", 0, 11, 0, ParameterScope::Global},
+    {"Global Scale Template", 0,
+     static_cast<int16_t>(common::scaleTemplateCount() - 1), 0,
+     ParameterScope::Global},
 };
 
 // One parameter in one place (task-16 FR12/FR13): scope + pattern slot +
@@ -167,7 +180,8 @@ constexpr bool validAddress(const ParameterAddress& a) {
         return false;  // unknown parameter id
     }
     if (info->scope != a.scope) {
-        return false;  // scope mismatch: BPM is global-only, the rest per-pattern
+        return false;  // scope mismatch: BPM and the global scale pair are
+                       // global-only, the rest per-pattern
     }
     if (a.scope == ParameterScope::Pattern &&
         a.patternIndex >= common::PATTERN_CAPACITY) {

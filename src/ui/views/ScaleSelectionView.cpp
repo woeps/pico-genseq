@@ -1,10 +1,11 @@
 // Per-pattern root note + scale selection view (generative-engine-expansion
-// task 19, FR4). See ScaleSelectionView.h for the design; this translation
-// unit holds the wrap arithmetic, the ParameterBus write-through and the
-// key-event front end.
+// task 19, FR4; ui-integration T8). See ScaleSelectionView.h for the design;
+// this translation unit holds the wrap arithmetic, the PATTERN_SCALE_SET
+// command write-through and the key-event front end.
 
 #include "ScaleSelectionView.h"
 
+#include "../../commands/command.h"
 #include "../Types.h"
 
 #include <cstdio>
@@ -49,9 +50,8 @@ int wrapMod(int value, int modulus) {
 
 }  // namespace
 
-ScaleSelectionView::ScaleSelectionView(sequencer::ParameterBus& bus,
-                                       hardware::LedMatrix& ledMatrix)
-    : bus_(bus), ledMatrix_(ledMatrix) {}
+ScaleSelectionView::ScaleSelectionView(hardware::LedMatrix& ledMatrix)
+    : ledMatrix_(ledMatrix) {}
 
 // --- field selection -----------------------------------------------------------
 
@@ -77,11 +77,11 @@ const char* ScaleSelectionView::scaleNameAt(int index) {
 // --- per-pattern values ------------------------------------------------------------
 
 int ScaleSelectionView::rootValue(uint8_t patternIndex) const {
-    return bus_.baseValue(rootAddress(patternIndex));
+    return validPattern(patternIndex) ? roots_[patternIndex] : 0;
 }
 
 int ScaleSelectionView::scaleIndexValue(uint8_t patternIndex) const {
-    return bus_.baseValue(scaleAddress(patternIndex));
+    return validPattern(patternIndex) ? templates_[patternIndex] : 0;
 }
 
 // --- selections --------------------------------------------------------------------
@@ -89,25 +89,33 @@ int ScaleSelectionView::scaleIndexValue(uint8_t patternIndex) const {
 bool ScaleSelectionView::setRoot(uint8_t patternIndex, int root) {
     if (!validPattern(patternIndex)) return false;
     if (root < 0 || root >= kRootCount) return false;  // a root is 0-11, else nothing
-    return bus_.setBase(rootAddress(patternIndex), root);
+    roots_[patternIndex] = static_cast<uint8_t>(root);
+    postPatternScale(patternIndex);
+    return true;
 }
 
 bool ScaleSelectionView::setScaleIndex(uint8_t patternIndex, int index) {
     if (!validPattern(patternIndex)) return false;
     if (index < 0 || index >= scaleCount()) return false;  // real templates only
-    return bus_.setBase(scaleAddress(patternIndex), index);
+    templates_[patternIndex] = static_cast<uint8_t>(index);
+    postPatternScale(patternIndex);
+    return true;
 }
 
 bool ScaleSelectionView::cycleRoot(uint8_t patternIndex, int delta) {
     if (!validPattern(patternIndex)) return false;
-    const int next = wrapMod(rootValue(patternIndex) + delta, kRootCount);
-    return bus_.setBase(rootAddress(patternIndex), next);
+    roots_[patternIndex] = static_cast<uint8_t>(wrapMod(
+        static_cast<int>(roots_[patternIndex]) + delta, kRootCount));
+    postPatternScale(patternIndex);
+    return true;
 }
 
 bool ScaleSelectionView::cycleScaleIndex(uint8_t patternIndex, int delta) {
     if (!validPattern(patternIndex)) return false;
-    const int next = wrapMod(scaleIndexValue(patternIndex) + delta, scaleCount());
-    return bus_.setBase(scaleAddress(patternIndex), next);
+    templates_[patternIndex] = static_cast<uint8_t>(wrapMod(
+        static_cast<int>(templates_[patternIndex]) + delta, scaleCount()));
+    postPatternScale(patternIndex);
+    return true;
 }
 
 // --- IView ---------------------------------------------------------------------------
@@ -119,9 +127,10 @@ void ScaleSelectionView::onEnter() {
 
 state::UIState ScaleSelectionView::handleEvent(const state::UIState& state,
                                                const events::Event& event) {
-    // The edited values live in the authoritative sequencer state through
-    // the bus, not in the UIState (which carries no scale fields), so every
-    // path here returns the state unchanged.
+    // The edited values live in the view's local UI cache and cross the
+    // cores only as PATTERN_SCALE_SET commands — not in the UIState (which
+    // carries no scale fields) — so every path here returns the state
+    // unchanged except the ESCAPE back-out to the parent view.
     if (event.type != events::EventType::KEY_PRESSED &&
         event.type != events::EventType::KEY_HELD) {
         return state;
@@ -131,6 +140,16 @@ state::UIState ScaleSelectionView::handleEvent(const state::UIState& state,
     const bool coarse = (event.data.key.mods & mod::SHIFT) != 0;
     const int step = coarse ? kCoarseStep : 1;
     switch (combo(event.data.key.id, event.data.key.mods & ~mod::SHIFT)) {
+        case combo(KeyId::ESCAPE):
+            // Back out to the PATTERNS view (FR11: ESCAPE returns to the
+            // appropriate parent). Held repeats are ignored, like the
+            // sibling views.
+            if (event.type == events::EventType::KEY_PRESSED) {
+                state::UIState next = state;
+                next.currentView = state::ViewId::PATTERNS;
+                return next;
+            }
+            break;
         case combo(KeyId::LEFT):
         case combo(KeyId::RIGHT):
             // Toggle the edited field (two fields: both directions meet).
@@ -175,25 +194,15 @@ void ScaleSelectionView::render(const state::UIState& state) {
 // --- private helpers -----------------------------------------------------------------
 
 bool ScaleSelectionView::validPattern(uint8_t patternIndex) {
-    return patternIndex < sequencer::ParameterBus::kPatternCount;
+    return patternIndex < common::PATTERN_CAPACITY;
 }
 
-sequencer::ParameterAddress ScaleSelectionView::rootAddress(
-    uint8_t patternIndex) {
-    sequencer::ParameterAddress address;
-    address.scope = sequencer::ParameterScope::Pattern;
-    address.patternIndex = patternIndex;
-    address.paramId = sequencer::ParamId::ScaleRoot;
-    return address;
-}
-
-sequencer::ParameterAddress ScaleSelectionView::scaleAddress(
-    uint8_t patternIndex) {
-    sequencer::ParameterAddress address;
-    address.scope = sequencer::ParameterScope::Pattern;
-    address.patternIndex = patternIndex;
-    address.paramId = sequencer::ParamId::ScaleTemplate;
-    return address;
+void ScaleSelectionView::postPatternScale(uint8_t patternIndex) {
+    // The view's ONLY cross-core write path: the pattern's full cached pair
+    // rides ONE command word to the sequencer core (the sequencer applies
+    // it as a plain bus BASE write into its own working state).
+    commands::sendPatternScaleCommand(patternIndex, roots_[patternIndex],
+                                      templates_[patternIndex]);
 }
 
 }  // namespace ui

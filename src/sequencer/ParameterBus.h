@@ -14,9 +14,10 @@
 //
 // One fixed-capacity addressing surface over EVERY UI-settable parameter:
 // the STORED base values are the live sequencer state — the transport
-// timeline for global BPM, the per-pattern generative working state for
-// everything else — while MODULATION overlays live in separate fixed arrays
-// owned by the bus. The invariant (AC3, task-16 step 4): a modulation write
+// timeline for the global parameters (BPM and the global scale pair), the
+// per-pattern generative working state for everything else — while
+// MODULATION overlays live in separate fixed arrays owned by the bus. The
+// invariant (AC3, task-16 step 4): a modulation write
 // is setOverlay — it changes effectiveValue and NOTHING else. Stored values,
 // undo snapshots and the saved baseline stay exactly what the user set, so
 // Milestone 2's data-integrity guarantees hold unchanged.
@@ -188,6 +189,9 @@ private:
         if (s == nullptr) return 0;  // total: validAddress bounds the slot, guard anyway
         switch (a.paramId) {
             case ParamId::GlobalBpm: return timeline_->bpm();
+            case ParamId::GlobalScaleRoot: return timeline_->scaleRoot();
+            case ParamId::GlobalScaleTemplate:
+                return timeline_->scaleTemplateIndex();
             case ParamId::GateSteps:
                 return s->generatorParam(GeneratorRole::GATE,
                                          EuclideanGateGenerator::kParamSteps);
@@ -218,8 +222,11 @@ private:
             case ParamId::DurationVariation:
                 return s->generatorParam(GeneratorRole::DURATION,
                                          NoteDurationGenerator::kParamVariation);
-            case ParamId::ScaleRoot: return s->scaleRoot;
-            case ParamId::ScaleTemplate: return s->scaleTemplateIndex;
+            // The scale is the ONE global (ui-integration T16, FR13): a
+            // Pattern-scope scale address reads the single global source,
+            // never a per-pattern field.
+            case ParamId::ScaleRoot: return timeline_->scaleRoot();
+            case ParamId::ScaleTemplate: return timeline_->scaleTemplateIndex();
             case ParamId::PitchSetCount: return s->pitchSet.count;
             case ParamId::PitchPlayingOrder:
                 return static_cast<int32_t>(s->pitchSet.order);
@@ -240,6 +247,15 @@ private:
         if (s == nullptr) return false;  // total: validAddress bounds the slot, guard anyway
         switch (a.paramId) {
             case ParamId::GlobalBpm: return timeline_->setBpm(v);
+            case ParamId::GlobalScaleRoot:
+                // Re-commit the pair keeping the stored template (setScale
+                // validates both halves; the value is already clamped).
+                return timeline_->setScale(static_cast<uint8_t>(v),
+                                           timeline_->scaleTemplateIndex());
+            case ParamId::GlobalScaleTemplate:
+                // Re-commit the pair keeping the stored root.
+                return timeline_->setScale(timeline_->scaleRoot(),
+                                           static_cast<uint8_t>(v));
             case ParamId::GateSteps:
                 s->setGeneratorParam(GeneratorRole::GATE,
                                      EuclideanGateGenerator::kParamSteps, v);
@@ -280,12 +296,16 @@ private:
                 s->setGeneratorParam(GeneratorRole::DURATION,
                                      NoteDurationGenerator::kParamVariation, v);
                 return true;
+            // Pattern-scope scale writes reach the SAME single global
+            // source (ui-integration T16, FR13): re-commit the pair
+            // keeping the stored other half (setScale validates both
+            // halves; the value is already clamped).
             case ParamId::ScaleRoot:
-                s->scaleRoot = static_cast<uint8_t>(v);
-                return true;
+                return timeline_->setScale(static_cast<uint8_t>(v),
+                                           timeline_->scaleTemplateIndex());
             case ParamId::ScaleTemplate:
-                s->scaleTemplateIndex = static_cast<uint8_t>(v);
-                return true;
+                return timeline_->setScale(timeline_->scaleRoot(),
+                                           static_cast<uint8_t>(v));
             case ParamId::PitchSetCount:
                 s->pitchSet.count = static_cast<uint8_t>(v);
                 return true;
@@ -307,8 +327,8 @@ private:
     // Fixed overlay storage (AC3: separate from EVERY stored value):
     // one absolute value per (scope, pattern, parameter). Row-indexed by
     // the fixed pattern capacity / parameter-table count — no heap, no
-    // growth. A pattern row's BPM cell and the global row's per-pattern
-    // cells are dead weight (that pairing is invalid by validAddress);
+    // growth. A pattern row's global cells and the global row's per-pattern
+    // cells are dead weight (those pairings are invalid by validAddress);
     // the uniform indexing keeps every operation a single array hit.
     int16_t patternOverlay_[kPatternCount][kParamIdCount] = {};
     bool patternOverlayActive_[kPatternCount][kParamIdCount] = {};

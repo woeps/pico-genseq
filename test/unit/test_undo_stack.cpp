@@ -55,8 +55,8 @@ void check(bool cond, const char* what) {
     if (!cond) { std::printf("FAIL: %s\n", what); ++failures; }
 }
 
-// A deterministic, distinguishable per-pattern state: generator id, params,
-// scale and material contents all derived from `tag` so a restored state can
+// A deterministic, distinguishable per-pattern state: generator id, params
+// and material contents all derived from `tag` so a restored state can
 // be recognized exactly.
 PatternGenerativeState taggedState(uint8_t tag) {
     PatternGenerativeState s;
@@ -65,8 +65,7 @@ PatternGenerativeState taggedState(uint8_t tag) {
     s.setGeneratorId(GeneratorRole::PITCH, id);
     s.setGeneratorParam(GeneratorRole::PITCH, 0, static_cast<int16_t>(tag));
     s.setGeneratorParam(GeneratorRole::PITCH, 1, static_cast<int16_t>(tag * 7));
-    s.scaleRoot = static_cast<uint8_t>(tag % 12);
-    s.scaleTemplateIndex = static_cast<uint8_t>(tag % 5);
+    s.setGeneratorParam(GeneratorRole::PITCH, 2, static_cast<int16_t>(tag * 3));
     s.pitchSet.count = 4;
     for (uint8_t i = 0; i < 4; ++i) s.pitchSet.values[i] = static_cast<uint8_t>(tag + i);
     s.velocitySet.count = 2;

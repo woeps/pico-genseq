@@ -14,6 +14,7 @@ add_executable(genseq_tests
     test_decoder.cpp
     test_patternsview.cpp
     test_setdetailviews.cpp
+    test_transporttimeline.cpp
     stubs/command_stub.cpp
     stubs/hardware_stub.cpp
     ${SRC}/common/gate_set.cpp
@@ -35,3 +36,6 @@ target_include_directories(genseq_tests PRIVATE
 )
 
 target_compile_options(genseq_tests PRIVATE -Wall -Wextra)
+
+enable_testing()
+add_test(NAME genseq_tests COMMAND genseq_tests)

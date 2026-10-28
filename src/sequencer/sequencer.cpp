@@ -77,6 +77,46 @@ GenerativeOperation generativeOperationFor(GenerativeCommandKind kind) {
     return GenerativeOperation::Mutate;  // unreachable (None is never staged)
 }
 
+// Decode one command-queue generative command (ui-integration T6) into the
+// fixed POD passenger the generative dispatch machinery consumes — the SAME
+// InboxCommand staging the CommandInbox path feeds, but with NO inbox
+// sequence (kInvalidSequence): the inter-core FIFO carries no ack
+// handshake, so nothing is marked. MUTATE resolves the operator INDEX
+// through the sequencer core's OWN registry (both cores list the built-ins
+// in the same registration order; the UI never touches this registry) and
+// carries the FR7 target mask, the FR6 intensity and the packed FR10
+// level-1 override; the three recovery commands carry the override alone.
+// Returns kind None when the operator index names nothing registered (the
+// caller then refuses the command untouched).
+GenerativeCommand generativeFromMessage(const commands::CommandMessage& msg) {
+    GenerativeCommand gen{};
+    gen.timing.active = commands::generativeTimingActive(msg.genTiming);
+    gen.timing.mode = commands::generativeTimingMode(msg.genTiming);
+    switch (msg.cmd) {
+        case commands::Command::MUTATE: {
+            const IMutationOperator* op = g_mutationRegistry.at(msg.param1);
+            if (op == nullptr) return gen;  // kind stays None: unknown index
+            gen.kind = GenerativeCommandKind::Mutate;
+            copyMutationOpId(gen.mutate.opId, op->id());
+            gen.mutate.patternIndex = msg.param2;
+            gen.mutate.targets = msg.mutateTargets;
+            gen.mutate.intensity = msg.mutateIntensity;
+            return gen;
+        }
+        case commands::Command::UNDO:
+            gen.kind = GenerativeCommandKind::Undo;
+            return gen;
+        case commands::Command::REVERT:
+            gen.kind = GenerativeCommandKind::Revert;
+            return gen;
+        case commands::Command::KEEP:
+            gen.kind = GenerativeCommandKind::Keep;
+            return gen;
+        default:
+            return gen;
+    }
+}
+
 // The global BPM address (task 17): the ONE parameter the transport's
 // tick-duration math consumes. While a modulation overlay is armed here,
 // update() opens a "tempo window" — the timeline's BPM runs at the bus's
@@ -84,6 +124,115 @@ GenerativeOperation generativeOperationFor(GenerativeCommandKind kind) {
 // it — so a modulated tempo never compounds and never leaks into the
 // stored state (AC3).
 constexpr ParameterAddress kBpmAddress{ParameterScope::Global, 0, ParamId::GlobalBpm};
+
+// --- modulation target configuration commands (ui-integration T7) -----------
+//
+// The ModulationPatternView's ONLY cross-core path: the view keeps its OWN
+// local UI mirror of the target configuration and posts every edit as a
+// MOD_TARGET_ADD / MOD_TARGET_SET_PARAM command. The handlers below resolve
+// the payloads against the sequencer core's OWN ModulationRegistry — the
+// fixed pool the tick-path ModulationApplier reads (g_modulationRegistry).
+// No target object and no registry crosses the cores; the two sides only
+// agree on the command vocabulary (command.h), the slot/pattern indices and
+// the compile-time parameter table (ParameterAddress.h).
+
+// Apply one MOD_TARGET_ADD: claim the first free slot of the process-wide
+// registry and bind it to the command's global modulation pattern. A full
+// registry is a graceful refusal (never a block, never a growth); the
+// pattern index was validated by canApplyCommand.
+void applyModTargetAdd(uint8_t patternIndex) {
+    const size_t slot = g_modulationRegistry.addTarget();
+    if (slot == ModulationRegistry::INVALID_INDEX) return;  // full: refuse
+    g_modulationRegistry.target(slot).patternIndex = patternIndex;
+}
+
+// Apply one MOD_TARGET_SET_PARAM: write ONE field of one ACTIVE target slot
+// (the slot and the field ordinal were validated by canApplyCommand; the
+// value byte is defensively clamped/refused per field — a foreign value
+// never reaches the tick path).
+void applyModTargetSetParam(uint8_t slot, uint8_t field, uint8_t value) {
+    ModulationTarget& target = g_modulationRegistry.target(slot);
+    switch (static_cast<commands::ModTargetField>(field)) {
+        case commands::ModTargetField::ParamId: {
+            // The table's scope rides along, so an explicitly selected
+            // parameter is always VALIDLY addressed (by construction).
+            if (value >= kParamIdCount) return;  // unknown table id: refuse
+            target.address.paramId = static_cast<ParamId>(value);
+            target.address.scope = kParamInfos[value].scope;
+            return;
+        }
+        case commands::ModTargetField::Scope: {
+            const ParameterScope scope = static_cast<ParameterScope>(value);
+            if (scope != ParameterScope::Pattern && scope != ParameterScope::Global)
+                return;  // foreign ordinal: refuse
+            const ParamInfo* info =
+                paramInfoOf(static_cast<uint16_t>(target.address.paramId));
+            if (info != nullptr && info->scope != scope) {
+                // Re-point a scope-mismatched parameter so the address
+                // stays VALID (the same rule the UI mirror enforces on its
+                // side): global keeps only the BPM, per-pattern falls back
+                // to the first per-pattern parameter (GateSteps).
+                target.address.paramId = (scope == ParameterScope::Global)
+                                             ? ParamId::GlobalBpm
+                                             : static_cast<ParamId>(1);
+            }
+            target.address.scope = scope;
+            if (scope == ParameterScope::Pattern &&
+                target.address.patternIndex >= common::PATTERN_CAPACITY) {
+                target.address.patternIndex = 0;  // defensive clamp
+            }
+            return;
+        }
+        case commands::ModTargetField::AddressPatternSlot:
+            // The per-pattern slot for Pattern-scope addresses (FR8: the
+            // pattern the target lives on); a foreign slot is refused.
+            if (value >= common::PATTERN_CAPACITY) return;
+            target.address.patternIndex = value;
+            return;
+        case commands::ModTargetField::PatternIndex:
+            // The driving global modulation pattern (FR9): a target can be
+            // re-bound to any of the fixed patterns.
+            if (value >= ModulationRegistry::MAX_PATTERNS) return;
+            target.patternIndex = value;
+            return;
+        case commands::ModTargetField::ScaleFactor:
+            target.scaleFactor = (value > 127) ? 127 : value;  // clamp
+            return;
+        case commands::ModTargetField::Balance: {
+            // Signed byte: the view packs a negative balance as its two's-
+            // complement byte (command.h), this side signs it again.
+            int signedValue = static_cast<int8_t>(value);
+            if (signedValue < -127) signedValue = -127;
+            if (signedValue > 127) signedValue = 127;
+            target.balance = static_cast<int8_t>(signedValue);
+            return;
+        }
+        case commands::ModTargetField::DurationLength:
+            // FR14 hold length in the step-duration's unit, 1-16.
+            if (value == 0) {
+                target.stepDuration.length = 1;
+            } else if (value > 16) {
+                target.stepDuration.length = 16;
+            } else {
+                target.stepDuration.length = value;
+            }
+            return;
+        case commands::ModTargetField::DurationUnit: {
+            const StepUnit unit = static_cast<StepUnit>(value);
+            if (unit != StepUnit::Beat && unit != StepUnit::Bar) return;
+            target.stepDuration.unit = unit;
+            return;
+        }
+        case commands::ModTargetField::Order: {
+            const ModulationOrder order = static_cast<ModulationOrder>(value);
+            if (order != ModulationOrder::Forward && order != ModulationOrder::Reverse &&
+                order != ModulationOrder::PingPong && order != ModulationOrder::Random)
+                return;  // foreign ordinal: refuse
+            target.order = order;
+            return;
+        }
+    }
+}
 
 }  // namespace
 
@@ -507,19 +656,21 @@ void Sequencer::dispatchGenerativeStep(size_t patternIndex, uint32_t stepIndex,
     const uint32_t storedLength = patterns[patternIndex].getGateSet().getLength();
     const uint8_t patternLength =
         static_cast<uint8_t>(storedLength > 255u ? 255u : storedLength);
-    // The scale constraint resolves through the ParameterBus (task 17): the
-    // EFFECTIVE root and template index — overlay-aware, so modulating the
-    // scale shifts pitch generation live — while the working state's STORED
-    // scale (what undo/save/the UI read) is untouched (AC3). With nothing
-    // modulated this is exactly state.scale(): the bus's clamp is the
-    // identity on the stored invariants.
+    // The scale constraint resolves through the ParameterBus from the
+    // GLOBAL single source (ui-integration T4, FR12/FR13/FR14): the
+    // transport timeline's stored scale, read at the Global-scope
+    // addresses — overlay-aware, so a Global-scope modulation of the
+    // scale shifts pitch generation live (AC10/AC11) — while the timeline's
+    // STORED scale (what the UI, undo and persistence read) is untouched
+    // (AC3). With nothing modulated this is exactly timeline.scale(): the
+    // bus's clamp is the identity on the stored invariants, so every
+    // pattern reads the ONE global scale and a change affects all
+    // patterns immediately (FR14).
     const common::Scale scale(
         static_cast<uint8_t>(parameterBus_.effectiveValue(
-            {ParameterScope::Pattern, static_cast<uint8_t>(patternIndex),
-             ParamId::ScaleRoot})),
+            {ParameterScope::Global, 0, ParamId::GlobalScaleRoot})),
         static_cast<uint8_t>(parameterBus_.effectiveValue(
-            {ParameterScope::Pattern, static_cast<uint8_t>(patternIndex),
-             ParamId::ScaleTemplate})));
+            {ParameterScope::Global, 0, ParamId::GlobalScaleTemplate})));
 
     for (uint8_t r = 0; r < kGeneratorRoleCount; ++r) {
         const GeneratorRole role = static_cast<GeneratorRole>(r);
@@ -609,8 +760,11 @@ void Sequencer::stageGenerativeCommand(const InboxCommand& cmd) {
     if (pendingGenerativeCount_ >= kMaxPendingGenerativeCommands) {
         // Bounded drop (AC4): the fixed pending list is full — refuse the
         // NEWEST staged command and ack it Rejected rather than blocking,
-        // growing memory or evicting an older (sooner) command.
-        inbox_.markAck(cmd.sequence, AckStatus::Rejected);
+        // growing memory or evicting an older (sooner) command. A FIFO
+        // command carries no sequence (kInvalidSequence) and marks nothing.
+        if (cmd.sequence != kInvalidSequence) {
+            inbox_.markAck(cmd.sequence, AckStatus::Rejected);
+        }
         return;
     }
     PendingGenerative& slot = pendingGenerative_[pendingGenerativeCount_++];
@@ -641,20 +795,22 @@ void Sequencer::executeGenerativeCommand(const GenerativeCommand& gen, SequenceI
             return;
         case GenerativeCommandKind::Undo:
             workingState_.undo();  // AC5: pops LIFO; a no-op when the stack is empty
-            inbox_.markAck(seq, AckStatus::Applied);
+            if (seq != kInvalidSequence) inbox_.markAck(seq, AckStatus::Applied);
             return;
         case GenerativeCommandKind::Revert:
             workingState_.revert();  // AC6: every pattern's baseline, stack cleared
-            inbox_.markAck(seq, AckStatus::Applied);
+            if (seq != kInvalidSequence) inbox_.markAck(seq, AckStatus::Applied);
             return;
         case GenerativeCommandKind::Keep:
             workingState_.keep();  // FR15: re-anchor the baseline, stack cleared
-            inbox_.markAck(seq, AckStatus::Applied);
+            if (seq != kInvalidSequence) inbox_.markAck(seq, AckStatus::Applied);
             return;
         case GenerativeCommandKind::None:
             return;  // never staged; ignore
     }
-    inbox_.markAck(seq, AckStatus::Rejected);  // unknown kind fails closed
+    if (seq != kInvalidSequence) {
+        inbox_.markAck(seq, AckStatus::Rejected);  // unknown kind fails closed
+    }
 }
 
 void Sequencer::executeMutate(const MutateCmd& mutate, SequenceId seq) {
@@ -663,7 +819,7 @@ void Sequencer::executeMutate(const MutateCmd& mutate, SequenceId seq) {
     // here. An unknown (or empty) id rejects the command untouched.
     IMutationOperator* op = g_mutationRegistry.find(mutate.opId);
     if (op == nullptr) {
-        inbox_.markAck(seq, AckStatus::Rejected);
+        if (seq != kInvalidSequence) inbox_.markAck(seq, AckStatus::Rejected);
         return;
     }
     bool anyExecuted = false;
@@ -679,8 +835,11 @@ void Sequencer::executeMutate(const MutateCmd& mutate, SequenceId seq) {
     }
     // Applied when ANY application executed (APPLIED or NO_CHANGE); only a
     // command refused everywhere (unknown target pattern, or REJECTED by
-    // every operator application) acks Rejected.
-    inbox_.markAck(seq, anyExecuted ? AckStatus::Applied : AckStatus::Rejected);
+    // every operator application) acks Rejected. A FIFO command carries no
+    // sequence and marks nothing.
+    if (seq != kInvalidSequence) {
+        inbox_.markAck(seq, anyExecuted ? AckStatus::Applied : AckStatus::Rejected);
+    }
 }
 
 bool Sequencer::applyMutationToPattern(IMutationOperator& op, const MutateCmd& mutate,
@@ -689,9 +848,18 @@ bool Sequencer::applyMutationToPattern(IMutationOperator& op, const MutateCmd& m
     if (working == nullptr) return false;
     // The command's FR6/FR7/FR8 parameters, verbatim: targets, intensity,
     // invariants and distance limit (the operator + finalize gate verify
-    // them; the scale constraint lives in the state itself).
-    const MutationConstraints constraints(mutate.targets, mutate.intensity,
-                                          mutate.invariants, mutate.maxDistance);
+    // them). The scale constraint is the GLOBAL single source
+    // (ui-integration T16, FR12/FR13): the same overlay-aware Global-scope
+    // read dispatchGenerativeStep uses for pitch generation, so the
+    // scale-lock check and the scale-aware operators snap against exactly
+    // the scale the mutated material will play under.
+    MutationConstraints constraints(mutate.targets, mutate.intensity,
+                                    mutate.invariants, mutate.maxDistance);
+    constraints.scale = common::Scale(
+        static_cast<uint8_t>(parameterBus_.effectiveValue(
+            {ParameterScope::Global, 0, ParamId::GlobalScaleRoot})),
+        static_cast<uint8_t>(parameterBus_.effectiveValue(
+            {ParameterScope::Global, 0, ParamId::GlobalScaleTemplate})));
     const PatternGenerativeState before = *working;
     // AC5: the snapshot is pushed BEFORE the operator runs, so Undo always
     // holds the pre-mutation state — whatever the operator then does.
@@ -814,6 +982,58 @@ void Sequencer::processCommand(commands::CommandMessage msg) {
         case commands::Command::PATTERN_REMOVE:
             removePattern(msg.param1);
             break;
+        case commands::Command::SCALE_SET:
+            // The global scale's single source (ui-integration T4, FR12/
+            // FR13): the transport timeline. setScale applies the (root,
+            // template) pair to the ONE place every pattern's pitch
+            // generation reads from (FR14), rejecting an invalid pair and
+            // leaving the previous scale untouched (Req 1.7) — the same
+            // reject-not-round contract as BPM.
+            timeline.setScale(msg.scaleRoot, msg.scaleTemplateIndex);
+            break;
+        case commands::Command::PATTERN_SCALE_SET:
+            // ScaleSelectionView's only write path (ui-integration T16):
+            // the per-pattern scale override no longer exists — the scale
+            // is the ONE global, so the command's (root, template) pair
+            // commits to the same single source as SCALE_SET (FR12/FR13),
+            // affecting every pattern immediately (FR14). The pattern index
+            // stays a validated command argument (canApplyCommand) but
+            // selects nothing per-pattern anymore.
+            timeline.setScale(msg.scaleRoot, msg.scaleTemplateIndex);
+            break;
+        case commands::Command::GEN_PARAM_SET:
+            setGeneratorParameter(msg.param1, msg.param2, msg.paramValue);
+            break;
+        case commands::Command::MUTATE:
+        case commands::Command::UNDO:
+        case commands::Command::REVERT:
+        case commands::Command::KEEP: {
+            // The command queue's generative commands (ui-integration T6):
+            // decode the fixed POD passenger and route it through the SAME
+            // staging / execution machinery the CommandInbox dispatch uses
+            // (three-level timing resolution, bounded pending list, undo
+            // history). A FIFO command carries no inbox sequence
+            // (kInvalidSequence), so nothing is ever ack-marked on it.
+            InboxCommand staged{};
+            staged.gen = generativeFromMessage(msg);
+            if (staged.gen.kind == GenerativeCommandKind::None) {
+                break;  // unknown operator index: refuse untouched
+            }
+            stageGenerativeCommand(staged);
+            break;
+        }
+        case commands::Command::MOD_TARGET_ADD:
+            // ui-integration T7: claim a target slot bound to the command's
+            // global modulation pattern (see applyModTargetAdd).
+            applyModTargetAdd(msg.param1);
+            break;
+        case commands::Command::MOD_TARGET_SET_PARAM:
+            // ui-integration T7: write one field of one active target slot
+            // (see applyModTargetSetParam).
+            applyModTargetSetParam(commands::modTargetSlotOf(msg.param1),
+                                   commands::modTargetFieldOf(msg.param1),
+                                   msg.param2);
+            break;
         default:
             break;
     }
@@ -840,6 +1060,42 @@ bool Sequencer::canApplyCommand(const commands::CommandMessage& msg) const {
                    msg.velocityCount <= msg.velocities.size();
         case commands::Command::PATTERN_REMOVE:
             return patterns.size() > 1 && msg.param1 < patterns.size();
+        case commands::Command::SCALE_SET:
+            // Always applicable: the timeline's setScale performs the range
+            // check and rejects an invalid (root, template) pair without
+            // touching state (Req 1.7).
+            return true;
+        case commands::Command::PATTERN_SCALE_SET:
+            return msg.param1 < patterns.size();
+        case commands::Command::GEN_PARAM_SET:
+            return msg.param1 < patterns.size();
+        case commands::Command::UNDO:
+        case commands::Command::REVERT:
+        case commands::Command::KEEP:
+            // Recovery gestures always answer: an empty undo stack is a
+            // defined no-op and the pending list stays bounded, so there is
+            // nothing to refuse here.
+            return true;
+        case commands::Command::MUTATE:
+            // The operator index must name one of the built-in operators
+            // (both cores list the same registration order) and the pattern
+            // a live slot — or the ALL_PATTERNS fan-out sentinel.
+            return g_mutationRegistry.at(msg.param1) != nullptr &&
+                   (msg.param2 == commands::ALL_PATTERNS ||
+                    static_cast<size_t>(msg.param2) < patterns.size());
+        case commands::Command::MOD_TARGET_ADD:
+            // The driving pattern must name one of the fixed global
+            // modulation patterns; a FULL registry is a graceful refusal
+            // in the handler (never a block, never a growth).
+            return msg.param1 < ModulationRegistry::MAX_PATTERNS;
+        case commands::Command::MOD_TARGET_SET_PARAM:
+            // The field must name a known member and the slot an ACTIVE
+            // target; the value byte is clamped/refused per field in the
+            // handler.
+            return commands::modTargetFieldOf(msg.param1) <
+                       commands::MOD_TARGET_FIELD_COUNT &&
+                   g_modulationRegistry.targetActive(
+                       commands::modTargetSlotOf(msg.param1));
         case commands::Command::NOOP:
         default:
             return false;
@@ -894,6 +1150,43 @@ void Sequencer::processCommand(const commands::CommandMessage& msg,
         case commands::Command::PATTERN_DEACTIVATE: deactivatePattern(msg.param1); break;
         case commands::Command::PATTERN_ADD:     addPattern(common::Pattern()); break;
         case commands::Command::PATTERN_REMOVE:  removePattern(msg.param1); break;
+        case commands::Command::SCALE_SET:
+            timeline.setScale(msg.scaleRoot, msg.scaleTemplateIndex); break;
+        case commands::Command::PATTERN_SCALE_SET:
+            // Same single-source target as SCALE_SET (ui-integration T16):
+            // the scale is global; the pattern index selects nothing.
+            timeline.setScale(msg.scaleRoot, msg.scaleTemplateIndex); break;
+        case commands::Command::GEN_PARAM_SET:
+            setGeneratorParameter(msg.param1, msg.param2, msg.paramValue);
+            break;
+        case commands::Command::MUTATE:
+        case commands::Command::UNDO:
+        case commands::Command::REVERT:
+        case commands::Command::KEEP: {
+            // The generative commands (ui-integration T6) carry no vector
+            // payload, so the allocation-free path applies them exactly like
+            // the scalar path — one shared staging / execution path for both
+            // receive paths (one pending list, one three-level timing
+            // resolution, one undo history). No inbox sequence accompanies
+            // a FIFO command, so nothing is ever ack-marked on it.
+            InboxCommand staged{};
+            staged.gen = generativeFromMessage(msg);
+            if (staged.gen.kind == GenerativeCommandKind::None) {
+                break;  // unknown operator index: refuse untouched
+            }
+            stageGenerativeCommand(staged);
+            break;
+        }
+        case commands::Command::MOD_TARGET_ADD:
+            // ui-integration T7: same handler on the allocation-free core1
+            // path — the payload is single-word, so the snapshot is unused.
+            applyModTargetAdd(msg.param1);
+            break;
+        case commands::Command::MOD_TARGET_SET_PARAM:
+            applyModTargetSetParam(commands::modTargetSlotOf(msg.param1),
+                                   commands::modTargetFieldOf(msg.param1),
+                                   msg.param2);
+            break;
         default: break;
     }
 
@@ -1114,6 +1407,24 @@ void Sequencer::setPatternVelocitySet(size_t patternIndex, uint8_t count,
     std::vector<uint8_t> activeVelocities(velocities.begin(), velocities.begin() + count);
     common::VelocitySet velocitySet(activeVelocities, order);
     patterns[patternIndex].setVelocitySet(velocitySet);
+}
+
+void Sequencer::setGeneratorParameter(uint8_t patternIndex, uint8_t paramId,
+                                       int16_t value) {
+    // The generator-parameter span of the task-16 table (GateSteps ..
+    // DurationVariation): GEN_PARAM_SET writes exactly the parameters the
+    // GeneratorConfigView edits; anything else is refused untouched.
+    const ParamId id = static_cast<ParamId>(paramId);
+    if (id < ParamId::GateSteps || id > ParamId::DurationVariation) return;
+    // A plain BASE write through the bus (the same surface the view used to
+    // call directly): the stored per-pattern generative working state
+    // changes, clamped into the parameter's UI range; no modulation
+    // overlay is ever armed (overlays belong to the modulation layer).
+    ParameterAddress address;
+    address.scope = ParameterScope::Pattern;
+    address.patternIndex = patternIndex;
+    address.paramId = id;
+    parameterBus_.setBase(address, value);
 }
 
 void Sequencer::sendMidiByte(uint8_t byte) {

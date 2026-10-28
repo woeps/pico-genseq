@@ -39,7 +39,7 @@ void check(bool cond, const char* what) {
 }
 
 // A deterministic, distinguishable per-pattern state (same recipe as
-// test_undo_stack.cpp: id, params, scale and material contents all derived
+// test_undo_stack.cpp: id, params and material contents all derived
 // from `tag`, so any restored/kept state can be recognized exactly).
 PatternGenerativeState taggedState(uint8_t tag) {
     PatternGenerativeState s;
@@ -48,8 +48,7 @@ PatternGenerativeState taggedState(uint8_t tag) {
     s.setGeneratorId(GeneratorRole::PITCH, id);
     s.setGeneratorParam(GeneratorRole::PITCH, 0, static_cast<int16_t>(tag));
     s.setGeneratorParam(GeneratorRole::PITCH, 1, static_cast<int16_t>(tag * 7));
-    s.scaleRoot = static_cast<uint8_t>(tag % 12);
-    s.scaleTemplateIndex = static_cast<uint8_t>(tag % 5);
+    s.setGeneratorParam(GeneratorRole::PITCH, 2, static_cast<int16_t>(tag * 3));
     s.pitchSet.count = 4;
     for (uint8_t i = 0; i < 4; ++i) s.pitchSet.values[i] = static_cast<uint8_t>(tag + i);
     s.velocitySet.count = 2;
@@ -219,7 +218,8 @@ void test_distance_limits_measure_from_kept_state() {
     // A candidate mutation a small distance from the KEPT state but a much
     // larger distance from the old (loaded) baseline.
     PatternGenerativeState nearKept = keptState;
-    nearKept.scaleRoot = static_cast<uint8_t>((keptState.scaleRoot + 1) % 12);  // distance 1
+    nearKept.pitchSet.values[0] =
+        static_cast<uint8_t>(nearKept.pitchSet.values[0] ^ 0x01);  // distance 1
     const uint16_t fromKept = mutationDistance(keptState, nearKept);
     const uint16_t fromLoaded = mutationDistance(loaded[0], nearKept);
     check(fromKept == 1, "the candidate is one step from the kept state");

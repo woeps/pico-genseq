@@ -71,6 +71,10 @@ const char* viewName(ui::state::ViewId v) {
         case ui::state::ViewId::GATE_SET:     return "gate";
         case ui::state::ViewId::PITCH_SET:    return "pitch";
         case ui::state::ViewId::VELOCITY_SET: return "velocity";
+        case ui::state::ViewId::GENERATOR_CONFIG: return "generator";
+        case ui::state::ViewId::MUTATION:         return "mutation";
+        case ui::state::ViewId::MODULATION:       return "modulation";
+        case ui::state::ViewId::SCALE_SELECTION:  return "scale";
         default:                              return "?";
     }
 }

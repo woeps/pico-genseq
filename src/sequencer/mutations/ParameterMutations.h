@@ -19,9 +19,9 @@
 //       intensity-scaled magnitude, clamped into [0, steps];
 //   - PitchSetMutation        (builtin.mutate-pitch-set)   -> PITCH_CONTENTS
 //       replaces live pitch values, one element at a time, with a note drawn
-//       from the pattern's selected scale (AC2: the raw draw is snapped with
+//       from the request's GLOBAL scale (AC2: the raw draw is snapped with
 //       common::Scale::nearestNoteInScale, so the result is ALWAYS in the
-//       pattern's scale whatever the intensity);
+//       global scale whatever the intensity; ui-integration T16);
 //   - VelocitySetMutation     (builtin.mutate-velocity-set)-> VELOCITY_CONTENTS
 //       the same per-element scheme over the velocity material (MIDI 0-127);
 //   - DurationMutation        (builtin.mutate-duration)    -> NOTE_DURATION
@@ -243,9 +243,10 @@ protected:
 };
 
 // PITCH_CONTENTS (AC2): replace live pitch values one element at a time with
-// probability intensity/128. Every replacement is snapped into the pattern's
-// selected scale with common::Scale::nearestNoteInScale, so the resulting
-// material is ALWAYS in the selected scale — the SCALE_LOCK invariant then
+// probability intensity/128. Every replacement is snapped into the
+// request's GLOBAL scale (carried by the constraints, ui-integration T16)
+// with common::Scale::nearestNoteInScale, so the resulting material is
+// ALWAYS in that scale — the SCALE_LOCK invariant then
 // verifies what the operator guarantees by construction. Bounded: at most 16
 // element iterations, each one PRNG byte plus (when firing) one raw draw and
 // one nearestNoteInScale scan (<= 25 membership checks).
@@ -260,7 +261,7 @@ public:
 protected:
     void mutate(PatternGenerativeState& candidate, const MutationConstraints& constraints,
                 Prng& rng) const override {
-        const common::Scale scale = candidate.scale();
+        const common::Scale scale = constraints.scale;
         const uint8_t threshold = mutation_detail::mutationThreshold(constraints.intensity);
         const uint8_t count =
             candidate.pitchSet.count < kGenerativeSetCapacity ? candidate.pitchSet.count

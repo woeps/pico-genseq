@@ -11,6 +11,14 @@ UIState reduce(const UIState& state, const events::Event& event, ui::IView* acti
 
 // State-setter functions: mutate state and send the corresponding command
 void setBpm(UIState& state, int bpm);
+// Global scale setter (ui-integration T14, FR12-FR14): stores the root pitch
+// class (0-11, C..B) and the built-in template index in the UIState mirror and
+// posts the pair to the sequencer core through commands::sendScaleCommand —
+// the SCALE_SET dispatch, exactly like setBpm rides BPM_SET. The scale is a
+// TRUE global: the single source of truth lives on core1's TransportTimeline,
+// this state only mirrors the UI-editable values. The root WRAPS (a pitch
+// class is cyclic); the template index CLAMPS to the fixed table.
+void setScale(UIState& state, uint8_t root, uint8_t templateIdx);
 void setPlaying(UIState& state, bool playing);
 void setCurrentView(UIState& state, ViewId viewId);
 void setValue(UIState& state, int value);
