@@ -499,6 +499,27 @@ target_link_libraries(genseq_example_pattern_id PRIVATE genseq_emission)
 add_test(NAME genseq_example_pattern_id COMMAND genseq_example_pattern_id)
 
 # ---------------------------------------------------------------------------
+# Example test: GenerationParameters value object (generative-engine-expansion
+# task 1.2).
+#
+# A standalone example (not property-based) validating the behavior-preserving
+# default contract (Requirements 1.5, 2.3, 3.3): a default-constructed value
+# reports isDefault(), each single non-default field flips it false, and the
+# STEP_PROB_INHERIT sentinel is distinct from an explicit 100/0 (Req 9.5).
+#
+# It includes only the SDK-free header-only common/GenerationParameters.h; links
+# genseq_emission for consistency with the sibling examples (no symbols actually
+# needed); NO Pico SDK libs and NO RapidCheck, so it builds host-side
+# unconditionally. Its own main() means it MUST be excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_GENERATION_PARAMETERS_SRC "${TEST_DIR}/example_generation_parameters.cpp")
+
+add_executable(genseq_example_generation_parameters "${EXAMPLE_GENERATION_PARAMETERS_SRC}")
+target_include_directories(genseq_example_generation_parameters PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_generation_parameters PRIVATE genseq_emission)
+add_test(NAME genseq_example_generation_parameters COMMAND genseq_example_generation_parameters)
+
+# ---------------------------------------------------------------------------
 # Example test: centralized NoteLifecycle (task 2.3).
 #
 # A standalone example validating Requirements 5.1-5.5, 5.8: ownership recorded
@@ -889,6 +910,9 @@ if(RAPIDCHECK_AVAILABLE)
     # The pattern-id example (task 2.2) is its own dedicated target with its own
     # main(); exclude it from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_PATTERN_ID_SRC}")
+    # The GenerationParameters example (generative-engine-expansion task 1.2) is
+    # its own dedicated target with its own main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_GENERATION_PARAMETERS_SRC}")
     # The NoteLifecycle (2.3) and TransportTimeline (3.2) examples are their own
     # dedicated targets with their own main(); exclude them from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_NOTE_LIFECYCLE_SRC}")
