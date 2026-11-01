@@ -22,6 +22,7 @@ namespace commands {
         PATTERN_VELOCITY_SET,
         PATTERN_ADD,
         PATTERN_REMOVE,
+        GEN_PARAMS_SET,  // generative-engine-expansion: apply a pattern's Generation Parameters
         // Add more commands as needed
     };
 

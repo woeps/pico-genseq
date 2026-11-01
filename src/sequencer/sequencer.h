@@ -124,6 +124,11 @@ private:
     void setPatternVelocitySetFromSnapshot(size_t patternIndex,
                                            const sequencer::PatternSnapshot& snap);
 
+    // Apply Generation Parameters from the snapshot's POD member (task 6.1/6.2),
+    // on the allocation-free core1 path.
+    void setPatternGenParamsFromSnapshot(size_t patternIndex,
+                                         const sequencer::PatternSnapshot& snap);
+
     // Advance one logical tick. When reconcileOnly is true the tick is a MISSED
     // tick being reconciled (task 5.2): pattern phase advances and crossed
     // releases are emitted, but NO obsolete Note On and NO MIDI Clock byte are

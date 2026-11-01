@@ -359,6 +359,10 @@ bool Sequencer::canApplyCommand(const commands::CommandMessage& msg) const {
                    msg.velocityCount <= msg.velocities.size();
         case commands::Command::PATTERN_REMOVE:
             return patterns.size() > 1 && msg.param1 < patterns.size();
+        case commands::Command::GEN_PARAMS_SET:
+            // Payload rides the snapshot, not CommandMessage; the scalar path
+            // only validates the target index.
+            return msg.param1 < patterns.size();
         case commands::Command::NOOP:
         default:
             return false;
@@ -406,6 +410,9 @@ void Sequencer::processCommand(const commands::CommandMessage& msg,
         case commands::Command::PATTERN_VELOCITY_SET:
             setPatternVelocitySetFromSnapshot(msg.param1, snapshot);
             break;
+        case commands::Command::GEN_PARAMS_SET:
+            setPatternGenParamsFromSnapshot(msg.param1, snapshot);
+            break;
         case commands::Command::PLAY:            play(); break;
         case commands::Command::STOP:            stop(); break;
         case commands::Command::BPM_SET:         setBPM(msg.param1); break;
@@ -442,6 +449,13 @@ void Sequencer::setPatternVelocitySetFromSnapshot(size_t patternIndex,
     std::vector<uint8_t> velocities(snap.velocityCount());
     for (uint8_t i = 0; i < snap.velocityCount(); ++i) velocities[i] = snap.velocity(i);
     patterns[patternIndex].setVelocitySet(common::VelocitySet(velocities, snap.velocityOrder()));
+}
+
+void Sequencer::setPatternGenParamsFromSnapshot(size_t patternIndex,
+                                                const sequencer::PatternSnapshot& snap) {
+    // Routes through the same application point as the test/UI setter so a
+    // freshly-set seed is honored (allocation-free: POD copy only).
+    setPatternGenerationParameters(patternIndex, snap.generationParameters());
 }
 
 void Sequencer::resetPerformanceMetrics() {

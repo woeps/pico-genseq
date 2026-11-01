@@ -172,6 +172,54 @@ void test_set_application_allocates_documented() {
     check(true, "set-application allocation is documented (see note above)");
 }
 
+// The emission lens under NON-DEFAULT Generation Parameters (scale + probability
+// + humanization + coupling all active) must still be allocation-free on the
+// steady-state tick path (generative-engine-expansion Req 6.1). The default
+// short-circuit is trivially heap-free; this proves the full lens body is too.
+void test_lens_nondefault_zero_alloc() {
+    FakeMonotonicClock clock{1000};
+    CountingMidiOutput out;
+    sequencer::Sequencer seq{out, clock};
+
+    // Warm-up material (ALLOWED to allocate): multi-pitch/vel sets + gate train.
+    commands::CommandMessage g = cmd(commands::Command::PATTERN_GATE_SET, 0);
+    g.gateCount = 4; g.gates = {true, false, true, false};
+    seq.processCommand(g);
+    commands::CommandMessage p = cmd(commands::Command::PATTERN_PITCH_SET, 0);
+    p.pitchCount = 3; p.pitchOrder = common::PlayingOrder::FORWARDS; p.pitches = {61, 63, 66};
+    seq.processCommand(p);  // out-of-C-major pitches so scale resolution does work
+    commands::CommandMessage v = cmd(commands::Command::PATTERN_VELOCITY_SET, 0);
+    v.velocityCount = 2; v.velocityOrder = common::PlayingOrder::FORWARDS; v.velocities = {100, 60};
+    seq.processCommand(v);
+
+    common::GenerationParameters gp;
+    gp.scale = common::ScaleId::MAJOR;           // scale resolution active
+    gp.scaleRoot = 0;
+    gp.quantize = common::QuantizeMode::NEAREST;
+    gp.patternProbability = 70;                  // probability rolls active
+    gp.humanizeRange = 12;                       // humanization active
+    gp.coupling = common::CouplingMode::LOCKED;  // coupling read-map active
+    gp.seedSet = true; gp.seed = 7;              // deterministic
+    seq.setPatternGenerationParameters(0, gp);   // warm-up (POD copy)
+
+    const uint64_t base = clock.nowMicros();
+    seq.processCommand(cmd(commands::Command::PLAY));
+    const auto deadline = [&](uint64_t n) { return base + (n * 60ULL * 1000000ULL) / (120 * 24ULL); };
+    clock.setMicros(deadline(1)); seq.update();  // one warm-up tick
+
+    const uint64_t before = g_allocCount;
+    for (uint64_t n = 2; n <= 2001; ++n) {
+        clock.setMicros(deadline(n));
+        seq.update();
+    }
+    const uint64_t allocs = g_allocCount - before;
+    check(allocs == 0,
+          "steady-state tick path with ALL Generation Parameters active performs ZERO "
+          "heap allocations (Req 6.1)");
+    if (allocs != 0) std::printf("  observed %llu allocations across 2000 lens ticks\n",
+                                 static_cast<unsigned long long>(allocs));
+}
+
 // Documents the fixed queue/inbox budgets (Req 7.2) so the gate records them.
 void test_documented_budgets() {
     check(sequencer::CommandInbox::capacity() == 32, "CommandInbox capacity is 32 slots");
@@ -194,6 +242,7 @@ int main() {
     test_tick_path_zero_alloc();
     test_nonset_command_zero_alloc();
     test_set_application_allocates_documented();
+    test_lens_nondefault_zero_alloc();
     test_documented_budgets();
 
     if (failures == 0) {

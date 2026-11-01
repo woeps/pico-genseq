@@ -98,15 +98,15 @@ part of this plan.
     - New targets `example_emission_lens.cpp`, `example_stream_coupling.cpp`
     - _Requirements: 1.1–1.5, 3.1–3.3, 5.1–5.4_
 
-- [ ] 6. Cross-core handoff and boundary application of Generation Parameters
-  - [ ] 6.1 Extend `sequencer::PatternSnapshot` with a `GenerationParameters` member
+- [x] 6. Cross-core handoff and boundary application of Generation Parameters
+  - [x] 6.1 Extend `sequencer::PatternSnapshot` with a `GenerationParameters` member
     - Keep the POD, fixed-capacity, heap-free discipline; update `footprintBytes()`
     - _Requirements: 6.1, 6.2_
-  - [ ] 6.2 Add the command + pending-operation path for parameter edits
+  - [x] 6.2 Add the command + pending-operation path for parameter edits
     - Apply probability/humanize/scale at next beat, coupling/seed at next bar, via the M2
       command/snapshot boundary mechanism; no tearing, no stranded notes
     - _Requirements: 6.2, 10.5_
-  - [ ] 6.3 Add allocation and boundary host tests
+  - [x] 6.3 Add allocation and boundary host tests
     - Extend `example_steady_state_allocation` to prove zero Hot Path allocation under every
       parameter combination
     - Boundary-apply tests immediately before/on/after beat and bar boundaries
