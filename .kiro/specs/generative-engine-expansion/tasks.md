@@ -63,17 +63,17 @@ part of this plan.
       a default `GenerationParameters` installed; assert byte-identical output to pre-milestone
     - _Requirements: 1.5, 2.3, 3.3, 6.1_
 
-- [ ] 4. Establish per-Pattern deterministic randomness ownership
-  - [ ] 4.1 Add a `PatternRng` per Pattern runtime
+- [x] 4. Establish per-Pattern deterministic randomness ownership
+  - [x] 4.1 Add a `PatternRng` per Pattern runtime
     - `seed(s)` as a defined function of the seed; `rollPercent()`, `signedRange(r)`, raw `next()`
     - _Requirements: 4.1, 4.2, 4.4_
-  - [ ] 4.2 Gate RANDOM-order re-routing strictly behind `seedSet`
+  - [x] 4.2 Gate RANDOM-order re-routing strictly behind `seedSet`
     - When no seed is set, leave `PitchSet`/`VelocitySet` LCGs untouched (RANDOM output unchanged)
     - When a seed is set, re-route RANDOM-order draws to the Pattern RNG and reseed at the defined
       musical boundary (next bar on Play / seed change)
     - Re-establish generation state consistently after Stop / Timing Fault restart
     - _Requirements: 4.1, 4.2, 4.3, 4.5_
-  - [ ] 4.3 Add determinism host tests
+  - [x] 4.3 Add determinism host tests
     - Same seed ⇒ identical trigger/suppress, humanized-velocity, and RANDOM-order sequences across
       repeated runs and across a serialize→deserialize round-trip
     - Unseeded path leaves existing RANDOM-order output byte-identical (regression guard)

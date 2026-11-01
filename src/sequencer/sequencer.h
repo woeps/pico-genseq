@@ -6,6 +6,7 @@
 #include "IMidiOutput.h"
 #include "IMonotonicClock.h"
 #include "NoteLifecycle.h"
+#include "PatternRng.h"
 #include "PerformanceFault.h"
 #include "PerformanceMetrics.h"
 #include "TransportTimeline.h"
@@ -68,6 +69,12 @@ private:
     // retargets another pattern's sounding note (tasks 2.2, 2.4).
     std::vector<common::PatternId> patternIds;
     common::PatternIdAllocator idAllocator;
+    // Per-Pattern generation random state (generative-engine-expansion task 4),
+    // parallel to `patterns`. Drives probability/humanization always, and RANDOM
+    // playing order ONLY when the Pattern has a Deterministic Seed set — the
+    // unseeded path leaves the per-stream LCGs untouched so RANDOM output is
+    // byte-identical to pre-milestone (Req 4.1/4.4).
+    std::vector<PatternRng> patternRng;
     bool playing;
     bool midiClockEnabled;
 
@@ -125,6 +132,13 @@ private:
     enum class EmitResult { EMITTED, SUPPRESSED };
     EmitResult emitStep(size_t patternIndex, common::PatternId id,
                         common::MidiChannel channel);
+
+    // Re-establish each Pattern's generation random state at a defined musical
+    // boundary (Req 4.2/4.5): a Pattern with a Deterministic Seed resets its
+    // PatternRng to seed(); a Pattern without one gets the documented default
+    // seeding. Called on Play and on fault-recovery restart so seeded Patterns
+    // reproduce their material from the defined starting position.
+    void reseedGenerationState();
 
     // Fail-closed Timing Fault entry (task 5.3): release all ownership, emit Stop
     // when enabled, stop playback, and latch the cause. Working State (the

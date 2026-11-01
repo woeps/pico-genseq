@@ -31,6 +31,8 @@ Sequencer::Sequencer(IMidiOutput& output, IMonotonicClock& clock)
     timeline.setBpm(120);
     // Allocate a stable identity for the initial pattern slot.
     patternIds.push_back(idAllocator.allocate());
+    // One generation RNG per pattern slot, kept parallel to `patterns`.
+    patternRng.emplace_back();
 }
 
 void MeteredMidiOutput::write(uint8_t byte) {
@@ -161,16 +163,14 @@ void Sequencer::serviceTick(bool reconcileOnly) {
             // this onset. Advance the material so the next authoritative tick is
             // phase-correct, but emit nothing on the wire.
             if (!reconcileOnly) {
-                // Route the onset through the emission lens (task 3): it applies
+                // Route the onset through the emission lens (task 3/4): it applies
                 // the Pattern's Generation Parameters and either emits the note-on
                 // via NoteLifecycle (recording ownership by canonical channel and
                 // the exact sounding pitch) or suppresses the step. A suppressed
                 // step strands no note; stream positions still advance on the
                 // FALLING edge exactly as an emitted step, so phrase length and
                 // determinism are unchanged (Req 2.2).
-                const uint16_t gateStepIndex = static_cast<uint16_t>(gateSet.getPosition());
                 emitStep(i, id, pattern.getCanonicalChannel());
-                (void)gateStepIndex;  // consumed by probability roll in task 4
             }
         } else if (flank == common::FALLING) {
             // Release the captured onset via its recorded identity, NOT the
@@ -203,16 +203,33 @@ Sequencer::EmitResult Sequencer::emitStep(size_t patternIndex, common::PatternId
         return EmitResult::EMITTED;
     }
 
-    // Non-default path. Fixed evaluation order (design §2): probability roll ->
-    // scale resolve -> velocity humanize -> note-on. Probability (task 4) and
-    // humanization (task 5.1) are wired in later tasks; this task establishes the
-    // scale constraint and the SUPPRESSED lifecycle contract.
-    uint8_t note = pitchSet.getPitch();
-    const uint8_t vel = velocitySet.getVelocity();
+    PatternRng& rng = patternRng[patternIndex];
 
-    // Scale constraint (Req 1). CHROMATIC is already covered by isDefault(); a
-    // non-default scale resolves the candidate pitch. SKIP on an out-of-scale
-    // pitch suppresses the step without stranding a note (Req 1.4).
+    // Non-default path. Fixed evaluation order (design §2): probability roll ->
+    // scale resolve -> velocity humanize -> note-on. Ordering is load-bearing: a
+    // suppressed step consumes exactly one probability draw and NO pitch/velocity
+    // draw, so the RNG stream stays aligned and seeded replay is identical.
+
+    // Step probability (Req 2): per-step override (if not INHERIT) else the
+    // per-Pattern value. A step sounds only when the roll is below the percent.
+    // Per-step probability is indexed by the gate step position (the programmed
+    // step being triggered).
+    uint8_t p = gp.patternProbability;
+    {
+        const uint8_t gateStep =
+            static_cast<uint8_t>(pattern.getGateSet().getPosition());
+        if (gateStep < common::GenerationParameters::kMaxSteps &&
+            gp.stepProbability[gateStep] != common::STEP_PROB_INHERIT) {
+            p = gp.stepProbability[gateStep];
+        }
+    }
+    if (p < 100 && rng.rollPercent() >= p) {
+        return EmitResult::SUPPRESSED;  // probability suppressed this step
+    }
+
+    // Scale constraint (Req 1). SKIP on an out-of-scale pitch suppresses the step
+    // without stranding a note (Req 1.4).
+    uint8_t note = pitchSet.getPitch();
     if (gp.scale != common::ScaleId::CHROMATIC) {
         const uint16_t mask = common::scale::membershipMask(gp.scale, gp.scaleRoot);
         uint8_t resolved = note;
@@ -222,8 +239,29 @@ Sequencer::EmitResult Sequencer::emitStep(size_t patternIndex, common::PatternId
         note = resolved;
     }
 
+    // Velocity humanization (Req 3): perturb within +/- range, clamp to 1..127
+    // (never 0 — that reads as note-off — and never above 127).
+    uint8_t vel = velocitySet.getVelocity();
+    if (gp.humanizeRange > 0) {
+        int v = static_cast<int>(vel) + rng.signedRange(gp.humanizeRange);
+        if (v < 1) v = 1;
+        if (v > 127) v = 127;
+        vel = static_cast<uint8_t>(v);
+    }
+
     noteLifecycle.noteOn(id, channel, note, vel);
     return EmitResult::EMITTED;
+}
+
+void Sequencer::reseedGenerationState() {
+    for (size_t i = 0; i < patterns.size() && i < patternRng.size(); ++i) {
+        const common::GenerationParameters& gp = patterns[i].getGenerationParameters();
+        if (gp.seedSet) {
+            patternRng[i].seed(gp.seed);  // deterministic from the explicit seed
+        } else {
+            patternRng[i] = PatternRng{};  // documented free-running default
+        }
+    }
 }
 
 void Sequencer::processCommand(commands::CommandMessage msg) {
@@ -399,6 +437,10 @@ void Sequencer::play() {
         pattern.getVelocitySet().reset();
     }
 
+    // Re-establish each pattern's generation random state at this boundary so a
+    // seeded pattern reproduces its material from the defined start (Req 4.2).
+    reseedGenerationState();
+
     // Begin one monotonic Transport Timeline shared by every pattern (Req 1.1).
     timeline.start(clock.nowMicros());
     playing = true;
@@ -444,6 +486,7 @@ void Sequencer::addPattern(const common::Pattern& pattern) {
     if (patterns.size() >= common::PATTERN_CAPACITY) return;  // fixed capacity
     patterns.push_back(pattern);
     patternIds.push_back(idAllocator.allocate());
+    patternRng.emplace_back();  // keep generation RNG parallel to patterns
 }
 
 void Sequencer::removePattern(size_t index) {
@@ -454,6 +497,7 @@ void Sequencer::removePattern(size_t index) {
     idAllocator.release(patternIds[index]);
     patterns.erase(patterns.begin() + index);
     patternIds.erase(patternIds.begin() + index);
+    patternRng.erase(patternRng.begin() + index);  // keep RNG parallel
 }
 
 void Sequencer::activatePattern(size_t index) {
