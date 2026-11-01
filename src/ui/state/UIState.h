@@ -149,16 +149,29 @@ inline bool operator!=(const PitchSetConfig& lhs, const PitchSetConfig& rhs) {
 
 constexpr uint8_t MAX_VELOCITIES = 16;
 
-// VelocitySetConfig field indices: 0 = COUNT, 1 = ORDER, 2..count+1 = velocities
-constexpr uint8_t VELOCITY_SET_FIELD_COUNT = 0;
-constexpr uint8_t VELOCITY_SET_FIELD_ORDER = 1;
-constexpr uint8_t VELOCITY_SET_FIELD_VELOCITY_BASE = 2;
+// VelocitySetConfig field indices. HUMANIZE/SEED/COUPLING (the remaining
+// Pattern-scope Generation Parameters, R10) come FIRST, then COUNT/ORDER/
+// velocities. Seed and coupling are per-Pattern (not velocity-specific) but live
+// here because the VelocitySet view is the per-pattern editor with the move/
+// adjust vocabulary R10 requires; HUMANIZE is naturally a velocity concept.
+constexpr uint8_t VELOCITY_SET_FIELD_HUMANIZE = 0;
+constexpr uint8_t VELOCITY_SET_FIELD_SEED = 1;
+constexpr uint8_t VELOCITY_SET_FIELD_COUPLING = 2;
+constexpr uint8_t VELOCITY_SET_FIELD_COUNT = 3;
+constexpr uint8_t VELOCITY_SET_FIELD_ORDER = 4;
+constexpr uint8_t VELOCITY_SET_FIELD_VELOCITY_BASE = 5;
 
 struct VelocitySetConfig {
     uint8_t count = 4;
     common::PlayingOrder order = common::PlayingOrder::FORWARDS;
     std::array<uint8_t, MAX_VELOCITIES> velocities{100, 80, 60, 80, 0, 0, 0, 0,
                                                      0,   0,  0,  0, 0, 0, 0, 0};
+    // Pattern-scope Generation Parameters (R3/R4/R5), behavior-preserving
+    // defaults: humanize 0, no seed, independent coupling.
+    uint8_t humanizeRange = 0;                                 // +/- amount
+    bool seedSet = false;
+    uint32_t seed = 0;
+    common::CouplingMode coupling = common::CouplingMode::INDEPENDENT;
 };
 
 inline bool operator==(const VelocitySetConfig& lhs, const VelocitySetConfig& rhs) {
@@ -166,7 +179,8 @@ inline bool operator==(const VelocitySetConfig& lhs, const VelocitySetConfig& rh
     for (uint8_t i = 0; i < lhs.count; i++) {
         if (lhs.velocities[i] != rhs.velocities[i]) return false;
     }
-    return true;
+    return lhs.humanizeRange == rhs.humanizeRange && lhs.seedSet == rhs.seedSet &&
+           lhs.seed == rhs.seed && lhs.coupling == rhs.coupling;
 }
 
 inline bool operator!=(const VelocitySetConfig& lhs, const VelocitySetConfig& rhs) {

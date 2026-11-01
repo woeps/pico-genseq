@@ -145,6 +145,10 @@ void sendVelocitySetConfig(uint8_t patternIndex, const VelocitySetConfig& config
     std::vector<uint8_t> velocities(config.velocities.begin(),
                                     config.velocities.begin() + config.count);
     commands::sendVelocitySet(patternIndex, config.count, config.order, velocities);
+    // NOTE (generative-engine-expansion task 10): humanize/seed/coupling live in
+    // Working State and persist, but are NOT yet transmitted to core1 here — the
+    // GEN_PARAMS_SET FIFO transport is the consolidated step deferred to task
+    // 10.4. Until then they reach the engine via setPatternGenerationParameters.
 }
 
 void restoreVelocitySetDraft(UIState& state) {
@@ -445,7 +449,7 @@ void beginVelocitySetEdit(UIState& state) {
 void moveVelocitySetField(UIState& state, int direction) {
     const uint8_t lastField = VELOCITY_SET_FIELD_VELOCITY_BASE + state.velocitySetDraft.count - 1;
     int next = static_cast<int>(state.selectedVelocitySetField) + direction;
-    next = std::clamp(next, static_cast<int>(VELOCITY_SET_FIELD_COUNT),
+    next = std::clamp(next, static_cast<int>(VELOCITY_SET_FIELD_HUMANIZE),
                       static_cast<int>(lastField));
     state.selectedVelocitySetField = static_cast<uint8_t>(next);
 }
@@ -454,7 +458,33 @@ void adjustVelocitySetValue(UIState& state, int delta, bool coarse) {
     if (state.selectedPattern >= state.patternCount || delta == 0) return;
     VelocitySetConfig next = state.velocitySetDraft;
 
-    if (state.selectedVelocitySetField == VELOCITY_SET_FIELD_COUNT) {
+    if (state.selectedVelocitySetField == VELOCITY_SET_FIELD_HUMANIZE) {
+        // HUMANIZE range 0..64; 0 == off (behavior-preserving, clear-to-default).
+        const int step = coarse ? delta * 10 : delta;
+        next.humanizeRange = static_cast<uint8_t>(
+            std::clamp(static_cast<int>(next.humanizeRange) + step, 0, 64));
+    } else if (state.selectedVelocitySetField == VELOCITY_SET_FIELD_SEED) {
+        // SEED: a single control that spans "no seed" (seedSet=false) then an
+        // explicit seed 0,1,2,... Going below 0 clears to no-seed (R10.3 / R4).
+        // coarse steps by 10. The displayed/stored seed is the low byte space
+        // here; the full 32-bit seed is set via the host/transport path, but the
+        // UI exposes a simple incrementing seed sufficient to make a Pattern
+        // deterministic and to clear it.
+        const int step = coarse ? delta * 10 : delta;
+        if (!next.seedSet) {
+            if (delta > 0) { next.seedSet = true; next.seed = 0; }
+            // delta < 0 while already no-seed: stay cleared.
+        } else {
+            const long s = static_cast<long>(next.seed) + step;
+            if (s < 0) { next.seedSet = false; next.seed = 0; }  // clear to no-seed
+            else next.seed = static_cast<uint32_t>(s);
+        }
+    } else if (state.selectedVelocitySetField == VELOCITY_SET_FIELD_COUPLING) {
+        // COUPLING cycles INDEPENDENT/LOCKED; INDEPENDENT (0) is the default.
+        constexpr int kCouplingCount = 2;
+        const int c = std::clamp(static_cast<int>(next.coupling) + delta, 0, kCouplingCount - 1);
+        next.coupling = static_cast<common::CouplingMode>(c);
+    } else if (state.selectedVelocitySetField == VELOCITY_SET_FIELD_COUNT) {
         const int step = coarse ? delta * 10 : delta;
         next.count = static_cast<uint8_t>(std::clamp(
             static_cast<int>(next.count) + step, 1, static_cast<int>(MAX_VELOCITIES)));

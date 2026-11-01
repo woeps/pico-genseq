@@ -2,6 +2,7 @@
 #include "../state/Reducer.h"
 #include "../state/UIState.h"
 #include "../Types.h"
+#include "../../common/GenerationParameters.h"
 #include <cstdio>
 
 namespace ui {
@@ -62,17 +63,33 @@ void VelocitySetView::render(const state::UIState& state)
 {
     ledMatrix.clear();
     const uint8_t field = state.selectedVelocitySetField;
+    const auto& draft = state.velocitySetDraft;
 
-    if (field == state::VELOCITY_SET_FIELD_COUNT) {
+    if (field == state::VELOCITY_SET_FIELD_HUMANIZE) {
+        ledMatrix.drawLabel("Hmn", 0xFFFFEE00);
+        ledMatrix.drawNumber(draft.humanizeRange, 0xFFFF0011);
+    } else if (field == state::VELOCITY_SET_FIELD_SEED) {
+        ledMatrix.drawLabel("Sed", 0xFFFFEE00);
+        if (draft.seedSet) {
+            ledMatrix.drawNumber(static_cast<uint8_t>(draft.seed & 0xFF), 0xFFFF0011);
+        } else {
+            // "no seed" distinct from seed 0: a dim marker instead of a number.
+            ledMatrix.setPixel(12, 0, 0x00222200);
+        }
+    } else if (field == state::VELOCITY_SET_FIELD_COUPLING) {
+        ledMatrix.drawLabel("Cpl", 0xFFFFEE00);
+        ledMatrix.drawLabel(draft.coupling == common::CouplingMode::LOCKED ? "Lck" : "Ind",
+                            0xFFFF0011);
+    } else if (field == state::VELOCITY_SET_FIELD_COUNT) {
         ledMatrix.drawLabel("Cnt", 0xFFFFEE00);
-        ledMatrix.drawNumber(state.velocitySetDraft.count, 0xFFFF0011);
+        ledMatrix.drawNumber(draft.count, 0xFFFF0011);
     } else if (field == state::VELOCITY_SET_FIELD_ORDER) {
-        const uint8_t orderIdx = static_cast<uint8_t>(state.velocitySetDraft.order);
+        const uint8_t orderIdx = static_cast<uint8_t>(draft.order);
         ledMatrix.drawLabel(ORDER_LABELS[orderIdx], 0xFFFFEE00);
     } else {
         const uint8_t velIndex = field - state::VELOCITY_SET_FIELD_VELOCITY_BASE;
-        if (velIndex < state.velocitySetDraft.count) {
-            ledMatrix.drawNumber(state.velocitySetDraft.velocities[velIndex], 0xFFFF0011);
+        if (velIndex < draft.count) {
+            ledMatrix.drawNumber(draft.velocities[velIndex], 0xFFFF0011);
             char posLabel[4] = {'v', '\0', '\0', '\0'};
             if (velIndex < 10) {
                 posLabel[1] = static_cast<char>('0' + velIndex);

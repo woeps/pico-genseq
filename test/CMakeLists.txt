@@ -971,6 +971,10 @@ if(RAPIDCHECK_AVAILABLE)
     # compiles Reducer.cpp + its own main(); exclude it from the shared runner.
     set(EXAMPLE_GATESET_GRID_VIEW_SRC "${TEST_DIR}/example_gateset_grid_view.cpp")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_GATESET_GRID_VIEW_SRC}")
+    # The VelocitySet gen-params example (generative-engine-expansion task 10)
+    # compiles Reducer.cpp + its own main(); exclude it from the shared runner.
+    set(EXAMPLE_VELOCITY_GENPARAMS_VIEW_SRC "${TEST_DIR}/example_velocity_genparams_view.cpp")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_VELOCITY_GENPARAMS_VIEW_SRC}")
     # The emission-lens example (generative-engine-expansion task 3.3) is its own
     # dedicated target with its own main(); exclude it from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_EMISSION_LENS_SRC}")
@@ -1093,3 +1097,23 @@ target_include_directories(genseq_example_gateset_grid_view PRIVATE
 )
 target_link_libraries(genseq_example_gateset_grid_view PRIVATE genseq_emission)
 add_test(NAME genseq_example_gateset_grid_view COMMAND genseq_example_gateset_grid_view)
+
+# ---------------------------------------------------------------------------
+# Example test: VelocitySet gen-params + R10 control map (generative-engine-
+# expansion task 10). Compiles Reducer.cpp + PersistMapping.cpp with host-safe
+# commands:: seam stubs; links genseq_emission. Own main().
+# ---------------------------------------------------------------------------
+add_executable(genseq_example_velocity_genparams_view
+    "${EXAMPLE_VELOCITY_GENPARAMS_VIEW_SRC}"
+    "${SRC_DIR}/ui/state/Reducer.cpp"
+    "${SRC_DIR}/ui/state/PersistMapping.cpp"
+)
+target_include_directories(genseq_example_velocity_genparams_view PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}"
+    "${SRC_DIR}/ui"
+    "${SRC_DIR}/ui/state"
+    "${SRC_DIR}/persistence"
+)
+target_link_libraries(genseq_example_velocity_genparams_view PRIVATE genseq_emission)
+add_test(NAME genseq_example_velocity_genparams_view COMMAND genseq_example_velocity_genparams_view)

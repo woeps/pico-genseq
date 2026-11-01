@@ -175,14 +175,16 @@ part of this plan.
     - _Requirements: 9.1–9.8, 10.1–10.5_
 
 - [ ] 10. VelocitySet humanize field and Pattern-scope seed/coupling controls
-  - [ ] 10.1 Add the HUMANIZE field to the VelocitySet view
+  - [x] 10.1 Add the HUMANIZE field to the VelocitySet view
     - Adjust 0..N; clear-to-0; applies via the boundary path; action count ≤2
     - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
-  - [ ] 10.2 Add Pattern-scope SEED and COUPLING fields
+  - [x] 10.2 Add Pattern-scope SEED and COUPLING fields
     - A Pattern/Settings field for the seed with an explicit "no seed" clear state, and a COUPLING
       field cycling INDEPENDENT/LOCKED with clear-to-INDEPENDENT
+    - (Hosted in the VelocitySet view — the existing per-pattern editor with the move/adjust
+      vocabulary — rather than a separate Settings view, since seed/coupling are per-Pattern.)
     - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
-  - [ ] 10.3 Verify the full R10 control map
+  - [x] 10.3 Verify the full R10 control map
     - Assert every Generation Parameter has a demonstrated matrix-UI set-and-clear path with a
       bounded, stated action count; no parameter is tooling-only
     - _Requirements: 10.1, 10.6_

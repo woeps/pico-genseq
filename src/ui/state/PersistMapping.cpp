@@ -75,6 +75,13 @@ persistence::PersistableConfig toPersistableConfig(const UIState& state) {
             p.velocities[j] = vel.velocities[j];
         }
 
+        // Pattern-scope Generation Parameters hosted in the VelocitySet view
+        // (R3/R4/R5): humanize, seed, coupling.
+        p.genHumanizeRange = vel.humanizeRange;
+        p.genSeedSet = vel.seedSet ? 1 : 0;
+        p.genSeed = vel.seed;
+        p.genCoupling = static_cast<uint8_t>(vel.coupling);
+
         p.midiChannel = DEFAULT_MIDI_CHANNEL;
     }
 
@@ -138,6 +145,12 @@ void applyPersistableConfig(UIState& state,
         for (uint8_t j = 0; j < vel.count; j++) {
             vel.velocities[j] = p.velocities[j];
         }
+        // Pattern-scope gen-params (R3/R4/R5). v1 records carry defaults
+        // (0 / false / INDEPENDENT) — behavior-preserving.
+        vel.humanizeRange = p.genHumanizeRange;
+        vel.seedSet = p.genSeedSet != 0;
+        vel.seed = p.genSeed;
+        vel.coupling = static_cast<common::CouplingMode>(p.genCoupling);
         state.velocitySetConfigs[i] = vel;
     }
 
