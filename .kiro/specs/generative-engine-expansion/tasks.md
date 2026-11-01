@@ -33,15 +33,15 @@ part of this plan.
     - New target `example_generation_parameters.cpp`
     - _Requirements: 1.5, 2.3, 3.3_
 
-- [ ] 2. Implement the scale model library
-  - [ ] 2.1 Define `common::scale` (SDK-free free functions)
+- [x] 2. Implement the scale model library
+  - [x] 2.1 Define `common::scale` (SDK-free free functions)
     - `membershipMask(ScaleId, root)` → 12-bit pitch-class mask; CHROMATIC == 0x0FFF
     - `inScale(mask, note)`; `quantize(mask, mode, note, out)` returning false only for SKIP on an
       out-of-scale note, searching at most 12 semitones for NEAREST/DOWN/UP
     - Define the representation so scales beyond chromatic/major/minor can be added without a
       storage-format bump
     - _Requirements: 1.1, 1.2, 1.3, 1.6_
-  - [ ] 2.2 Add host unit tests for the scale library
+  - [x] 2.2 Add host unit tests for the scale library
     - Membership for major/minor across all 12 roots; chromatic passes everything
     - Each quantization mode over representative out-of-scale inputs; octave preserved except
       where DOWN/UP must cross an octave; SKIP reports suppression
