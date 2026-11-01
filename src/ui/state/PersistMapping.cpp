@@ -41,6 +41,14 @@ persistence::PersistableConfig toPersistableConfig(const UIState& state) {
         p.gateNoteLength = static_cast<uint8_t>(gate.noteLength);
         p.gateLength = gate.gateLength;
 
+        // R9: explicit per-step gate states + per-step/per-Pattern probability.
+        const uint8_t gridSteps = gate.steps < MAX_GRID_STEPS ? gate.steps : MAX_GRID_STEPS;
+        p.gateStepCount = gridSteps;
+        for (uint8_t j = 0; j < gridSteps; ++j) p.gateStates[j] = gate.gateStates[j];
+        p.genStepProbCount = gridSteps;
+        for (uint8_t j = 0; j < gridSteps; ++j) p.genStepProbability[j] = gate.stepProbability[j];
+        p.genPatternProbability = gate.patternProbability;
+
         p.pitchCount = pitch.count;
         if (p.pitchCount > persistence::MAX_SET_LEN) {
             p.pitchCount = persistence::MAX_SET_LEN;
@@ -97,6 +105,17 @@ void applyPersistableConfig(UIState& state,
         gate.rotation = p.gateRotation;
         gate.noteLength = static_cast<NoteLength>(p.gateNoteLength);
         gate.gateLength = p.gateLength;
+        // R9: restore explicit gate states + probability. A v1 record has
+        // gateStepCount==0 / genStepProbCount==0, so gateStates stay all-zero
+        // (seeded from the generator on edit entry) and probability stays INHERIT
+        // / 100 — behavior-preserving.
+        for (uint8_t j = 0; j < p.gateStepCount && j < MAX_GRID_STEPS; ++j) {
+            gate.gateStates[j] = p.gateStates[j];
+        }
+        for (uint8_t j = 0; j < p.genStepProbCount && j < MAX_GRID_STEPS; ++j) {
+            gate.stepProbability[j] = p.genStepProbability[j];
+        }
+        gate.patternProbability = p.genPatternProbability;
         state.gateSetConfigs[i] = gate;
 
         PitchSetConfig pitch{};

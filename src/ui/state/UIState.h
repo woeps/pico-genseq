@@ -46,6 +46,8 @@ enum class GateSetProperty : uint8_t {
     ROTATION,
     NOTE_LENGTH,
     LENGTH,
+    PROBABILITY,  // R2/R10: per-Pattern Step Probability (0..100)
+    STEP_GRID,  // generative-engine-expansion R9: per-step gate + probability grid
 };
 
 enum class NoteLength : uint8_t {
@@ -57,6 +59,14 @@ enum class NoteLength : uint8_t {
     WHOLE,
 };
 
+// R9 per-step grid limits. The grid addresses PROGRAMMED steps (0..steps-1),
+// capped at the per-step probability array size the engine carries
+// (common::GenerationParameters::kMaxSteps == 16). Manual gate editing toggles a
+// whole programmed step on/off.
+constexpr uint8_t MAX_GRID_STEPS = 16;
+// Per-step probability sentinel mirrors common::STEP_PROB_INHERIT.
+constexpr uint8_t STEP_PROB_INHERIT = 0xFF;
+
 struct GateSetConfig {
     GateAlgorithm algorithm = GateAlgorithm::EUCLIDEAN;
     uint8_t steps = 16;
@@ -64,12 +74,34 @@ struct GateSetConfig {
     uint8_t rotation = 0;
     NoteLength noteLength = NoteLength::SIXTEENTH;
     uint8_t gateLength = 50;
+
+    // R9: explicit per-programmed-step gate states and per-step probability. The
+    // generator writes gateStates (the "optional seed"); manual edits layer on
+    // top. probability is INHERIT by default (falls back to per-Pattern), so an
+    // untouched config is behavior-preserving. Only [0, steps) are meaningful.
+    uint8_t gateStates[MAX_GRID_STEPS] = {0};
+    uint8_t stepProbability[MAX_GRID_STEPS] = {
+        STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT,
+        STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT,
+        STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT,
+        STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT};
+    // Per-Pattern Step Probability (R2), 0..100. 100 == today's behavior.
+    uint8_t patternProbability = 100;
 };
 
 inline bool operator==(const GateSetConfig& lhs, const GateSetConfig& rhs) {
-    return lhs.algorithm == rhs.algorithm && lhs.steps == rhs.steps &&
-           lhs.pulses == rhs.pulses && lhs.rotation == rhs.rotation &&
-           lhs.noteLength == rhs.noteLength && lhs.gateLength == rhs.gateLength;
+    if (!(lhs.algorithm == rhs.algorithm && lhs.steps == rhs.steps &&
+          lhs.pulses == rhs.pulses && lhs.rotation == rhs.rotation &&
+          lhs.noteLength == rhs.noteLength && lhs.gateLength == rhs.gateLength &&
+          lhs.patternProbability == rhs.patternProbability)) {
+        return false;
+    }
+    const uint8_t n = lhs.steps < MAX_GRID_STEPS ? lhs.steps : MAX_GRID_STEPS;
+    for (uint8_t i = 0; i < n; ++i) {
+        if (lhs.gateStates[i] != rhs.gateStates[i]) return false;
+        if (lhs.stepProbability[i] != rhs.stepProbability[i]) return false;
+    }
+    return true;
 }
 
 inline bool operator!=(const GateSetConfig& lhs, const GateSetConfig& rhs) {
@@ -157,6 +189,9 @@ struct UIState {
     std::array<GateSetConfig, MAX_PATTERNS> gateSetConfigs{};
     GateSetConfig gateSetDraft{};
     GateSetProperty selectedGateSetProperty = GateSetProperty::ALGORITHM;
+    // R9 grid: which programmed step (0..steps-1) is selected while the
+    // STEP_GRID property is active.
+    uint8_t selectedGateStep = 0;
     bool gateSetDirty = false;
     std::array<PitchSetConfig, MAX_PATTERNS> pitchSetConfigs{};
     PitchSetConfig pitchSetDraft{};

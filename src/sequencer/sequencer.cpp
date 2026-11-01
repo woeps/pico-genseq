@@ -211,16 +211,18 @@ Sequencer::EmitResult Sequencer::emitStep(size_t patternIndex, common::PatternId
     // draw, so the RNG stream stays aligned and seeded replay is identical.
 
     // Step probability (Req 2): per-step override (if not INHERIT) else the
-    // per-Pattern value. A step sounds only when the roll is below the percent.
-    // Per-step probability is indexed by the gate step position (the programmed
-    // step being triggered).
+    // per-Pattern value. The per-step array is indexed by PROGRAMMED STEP, not
+    // tick position: createEuclidean places step N at tick N*stepLength, so the
+    // owning programmed step of the current onset is getPosition()/stepLength
+    // (design §2, resolved). stepLength==0 (unknown) disables per-step lookup and
+    // falls back to the per-Pattern value, never dividing by zero.
     uint8_t p = gp.patternProbability;
-    {
-        const uint8_t gateStep =
-            static_cast<uint8_t>(pattern.getGateSet().getPosition());
-        if (gateStep < common::GenerationParameters::kMaxSteps &&
-            gp.stepProbability[gateStep] != common::STEP_PROB_INHERIT) {
-            p = gp.stepProbability[gateStep];
+    if (gp.stepLength > 0) {
+        const uint32_t tickPos = pattern.getGateSet().getPosition();
+        const uint32_t step = tickPos / gp.stepLength;
+        if (step < common::GenerationParameters::kMaxSteps &&
+            gp.stepProbability[step] != common::STEP_PROB_INHERIT) {
+            p = gp.stepProbability[step];
         }
     }
     if (p < 100 && rng.rollPercent() >= p) {

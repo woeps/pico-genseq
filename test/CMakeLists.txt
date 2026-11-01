@@ -967,6 +967,10 @@ if(RAPIDCHECK_AVAILABLE)
     # compiles Reducer.cpp + its own main(); exclude it from the shared runner.
     set(EXAMPLE_PITCHSET_SCALE_VIEW_SRC "${TEST_DIR}/example_pitchset_scale_view.cpp")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_PITCHSET_SCALE_VIEW_SRC}")
+    # The GateSet grid-view example (generative-engine-expansion task 9.6)
+    # compiles Reducer.cpp + its own main(); exclude it from the shared runner.
+    set(EXAMPLE_GATESET_GRID_VIEW_SRC "${TEST_DIR}/example_gateset_grid_view.cpp")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_GATESET_GRID_VIEW_SRC}")
     # The emission-lens example (generative-engine-expansion task 3.3) is its own
     # dedicated target with its own main(); exclude it from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_EMISSION_LENS_SRC}")
@@ -1069,3 +1073,23 @@ target_include_directories(genseq_example_pitchset_scale_view PRIVATE
 )
 target_link_libraries(genseq_example_pitchset_scale_view PRIVATE genseq_emission)
 add_test(NAME genseq_example_pitchset_scale_view COMMAND genseq_example_pitchset_scale_view)
+
+# ---------------------------------------------------------------------------
+# Example test: GateSet per-step grid editor (generative-engine-expansion task
+# 9.6). Compiles the real Reducer.cpp + PersistMapping.cpp with host-safe
+# commands:: seam stubs; links genseq_emission for common::GateSet. Own main().
+# ---------------------------------------------------------------------------
+add_executable(genseq_example_gateset_grid_view
+    "${EXAMPLE_GATESET_GRID_VIEW_SRC}"
+    "${SRC_DIR}/ui/state/Reducer.cpp"
+    "${SRC_DIR}/ui/state/PersistMapping.cpp"
+)
+target_include_directories(genseq_example_gateset_grid_view PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}"
+    "${SRC_DIR}/ui"
+    "${SRC_DIR}/ui/state"
+    "${SRC_DIR}/persistence"
+)
+target_link_libraries(genseq_example_gateset_grid_view PRIVATE genseq_emission)
+add_test(NAME genseq_example_gateset_grid_view COMMAND genseq_example_gateset_grid_view)

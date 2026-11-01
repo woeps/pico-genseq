@@ -16,6 +16,8 @@ constexpr GateSetProperty EUCLIDEAN_PROPERTIES[] = {
     GateSetProperty::ROTATION,
     GateSetProperty::NOTE_LENGTH,
     GateSetProperty::LENGTH,
+    GateSetProperty::PROBABILITY,  // R2/R10 per-Pattern probability
+    GateSetProperty::STEP_GRID,  // R9 per-step grid, last so it sits after the generator
 };
 
 uint8_t noteLengthTicks(NoteLength noteLength) {
@@ -30,16 +32,79 @@ uint8_t noteLengthTicks(NoteLength noteLength) {
     return 6;
 }
 
+// R9.3: regenerate the per-step GATE states from the Euclidean generator (the
+// "optional seed"), PRESERVING per-step probability values. Called when a
+// generator property (STEPS/PULSES/ROTATION) changes. Probability is indexed by
+// step position, so it is left untouched across a regenerate; steps newly in
+// range keep whatever probability they held (INHERIT by default).
+void regenerateGateStates(GateSetConfig& config) {
+    // Build the programmed-step pulse pattern (same Bjorklund distribution
+    // createEuclidean uses), then store it as per-step gate states.
+    const uint8_t steps = config.steps > MAX_GRID_STEPS ? MAX_GRID_STEPS : config.steps;
+    for (uint8_t i = 0; i < MAX_GRID_STEPS; ++i) config.gateStates[i] = 0;
+    if (steps == 0) return;
+    if (config.pulses >= config.steps) {
+        for (uint8_t i = 0; i < steps; ++i) config.gateStates[i] = 1;
+        return;
+    }
+    if (config.pulses == 0) return;
+    int bucket = 0;
+    for (uint8_t i = 0; i < config.steps; ++i) {
+        bucket += config.pulses;
+        if (bucket >= config.steps) {
+            bucket -= config.steps;
+            const uint8_t pos = (i + config.rotation) % config.steps;
+            if (pos < MAX_GRID_STEPS) config.gateStates[pos] = 1;
+        }
+    }
+}
+
+// Expand the explicit per-step gate states (config.gateStates, R9) into the
+// tick-level boolean gate array the sequencer consumes. This is the manual-edit-
+// aware replacement for calling createEuclidean directly: the generator seeds
+// gateStates (regenerateGateStates), manual toggles edit them, and THIS builds
+// the wire gate array from whatever gateStates now holds. The high-tick gate-
+// length shaping matches createEuclidean so a generator-only config is
+// byte-identical to the old output (R9.7).
+std::vector<bool> expandGateStates(const GateSetConfig& config) {
+    const uint8_t steps = config.steps;
+    const uint8_t stepLen = noteLengthTicks(config.noteLength);
+    if (steps == 0 || stepLen == 0) return {};
+    const uint32_t patternLength = static_cast<uint32_t>(steps) * stepLen;
+    std::vector<bool> expanded(patternLength, false);
+
+    // Collect the tick positions of the active programmed steps.
+    std::vector<uint32_t> pulsePositions;
+    for (uint8_t s = 0; s < steps && s < MAX_GRID_STEPS; ++s) {
+        if (config.gateStates[s]) pulsePositions.push_back(static_cast<uint32_t>(s) * stepLen);
+    }
+    const uint8_t gateLength = std::min<uint8_t>(config.gateLength, 100);
+    for (size_t i = 0; i < pulsePositions.size(); ++i) {
+        const uint32_t start = pulsePositions[i];
+        const uint32_t next = pulsePositions[(i + 1) % pulsePositions.size()];
+        const uint32_t interval = next > start ? next - start : patternLength - start + next;
+        const uint32_t scaled = (interval * gateLength + 99) / 100;
+        const uint32_t highTicks = std::max<uint32_t>(1, std::min<uint32_t>(interval - 1, scaled));
+        for (uint32_t tick = 0; tick < highTicks; ++tick) {
+            expanded[(start + tick) % patternLength] = true;
+        }
+    }
+    return expanded;
+}
+
 void sendGateSet(uint8_t patternIndex, const GateSetConfig& config) {
     switch (config.algorithm) {
         case GateAlgorithm::EUCLIDEAN: {
-            const common::GateSet gateSet = common::GateSet::createEuclidean(
-                config.steps, config.pulses, config.rotation,
-                noteLengthTicks(config.noteLength), config.gateLength);
-            commands::sendGateSet(patternIndex, gateSet.getGates());
+            commands::sendGateSet(patternIndex, expandGateStates(config));
             break;
         }
     }
+    // NOTE (generative-engine-expansion task 9): the per-step probability array,
+    // the per-Pattern probability, and the step length (for the tick->step map)
+    // live in Working State and persist, but are NOT yet transmitted to core1
+    // here — the GEN_PARAMS_SET FIFO transport is the consolidated step deferred
+    // to task 10.4. The gate array itself (above) IS sent today, so manual gate
+    // edits take effect immediately; probability reaches the engine at 10.4.
 }
 
 void clampEuclidean(GateSetConfig& config) {
@@ -125,7 +190,19 @@ void setCurrentView(UIState& state, ViewId viewId) {
 void beginGateSetEdit(UIState& state) {
     if (state.selectedPattern >= state.patternCount) return;
     state.gateSetDraft = state.gateSetConfigs[state.selectedPattern];
+    // Seed the per-step gate states from the generator if they were never set
+    // (all-zero but the generator would produce pulses) — e.g. a config created
+    // before the R9 grid existed, or a fresh default. A config with manual edits
+    // already has non-zero gateStates and is left as-is.
+    bool anyGate = false;
+    for (uint8_t i = 0; i < MAX_GRID_STEPS; ++i) {
+        if (state.gateSetDraft.gateStates[i]) { anyGate = true; break; }
+    }
+    if (!anyGate && state.gateSetDraft.pulses > 0) {
+        regenerateGateStates(state.gateSetDraft);
+    }
     state.selectedGateSetProperty = GateSetProperty::ALGORITHM;
+    state.selectedGateStep = 0;
     state.gateSetDirty = false;
 }
 
@@ -139,12 +216,33 @@ void moveGateSetProperty(UIState& state, int direction) {
             break;
     }
 
+    // Within the STEP_GRID, LEFT/RIGHT walks the step cursor across the
+    // programmed steps (R9). Moving right past the last step clamps; moving left
+    // past step 0 LEAVES the grid back to the previous generator property.
+    if (state.selectedGateSetProperty == GateSetProperty::STEP_GRID) {
+        const uint8_t gridSteps =
+            state.gateSetDraft.steps < MAX_GRID_STEPS ? state.gateSetDraft.steps : MAX_GRID_STEPS;
+        const int nextStep = static_cast<int>(state.selectedGateStep) + direction;
+        if (nextStep < 0) {
+            // Exit the grid to the property just before STEP_GRID.
+            if (propertyCount >= 2) state.selectedGateSetProperty = properties[propertyCount - 2];
+            return;
+        }
+        state.selectedGateStep = static_cast<uint8_t>(
+            std::clamp(nextStep, 0, static_cast<int>(gridSteps) - 1));
+        return;
+    }
+
     size_t index = 0;
     while (index < propertyCount && properties[index] != state.selectedGateSetProperty) index++;
     if (index == propertyCount) index = 0;
     const int next = std::clamp(static_cast<int>(index) + direction, 0,
                                 static_cast<int>(propertyCount) - 1);
     state.selectedGateSetProperty = properties[next];
+    // Entering the grid lands on step 0.
+    if (state.selectedGateSetProperty == GateSetProperty::STEP_GRID) {
+        state.selectedGateStep = 0;
+    }
 }
 
 void adjustGateSetValue(UIState& state, int delta, bool coarse) {
@@ -180,12 +278,60 @@ void adjustGateSetValue(UIState& state, int delta, bool coarse) {
                 case GateSetProperty::LENGTH:
                     next.gateLength = std::clamp(static_cast<int>(next.gateLength) + step, 0, 100);
                     break;
+                case GateSetProperty::PROBABILITY:
+                    // Per-Pattern Step Probability (R2/R10), 0..100; 100 == today.
+                    next.patternProbability = static_cast<uint8_t>(
+                        std::clamp(static_cast<int>(next.patternProbability) + step, 0, 100));
+                    break;
+                case GateSetProperty::STEP_GRID: {
+                    // UP/DOWN cycles the SELECTED step's probability through the
+                    // ladder INHERIT -> 0 -> 10 -> ... -> 100 (R9.4). INHERIT is a
+                    // distinct state below 0 (R9.5). Coarse has no effect (discrete
+                    // ladder). Gate TOGGLE is a separate action (toggleGateStep).
+                    const uint8_t s = state.selectedGateStep;
+                    if (s >= MAX_GRID_STEPS) return;
+                    const uint8_t cur = next.stepProbability[s];
+                    // Represent the ladder as an index: -1 == INHERIT, 0..10 == 0..100%.
+                    int idx;
+                    if (cur == STEP_PROB_INHERIT) idx = -1;
+                    else idx = std::clamp(static_cast<int>(cur) / 10, 0, 10);
+                    idx = std::clamp(idx + delta, -1, 10);
+                    next.stepProbability[s] =
+                        (idx < 0) ? STEP_PROB_INHERIT : static_cast<uint8_t>(idx * 10);
+                    break;
+                }
             }
-            clampEuclidean(next);
+            // Generator properties reseed the per-step GATE states (R9.3), but
+            // PRESERVE per-step probability (handled by regenerateGateStates,
+            // which touches only gateStates). NOTE_LENGTH/LENGTH/STEP_GRID do not
+            // change which steps pulse, so they do not regenerate.
+            if (state.selectedGateSetProperty == GateSetProperty::STEPS ||
+                state.selectedGateSetProperty == GateSetProperty::PULSES ||
+                state.selectedGateSetProperty == GateSetProperty::ROTATION) {
+                clampEuclidean(next);
+                regenerateGateStates(next);
+            } else {
+                clampEuclidean(next);
+            }
             break;
     }
 
     if (next == state.gateSetDraft) return;
+    state.gateSetDraft = next;
+    state.gateSetDirty = next != state.gateSetConfigs[state.selectedPattern];
+    sendGateSet(state.selectedPattern, next);
+}
+
+// R9.2: toggle the SELECTED programmed step's gate on/off (manual editing),
+// layered on top of the generator seed. Routed through the same draft/dirty/send
+// path as every other GateSet edit.
+void toggleGateStep(UIState& state) {
+    if (state.selectedPattern >= state.patternCount) return;
+    if (state.selectedGateSetProperty != GateSetProperty::STEP_GRID) return;
+    const uint8_t s = state.selectedGateStep;
+    if (s >= MAX_GRID_STEPS) return;
+    GateSetConfig next = state.gateSetDraft;
+    next.gateStates[s] = next.gateStates[s] ? 0 : 1;
     state.gateSetDraft = next;
     state.gateSetDirty = next != state.gateSetConfigs[state.selectedPattern];
     sendGateSet(state.selectedPattern, next);

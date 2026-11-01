@@ -269,18 +269,17 @@ Critical ordering decisions:
   the existing `property5_midi_stream` / `property2_sequencer_equivalence` tests stay valid as
   regression guards (invariant 1).
 
-> **OPEN ISSUE — per-step probability index model (resolve in Task 9).** The per-step probability
-> array (`stepProbability[kMaxSteps]`, 16 entries) is a property of a *programmed step*, but the
-> lens currently indexes it by `GateSet::getPosition()`, which is a *tick* position running to the
-> full gate-array length (up to 64×96 ticks via the Euclidean `stepLength`), NOT the 0..15
-> programmed-step index. The two only coincide for a gate array of ≤16 ticks. This is latent today
-> (no UI sets `stepProbability`, and the Task 4 tests exercise only per-Pattern probability), but
-> it must be fixed when the Task 9 grid defines the programmed-step index. The resolution: the
-> GateSet view's grid is addressed by programmed step (0..STEPS-1), and the lens must map the
-> current tick position to its owning programmed step (or the gate array must carry a parallel
-> per-step probability aligned to the *edit grid*, not the tick array) so the value the user edits
-> on step N governs the onset that step N produces. Settle this at the top of Task 9 before wiring
-> the grid; the per-Pattern probability path is unaffected.
+> **RESOLVED (Task 9) — per-step probability index model.** `createEuclidean` places programmed
+> step N's pulse at tick `N * stepLength`, so the gate array is `numSteps * stepLength` ticks and
+> **step N owns tick range `[N*stepLength, (N+1)*stepLength)`**. The RISING edge of step N fires at
+> tick `N*stepLength`, so the lens maps the current tick position to its programmed step by
+> `step = gateSet.getPosition() / stepLength`, then indexes `stepProbability[step]` (bounded to
+> `kMaxSteps`). This requires the Pattern runtime to carry `stepLength` (one byte, derived from the
+> GateSet `NoteLength`); `numSteps = gateArrayLen / stepLength`. The GateSet grid editor addresses
+> steps `0..numSteps-1`; manual gate editing (R9.2) toggles whole step cells (a step's entire tick
+> range), preserving the uniform-step-length invariant the mapping relies on. `stepLength == 0`
+> (empty/degenerate) disables per-step probability (falls back to per-Pattern), never divides by
+> zero. This is the model the grid editor and the lens share.
 
 ### 3. Pattern generation random state (R4)
 

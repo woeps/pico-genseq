@@ -146,28 +146,28 @@ part of this plan.
     - New target `example_pitchset_scale_view.cpp`
     - _Requirements: 8.1–8.6, 10.1–10.5_
 
-- [ ] 9. GateSet view — per-step gate and probability grid editor
-  - [ ] 9.1 Give the GateSet draft an explicit per-step gate array
+- [x] 9. GateSet view — per-step gate and probability grid editor
+  - [x] 9.1 Give the GateSet draft an explicit per-step gate array
     - The generator (`createEuclidean`) writes gate states into the draft array rather than the
       array being derived only on send; manual edits layer on top
     - _Requirements: 9.2, 9.3, 9.7_
-  - [ ] 9.2 Add the per-step grid to the field cursor
+  - [x] 9.2 Add the per-step grid to the field cursor
     - Extend the GateSet field model with one field per step after the generator fields; grid
       length tracks `STEPS`; `moveGateSetProperty` walks generator then grid
     - _Requirements: 9.1_
-  - [ ] 9.3 Edit gate and probability per step
+  - [x] 9.3 Edit gate and probability per step
     - UP/DOWN cycles that step's probability (INHERIT → 0% → … → 100%, INHERIT distinct); ENTER on
       a step toggles its gate on/off
     - _Requirements: 9.2, 9.4, 9.5_
-  - [ ] 9.4 Define the generator re-apply policy
+  - [x] 9.4 Define the generator re-apply policy
     - Re-touching a generator property regenerates gate states but preserves per-step probability
       values; new steps default to INHERIT on growth; out-of-range entries inert on shrink
     - _Requirements: 9.3_
-  - [ ] 9.5 Render the grid and add the per-Pattern PROBABILITY field (R10)
+  - [x] 9.5 Render the grid and add the per-Pattern PROBABILITY field (R10)
     - Step row with lit/unlit gates, edited step highlighted, probability as a coarse level bar,
       INHERIT distinct; add the per-Pattern probability field with clear-to-100 (action count ≤2)
     - _Requirements: 9.6, 10.1, 10.2, 10.3, 10.4_
-  - [ ] 9.6 Add GateSet view host tests
+  - [x] 9.6 Add GateSet view host tests
     - Grid toggles gates and cycles probability; generator reseeds gates while preserving
       probability; generator-only output byte-identical to today's `createEuclidean`; edits commit
       via the draft path and survive save/load

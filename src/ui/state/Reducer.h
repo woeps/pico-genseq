@@ -17,6 +17,7 @@ void setValue(UIState& state, int value);
 void beginGateSetEdit(UIState& state);
 void moveGateSetProperty(UIState& state, int direction);
 void adjustGateSetValue(UIState& state, int delta, bool coarse = false);
+void toggleGateStep(UIState& state);
 void commitGateSetEdit(UIState& state);
 void undoGateSetEdit(UIState& state);
 void syncGateSet(const UIState& state, uint8_t index);

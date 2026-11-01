@@ -65,6 +65,11 @@ struct GenerationParameters {
     // --- Step probability (Req 2) ---
     uint8_t patternProbability = 100;              // 0..100 percent; default 100
     uint8_t stepProbability[kMaxSteps];            // per-step override or INHERIT
+    // Ticks per programmed step (from the GateSet NoteLength), used to map a tick
+    // position to its owning programmed step: step = tickPos / stepLength. 0 (the
+    // default) means "unknown / not set" and disables per-step probability (falls
+    // back to per-Pattern), so a default Pattern is unaffected.
+    uint8_t stepLength = 0;
 
     // --- Velocity humanization (Req 3) ---
     uint8_t humanizeRange = 0;                     // +/- amount; default 0
