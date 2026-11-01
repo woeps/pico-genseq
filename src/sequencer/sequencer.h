@@ -56,6 +56,14 @@ public:
     const PerformanceMetrics& performanceMetrics() const { return metrics; }
     void resetPerformanceMetrics();
 
+    // Set a pattern's Generation Parameters (generative-engine-expansion). This
+    // is the application point the command/boundary path routes through in task
+    // 6; it is public so host tests can inject parameters directly before the
+    // full command plumbing exists. Applying new parameters re-establishes the
+    // pattern's generation random state so a freshly-set seed is honored.
+    void setPatternGenerationParameters(size_t patternIndex,
+                                        const common::GenerationParameters& params);
+
 private:
     IMidiOutput& output;
     IMonotonicClock& clock;

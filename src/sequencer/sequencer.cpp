@@ -240,8 +240,25 @@ Sequencer::EmitResult Sequencer::emitStep(size_t patternIndex, common::PatternId
     }
 
     // Velocity humanization (Req 3): perturb within +/- range, clamp to 1..127
-    // (never 0 — that reads as note-off — and never above 127).
-    uint8_t vel = velocitySet.getVelocity();
+    // (never 0 — that reads as note-off — and never above 127). Under LOCKED
+    // coupling the velocity is read from the index driven by the pitch position
+    // (Req 5), not the velocity stream's own position.
+    uint8_t vel;
+    if (gp.coupling == common::CouplingMode::LOCKED) {
+        // Length reconciliation (Req 5.4): a bounded, allocation-free modulo map
+        // of the pitch position onto the velocity set. Read-only — it does not
+        // advance or mutate the velocity stream, so the FALLING-edge release path
+        // is untouched.
+        const auto& vels = velocitySet.getVelocities();
+        if (vels.empty()) {
+            vel = 0;
+        } else {
+            const uint8_t idx = static_cast<uint8_t>(pitchSet.getPosition() % vels.size());
+            vel = vels[idx];
+        }
+    } else {
+        vel = velocitySet.getVelocity();
+    }
     if (gp.humanizeRange > 0) {
         int v = static_cast<int>(vel) + rng.signedRange(gp.humanizeRange);
         if (v < 1) v = 1;
@@ -260,6 +277,21 @@ void Sequencer::reseedGenerationState() {
             patternRng[i].seed(gp.seed);  // deterministic from the explicit seed
         } else {
             patternRng[i] = PatternRng{};  // documented free-running default
+        }
+    }
+}
+
+void Sequencer::setPatternGenerationParameters(size_t patternIndex,
+                                               const common::GenerationParameters& params) {
+    if (patternIndex >= patterns.size()) return;
+    patterns[patternIndex].setGenerationParameters(params);
+    // Honor a (possibly new) seed immediately so the next draw is deterministic
+    // from the defined start. Unseeded resets to the free-running default.
+    if (patternIndex < patternRng.size()) {
+        if (params.seedSet) {
+            patternRng[patternIndex].seed(params.seed);
+        } else {
+            patternRng[patternIndex] = PatternRng{};
         }
     }
 }

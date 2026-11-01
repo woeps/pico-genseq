@@ -21,6 +21,7 @@
 #include "sequencer.h"
 #include "command.h"
 #include "midi_messages.h"
+#include "GenerationParameters.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -126,11 +127,80 @@ void test_default_emits_stored_velocity() {
     check(vel == 77, "default lens emits stored velocity 77 unchanged");
 }
 
+// Scale constraint SKIP suppresses an out-of-scale onset without stranding a
+// prior note; NEAREST resolves it instead (Req 1.3/1.4).
+void test_scale_skip_and_nearest() {
+    // SKIP: pitch 61 (C#) is out of C major; expect the onset suppressed.
+    {
+        Harness h;
+        h.setPitch({61});          // C# — out of C major
+        h.setVelocity({100});
+        h.setGate({true, false});
+        common::GenerationParameters gp;
+        gp.scale = common::ScaleId::MAJOR;
+        gp.scaleRoot = 0;
+        gp.quantize = common::QuantizeMode::SKIP;
+        h.seq.setPatternGenerationParameters(0, gp);
+        h.play();
+        h.tick(1);
+        check(noteOnPitches(h.out.record()).empty(), "SKIP suppresses out-of-scale onset");
+    }
+    // NEAREST: 61 -> 60 (C), a note sounds at the resolved pitch.
+    {
+        Harness h;
+        h.setPitch({61});
+        h.setVelocity({100});
+        h.setGate({true, false});
+        common::GenerationParameters gp;
+        gp.scale = common::ScaleId::MAJOR;
+        gp.scaleRoot = 0;
+        gp.quantize = common::QuantizeMode::NEAREST;
+        h.seq.setPatternGenerationParameters(0, gp);
+        h.play();
+        h.tick(1);
+        const std::vector<uint8_t> notes = noteOnPitches(h.out.record());
+        check(notes.size() == 1 && notes[0] == 60, "NEAREST resolves C# -> C");
+    }
+}
+
+// Velocity humanization stays within [stored-r, stored+r] and never hits 0 or
+// exceeds 127 (Req 3.1/3.2).
+void test_humanization_bounds() {
+    Harness h;
+    h.setPitch({60});
+    h.setVelocity({100});
+    // Long gate train so we get many humanized onsets.
+    std::vector<bool> g;
+    for (int i = 0; i < 40; ++i) g.push_back(i % 2 == 0);
+    h.setGate(g);
+    common::GenerationParameters gp;
+    gp.humanizeRange = 10;
+    gp.seedSet = true;  // deterministic
+    gp.seed = 42;
+    h.seq.setPatternGenerationParameters(0, gp);
+    h.play();
+    for (uint64_t n = 1; n <= 40; ++n) h.tick(n);
+
+    const std::vector<uint8_t>& s = h.out.record();
+    int checked = 0;
+    for (size_t i = 0; i + 2 < s.size(); ++i) {
+        if ((s[i] & 0xF0) == midi::ChannelVoiceMessage::NOTE_ON && s[i + 2] > 0) {
+            const uint8_t v = s[i + 2];
+            check(v >= 90 && v <= 110, "humanized velocity within [stored-10, stored+10]");
+            check(v >= 1 && v <= 127, "humanized velocity in valid MIDI range");
+            ++checked;
+        }
+    }
+    check(checked > 0, "at least one humanized onset observed");
+}
+
 }  // namespace
 
 int main() {
     test_default_emits_stored_pitches();
     test_default_emits_stored_velocity();
+    test_scale_skip_and_nearest();
+    test_humanization_bounds();
 
     if (failures == 0) {
         std::printf("example_emission_lens: all checks passed\n");

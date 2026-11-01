@@ -80,19 +80,19 @@ part of this plan.
     - New target `property8_generation_determinism.cpp`
     - _Requirements: 4.1, 4.2, 4.3, 4.5_
 
-- [ ] 5. Route scale, humanization, and coupling through the lens
-  - [ ] 5.1 Velocity humanization
+- [x] 5. Route scale, humanization, and coupling through the lens
+  - [x] 5.1 Velocity humanization
     - Perturb by `signedRange(humanizeRange)`, clamp to 1..127; zero range == passthrough
     - _Requirements: 3.1, 3.2, 3.3, 3.5_
-  - [ ] 5.2 Scale constraint at emission
+  - [x] 5.2 Scale constraint at emission
     - Expand `ScaleId`+root into the Pattern runtime's 12-bit mask once on parameter change
     - Apply `scale::quantize`; SKIP returns SUPPRESSED through the §3.2 path
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 6.1_
-  - [ ] 5.3 Stream coupling read-side map
+  - [x] 5.3 Stream coupling read-side map
     - INDEPENDENT advances every stream as today; LOCKED drives the velocity index from the pitch
       position via `pitchSet.getPosition() % velocityCount`, bounded, read-only, no strand
     - _Requirements: 5.1, 5.2, 5.3, 5.4_
-  - [ ] 5.4 Add constraint/coupling host tests
+  - [x] 5.4 Add constraint/coupling host tests
     - Scale modes incl. SKIP no-strand; humanization bounds; independent==today; locked index map;
       mismatched lengths use the modulo rule
     - New targets `example_emission_lens.cpp`, `example_stream_coupling.cpp`
