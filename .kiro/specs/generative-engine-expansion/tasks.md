@@ -130,17 +130,17 @@ part of this plan.
     - Extend the persistence test suite (`test/persistence/`), e.g. `property7_genparams_roundtrip.cpp`
     - _Requirements: 6.5, 1.7, 9.8_
 
-- [ ] 8. PitchSet view — scale membership cue and scale controls
-  - [ ] 8.1 Add the read-only scale-membership cue (R8)
+- [x] 8. PitchSet view — scale membership cue and scale controls
+  - [x] 8.1 Add the read-only scale-membership cue (R8)
     - When a pitch position is selected and scale != CHROMATIC, light a reserved indicator pixel
       distinct from the dirty-draft pixel at `(15,0)`, computed via the same `common::scale`
       library used at emission; render byte-identical when CHROMATIC; never touch draft/commit/undo
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
-  - [ ] 8.2 Add SCALE / ROOT / QUANTIZE control fields (R10)
+  - [x] 8.2 Add SCALE / ROOT / QUANTIZE control fields (R10)
     - New PitchSet fields before the pitch fields; adjust cycles the enums; clear-to-default sets
       CHROMATIC; applies via the boundary path; action count ≤2 per field (stated)
     - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
-  - [ ] 8.3 Add PitchSet view host tests
+  - [x] 8.3 Add PitchSet view host tests
     - Cue matches `scale::inScale` and is absent when chromatic; scale/root/quantize fields set and
       clear; no change to draft/commit behavior
     - New target `example_pitchset_scale_view.cpp`
@@ -186,6 +186,15 @@ part of this plan.
     - Assert every Generation Parameter has a demonstrated matrix-UI set-and-clear path with a
       bounded, stated action count; no parameter is tooling-only
     - _Requirements: 10.1, 10.6_
+  - [ ] 10.4 Wire the GEN_PARAMS_SET FIFO transport end-to-end (deferred from tasks 6/8/9/10)
+    - Add `commands::sendGenParams(patternIndex, GenerationParameters)` + FIFO wire encode, and
+      decode it into the `PatternSnapshot` gen-params in `receiveCommandInto`, so every UI control
+      built in tasks 8-10 reaches core1 through the real cross-core path (not just the direct
+      `setPatternGenerationParameters` setter the UI/tests use meanwhile)
+    - Route each view's gen-param edit through `sendGenParams` at the command/boundary point
+    - Host test the encode→decode→apply round-trip; one consolidated transport change verified on
+      silicon in 11.3
+    - _Requirements: 6.2, 10.1, 10.5_
 
 - [ ] 11. Host suite and RP2040 bench acceptance gate
   - [ ] 11.1 Green the full host suite under sanitizers

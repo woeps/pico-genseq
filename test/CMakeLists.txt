@@ -963,6 +963,10 @@ if(RAPIDCHECK_AVAILABLE)
     # The scale-library example (generative-engine-expansion task 2.2) is its own
     # dedicated target with its own main(); exclude it from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SCALE_SRC}")
+    # The PitchSet scale-view example (generative-engine-expansion task 8.3)
+    # compiles Reducer.cpp + its own main(); exclude it from the shared runner.
+    set(EXAMPLE_PITCHSET_SCALE_VIEW_SRC "${TEST_DIR}/example_pitchset_scale_view.cpp")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_PITCHSET_SCALE_VIEW_SRC}")
     # The emission-lens example (generative-engine-expansion task 3.3) is its own
     # dedicated target with its own main(); exclude it from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_EMISSION_LENS_SRC}")
@@ -1044,3 +1048,24 @@ if(RAPIDCHECK_AVAILABLE)
     target_link_libraries(genseq_reducer_property_tests PRIVATE genseq_emission rapidcheck)
     add_test(NAME genseq_reducer_property_tests COMMAND genseq_reducer_property_tests)
 endif()
+
+# ---------------------------------------------------------------------------
+# Example test: PitchSet scale controls + membership cue (generative-engine-
+# expansion task 8.3). Compiles the real Reducer.cpp + PersistMapping.cpp with
+# host-safe commands:: seam stubs; links genseq_emission for common::scale and
+# the enums. Own main(), standalone target (NOT in the shared glob).
+# ---------------------------------------------------------------------------
+add_executable(genseq_example_pitchset_scale_view
+    "${EXAMPLE_PITCHSET_SCALE_VIEW_SRC}"
+    "${SRC_DIR}/ui/state/Reducer.cpp"
+    "${SRC_DIR}/ui/state/PersistMapping.cpp"
+)
+target_include_directories(genseq_example_pitchset_scale_view PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}"
+    "${SRC_DIR}/ui"
+    "${SRC_DIR}/ui/state"
+    "${SRC_DIR}/persistence"
+)
+target_link_libraries(genseq_example_pitchset_scale_view PRIVATE genseq_emission)
+add_test(NAME genseq_example_pitchset_scale_view COMMAND genseq_example_pitchset_scale_view)

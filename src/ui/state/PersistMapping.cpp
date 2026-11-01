@@ -50,6 +50,14 @@ persistence::PersistableConfig toPersistableConfig(const UIState& state) {
             p.pitches[j] = pitch.pitches[j];
         }
 
+        // Scale constraint (generative-engine-expansion R8/R10): persist the UI
+        // scale fields into the Generation Parameters block. Other gen-params
+        // (probability/humanize/seed/coupling) are threaded in by their own
+        // views in tasks 9/10.
+        p.genScale = static_cast<uint8_t>(pitch.scale);
+        p.genScaleRoot = pitch.scaleRoot;
+        p.genQuantize = static_cast<uint8_t>(pitch.quantize);
+
         p.velocityCount = vel.count;
         if (p.velocityCount > persistence::MAX_SET_LEN) {
             p.velocityCount = persistence::MAX_SET_LEN;
@@ -97,6 +105,12 @@ void applyPersistableConfig(UIState& state,
         for (uint8_t j = 0; j < pitch.count; j++) {
             pitch.pitches[j] = p.pitches[j];
         }
+        // Scale constraint (R8/R10): restore from the Generation Parameters
+        // block. A v1 record carries defaults (CHROMATIC/0/NEAREST), so a
+        // pre-milestone save loads with no scale constraint (behavior-preserving).
+        pitch.scale = static_cast<common::ScaleId>(p.genScale);
+        pitch.scaleRoot = p.genScaleRoot;
+        pitch.quantize = static_cast<common::QuantizeMode>(p.genQuantize);
         state.pitchSetConfigs[i] = pitch;
 
         VelocitySetConfig vel{};

@@ -60,6 +60,13 @@ void sendPitchSetConfig(uint8_t patternIndex, const PitchSetConfig& config) {
     std::vector<uint8_t> pitches(config.pitches.begin(),
                                  config.pitches.begin() + config.count);
     commands::sendPitchSet(patternIndex, config.count, config.order, pitches);
+    // NOTE (generative-engine-expansion task 8): the scale constraint fields
+    // (config.scale / scaleRoot / quantize) live in Working State and persist,
+    // but are NOT yet transmitted to core1 here — the GEN_PARAMS_SET FIFO
+    // transport is the single consolidated step deferred to task 10.4. Until
+    // then the engine reads gen-params only via setPatternGenerationParameters
+    // (host tests / future transport), so these UI controls set-and-persist but
+    // do not drive the sequencer end-to-end. Tracked in tasks.md 10.4.
 }
 
 void restorePitchSetDraft(UIState& state) {
@@ -208,7 +215,7 @@ void beginPitchSetEdit(UIState& state) {
 void movePitchSetField(UIState& state, int direction) {
     const uint8_t lastField = PITCH_SET_FIELD_PITCH_BASE + state.pitchSetDraft.count - 1;
     int next = static_cast<int>(state.selectedPitchSetField) + direction;
-    next = std::clamp(next, static_cast<int>(PITCH_SET_FIELD_COUNT),
+    next = std::clamp(next, static_cast<int>(PITCH_SET_FIELD_SCALE),
                       static_cast<int>(lastField));
     state.selectedPitchSetField = static_cast<uint8_t>(next);
 }
@@ -217,7 +224,23 @@ void adjustPitchSetValue(UIState& state, int delta, bool coarse) {
     if (state.selectedPattern >= state.patternCount || delta == 0) return;
     PitchSetConfig next = state.pitchSetDraft;
 
-    if (state.selectedPitchSetField == PITCH_SET_FIELD_COUNT) {
+    if (state.selectedPitchSetField == PITCH_SET_FIELD_SCALE) {
+        // SCALE cycles the enum one position at a time (coarse has no effect).
+        // CHROMATIC (0) is the behavior-preserving default / clear-to-off.
+        constexpr int kScaleCount = 3;  // CHROMATIC, MAJOR, MINOR_NATURAL
+        const int s = std::clamp(static_cast<int>(next.scale) + delta, 0, kScaleCount - 1);
+        next.scale = static_cast<common::ScaleId>(s);
+    } else if (state.selectedPitchSetField == PITCH_SET_FIELD_ROOT) {
+        // ROOT wraps 0..11; coarse has no effect (12 values only).
+        int r = (static_cast<int>(next.scaleRoot) + delta) % 12;
+        if (r < 0) r += 12;
+        next.scaleRoot = static_cast<uint8_t>(r);
+    } else if (state.selectedPitchSetField == PITCH_SET_FIELD_QUANTIZE) {
+        // QUANTIZE cycles NEAREST/DOWN/UP/SKIP; NEAREST (0) is the default.
+        constexpr int kQuantCount = 4;
+        const int q = std::clamp(static_cast<int>(next.quantize) + delta, 0, kQuantCount - 1);
+        next.quantize = static_cast<common::QuantizeMode>(q);
+    } else if (state.selectedPitchSetField == PITCH_SET_FIELD_COUNT) {
         const int step = coarse ? delta * 10 : delta;
         next.count = std::clamp(static_cast<int>(next.count) + step, 1,
                                 static_cast<int>(MAX_PITCHES));

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "../../common/pitch_set.h"
+#include "../../common/GenerationParameters.h"
 
 namespace ui::state {
 
@@ -77,16 +78,28 @@ inline bool operator!=(const GateSetConfig& lhs, const GateSetConfig& rhs) {
 
 constexpr uint8_t MAX_PITCHES = 16;
 
-// PitchSetConfig field indices: 0 = COUNT, 1 = ORDER, 2..2+count-1 = pitches
-constexpr uint8_t PITCH_SET_FIELD_COUNT = 0;
-constexpr uint8_t PITCH_SET_FIELD_ORDER = 1;
-constexpr uint8_t PITCH_SET_FIELD_PITCH_BASE = 2;
+// PitchSetConfig field indices. The scale controls (generative-engine-expansion
+// R8/R10) come FIRST so the scale context sits with the membership cue, ahead of
+// the pitches it constrains:
+//   0 = SCALE, 1 = ROOT, 2 = QUANTIZE, 3 = COUNT, 4 = ORDER,
+//   5.. = pitches[0..count-1]
+constexpr uint8_t PITCH_SET_FIELD_SCALE = 0;
+constexpr uint8_t PITCH_SET_FIELD_ROOT = 1;
+constexpr uint8_t PITCH_SET_FIELD_QUANTIZE = 2;
+constexpr uint8_t PITCH_SET_FIELD_COUNT = 3;
+constexpr uint8_t PITCH_SET_FIELD_ORDER = 4;
+constexpr uint8_t PITCH_SET_FIELD_PITCH_BASE = 5;
 
 struct PitchSetConfig {
     uint8_t count = 4;
     common::PlayingOrder order = common::PlayingOrder::FORWARDS;
     std::array<uint8_t, MAX_PITCHES> pitches{60, 67, 69, 72, 0, 0, 0, 0,
                                               0, 0, 0, 0, 0, 0, 0, 0};
+    // Scale constraint (R1/R8), behavior-preserving defaults: CHROMATIC == no
+    // constraint, so an untouched PitchSet renders and sounds exactly as before.
+    common::ScaleId scale = common::ScaleId::CHROMATIC;
+    uint8_t scaleRoot = 0;  // 0..11 (0 == C)
+    common::QuantizeMode quantize = common::QuantizeMode::NEAREST;
 };
 
 inline bool operator==(const PitchSetConfig& lhs, const PitchSetConfig& rhs) {
@@ -94,7 +107,8 @@ inline bool operator==(const PitchSetConfig& lhs, const PitchSetConfig& rhs) {
     for (uint8_t i = 0; i < lhs.count; i++) {
         if (lhs.pitches[i] != rhs.pitches[i]) return false;
     }
-    return true;
+    return lhs.scale == rhs.scale && lhs.scaleRoot == rhs.scaleRoot &&
+           lhs.quantize == rhs.quantize;
 }
 
 inline bool operator!=(const PitchSetConfig& lhs, const PitchSetConfig& rhs) {
