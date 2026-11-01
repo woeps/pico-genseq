@@ -48,17 +48,17 @@ part of this plan.
     - New target `example_scale.cpp`
     - _Requirements: 1.1, 1.2, 1.3, 1.6_
 
-- [ ] 3. Build the emission lens with a proven default path
-  - [ ] 3.1 Add `Sequencer::emitStep(...)` returning an EMITTED/SUPPRESSED status
+- [x] 3. Build the emission lens with a proven default path
+  - [x] 3.1 Add `Sequencer::emitStep(...)` returning an EMITTED/SUPPRESSED status
     - Short-circuit on `isDefault()` to the exact current `noteLifecycle.noteOn(...)` call
     - Fixed evaluation order: probability roll → scale resolve → velocity humanize → note-on
     - _Requirements: 1.1, 2.1, 3.1, 6.1_
-  - [ ] 3.2 Integrate SUPPRESSED into the RISING-flank lifecycle
+  - [x] 3.2 Integrate SUPPRESSED into the RISING-flank lifecycle
     - A SUPPRESSED step emits no note-on and strands no prior note, advancing positions exactly as
       the existing reconcile path does on a missed onset
     - Route both probability-suppression and SKIP-mode suppression through this single path
     - _Requirements: 1.4, 2.2, 6.3_
-  - [ ] 3.3 Prove default-equivalence
+  - [x] 3.3 Prove default-equivalence
     - Run the existing `property5_midi_stream` and `property2_sequencer_equivalence` harnesses with
       a default `GenerationParameters` installed; assert byte-identical output to pre-milestone
     - _Requirements: 1.5, 2.3, 3.3, 6.1_

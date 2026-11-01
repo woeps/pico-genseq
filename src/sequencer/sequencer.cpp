@@ -6,6 +6,7 @@
 #include "../common/pitch_set.h"
 #include "../common/velocity_set.h"
 #include "../common/gate_set.h"
+#include "../common/Scale.h"
 #include "../common/const.h"
 #include "../common/pattern.h"
 #include "../instrumentation/PerformanceTrace.h"
@@ -160,10 +161,16 @@ void Sequencer::serviceTick(bool reconcileOnly) {
             // this onset. Advance the material so the next authoritative tick is
             // phase-correct, but emit nothing on the wire.
             if (!reconcileOnly) {
-                // Record ownership at onset by the pattern's canonical channel and
-                // the exact pitch sounding NOW (task 2.4, Req 5.1).
-                noteLifecycle.noteOn(id, pattern.getCanonicalChannel(), pitchSet.getPitch(),
-                                     velocitySet.getVelocity());
+                // Route the onset through the emission lens (task 3): it applies
+                // the Pattern's Generation Parameters and either emits the note-on
+                // via NoteLifecycle (recording ownership by canonical channel and
+                // the exact sounding pitch) or suppresses the step. A suppressed
+                // step strands no note; stream positions still advance on the
+                // FALLING edge exactly as an emitted step, so phrase length and
+                // determinism are unchanged (Req 2.2).
+                const uint16_t gateStepIndex = static_cast<uint16_t>(gateSet.getPosition());
+                emitStep(i, id, pattern.getCanonicalChannel());
+                (void)gateStepIndex;  // consumed by probability roll in task 4
             }
         } else if (flank == common::FALLING) {
             // Release the captured onset via its recorded identity, NOT the
@@ -178,6 +185,45 @@ void Sequencer::serviceTick(bool reconcileOnly) {
             (gateSet.getPosition() + 1) % gateSet.getGates().size());
         gateSet.setPosition(nextGatePosition);
     }
+}
+
+Sequencer::EmitResult Sequencer::emitStep(size_t patternIndex, common::PatternId id,
+                                          common::MidiChannel channel) {
+    common::Pattern& pattern = patterns[patternIndex];
+    common::PitchSet& pitchSet = pattern.getPitchSet();
+    common::VelocitySet& velocitySet = pattern.getVelocitySet();
+    const common::GenerationParameters& gp = pattern.getGenerationParameters();
+
+    // Default short-circuit (design invariant 1): when every Generation
+    // Parameter is at its behavior-preserving default, emit EXACTLY the
+    // pre-milestone note-on — same pitch, same velocity, same ownership record —
+    // with no lens cost. This is what keeps property2/property5 byte-identical.
+    if (gp.isDefault()) {
+        noteLifecycle.noteOn(id, channel, pitchSet.getPitch(), velocitySet.getVelocity());
+        return EmitResult::EMITTED;
+    }
+
+    // Non-default path. Fixed evaluation order (design §2): probability roll ->
+    // scale resolve -> velocity humanize -> note-on. Probability (task 4) and
+    // humanization (task 5.1) are wired in later tasks; this task establishes the
+    // scale constraint and the SUPPRESSED lifecycle contract.
+    uint8_t note = pitchSet.getPitch();
+    const uint8_t vel = velocitySet.getVelocity();
+
+    // Scale constraint (Req 1). CHROMATIC is already covered by isDefault(); a
+    // non-default scale resolves the candidate pitch. SKIP on an out-of-scale
+    // pitch suppresses the step without stranding a note (Req 1.4).
+    if (gp.scale != common::ScaleId::CHROMATIC) {
+        const uint16_t mask = common::scale::membershipMask(gp.scale, gp.scaleRoot);
+        uint8_t resolved = note;
+        if (!common::scale::quantize(mask, gp.quantize, note, resolved)) {
+            return EmitResult::SUPPRESSED;  // SKIP mode, out of scale
+        }
+        note = resolved;
+    }
+
+    noteLifecycle.noteOn(id, channel, note, vel);
+    return EmitResult::EMITTED;
 }
 
 void Sequencer::processCommand(commands::CommandMessage msg) {

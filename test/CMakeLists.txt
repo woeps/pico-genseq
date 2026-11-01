@@ -537,6 +537,22 @@ target_link_libraries(genseq_example_scale PRIVATE genseq_emission)
 add_test(NAME genseq_example_scale COMMAND genseq_example_scale)
 
 # ---------------------------------------------------------------------------
+# Example test: emission-lens default-equivalence (generative-engine-expansion
+# task 3.3).
+#
+# Drives the REAL Sequencer with default Generation Parameters and asserts the
+# note stream is the pre-milestone one (stored pitches/velocity unchanged),
+# proving the lens short-circuit (design invariant 1). Links genseq_emission for
+# the real Sequencer + common. Own main(), excluded from the glob.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_EMISSION_LENS_SRC "${TEST_DIR}/example_emission_lens.cpp")
+
+add_executable(genseq_example_emission_lens "${EXAMPLE_EMISSION_LENS_SRC}")
+target_include_directories(genseq_example_emission_lens PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_emission_lens PRIVATE genseq_emission)
+add_test(NAME genseq_example_emission_lens COMMAND genseq_example_emission_lens)
+
+# ---------------------------------------------------------------------------
 # Example test: centralized NoteLifecycle (task 2.3).
 #
 # A standalone example validating Requirements 5.1-5.5, 5.8: ownership recorded
@@ -933,6 +949,9 @@ if(RAPIDCHECK_AVAILABLE)
     # The scale-library example (generative-engine-expansion task 2.2) is its own
     # dedicated target with its own main(); exclude it from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SCALE_SRC}")
+    # The emission-lens example (generative-engine-expansion task 3.3) is its own
+    # dedicated target with its own main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_EMISSION_LENS_SRC}")
     # The NoteLifecycle (2.3) and TransportTimeline (3.2) examples are their own
     # dedicated targets with their own main(); exclude them from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_NOTE_LIFECYCLE_SRC}")

@@ -115,6 +115,17 @@ private:
     // produced. When false it is the authoritative-phase tick (normal emission).
     void serviceTick(bool reconcileOnly = false);
 
+    // Emission lens (generative-engine-expansion task 3). The single point where
+    // a Pattern's Generation Parameters are applied between the stored stream
+    // values and the MIDI note-on. Returns whether a note was emitted or the
+    // step was suppressed (by SKIP-mode scale resolution, or — once wired in
+    // tasks 4/5 — by a probability roll). A SUPPRESSED step emits no note-on and
+    // strands no prior note; the caller advances stream positions exactly as the
+    // unsuppressed case so phrase length and determinism are unchanged.
+    enum class EmitResult { EMITTED, SUPPRESSED };
+    EmitResult emitStep(size_t patternIndex, common::PatternId id,
+                        common::MidiChannel channel);
+
     // Fail-closed Timing Fault entry (task 5.3): release all ownership, emit Stop
     // when enabled, stop playback, and latch the cause. Working State (the
     // patterns and their configuration) is preserved; only runtime transport

@@ -105,4 +105,16 @@ namespace common {
         this->active = active;
     }
 
+    GenerationParameters& Pattern::getGenerationParameters() {
+        return generationParameters;
+    }
+
+    const GenerationParameters& Pattern::getGenerationParameters() const {
+        return generationParameters;
+    }
+
+    void Pattern::setGenerationParameters(const GenerationParameters& params) {
+        this->generationParameters = params;
+    }
+
 } // namespace common
