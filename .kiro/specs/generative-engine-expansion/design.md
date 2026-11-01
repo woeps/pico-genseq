@@ -269,6 +269,19 @@ Critical ordering decisions:
   the existing `property5_midi_stream` / `property2_sequencer_equivalence` tests stay valid as
   regression guards (invariant 1).
 
+> **OPEN ISSUE — per-step probability index model (resolve in Task 9).** The per-step probability
+> array (`stepProbability[kMaxSteps]`, 16 entries) is a property of a *programmed step*, but the
+> lens currently indexes it by `GateSet::getPosition()`, which is a *tick* position running to the
+> full gate-array length (up to 64×96 ticks via the Euclidean `stepLength`), NOT the 0..15
+> programmed-step index. The two only coincide for a gate array of ≤16 ticks. This is latent today
+> (no UI sets `stepProbability`, and the Task 4 tests exercise only per-Pattern probability), but
+> it must be fixed when the Task 9 grid defines the programmed-step index. The resolution: the
+> GateSet view's grid is addressed by programmed step (0..STEPS-1), and the lens must map the
+> current tick position to its owning programmed step (or the gate array must carry a parallel
+> per-step probability aligned to the *edit grid*, not the tick array) so the value the user edits
+> on step N governs the onset that step N produces. Settle this at the top of Task 9 before wiring
+> the grid; the per-Pattern probability path is unaffected.
+
 ### 3. Pattern generation random state (R4)
 
 Add one `PatternRng` per Pattern runtime on core1 — a named LCG with explicit seeding:

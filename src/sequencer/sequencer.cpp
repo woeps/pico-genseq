@@ -248,10 +248,13 @@ Sequencer::EmitResult Sequencer::emitStep(size_t patternIndex, common::PatternId
         // Length reconciliation (Req 5.4): a bounded, allocation-free modulo map
         // of the pitch position onto the velocity set. Read-only — it does not
         // advance or mutate the velocity stream, so the FALLING-edge release path
-        // is untouched.
+        // is untouched. An empty velocity set falls back to the stream getter
+        // (which yields the set's defined empty value) rather than emitting a 0
+        // velocity, which would read as a note-off; serviceTick already skips
+        // patterns with an empty velocity set, so this is a defensive floor.
         const auto& vels = velocitySet.getVelocities();
         if (vels.empty()) {
-            vel = 0;
+            vel = velocitySet.getVelocity();
         } else {
             const uint8_t idx = static_cast<uint8_t>(pitchSet.getPosition() % vels.size());
             vel = vels[idx];
