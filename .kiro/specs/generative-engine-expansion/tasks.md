@@ -188,7 +188,7 @@ part of this plan.
     - Assert every Generation Parameter has a demonstrated matrix-UI set-and-clear path with a
       bounded, stated action count; no parameter is tooling-only
     - _Requirements: 10.1, 10.6_
-  - [ ] 10.4 Wire the GEN_PARAMS_SET FIFO transport end-to-end (deferred from tasks 6/8/9/10)
+  - [x] 10.4 Wire the GEN_PARAMS_SET FIFO transport end-to-end (deferred from tasks 6/8/9/10)
     - Add `commands::sendGenParams(patternIndex, GenerationParameters)` + FIFO wire encode, and
       decode it into the `PatternSnapshot` gen-params in `receiveCommandInto`, so every UI control
       built in tasks 8-10 reaches core1 through the real cross-core path (not just the direct

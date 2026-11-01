@@ -80,6 +80,62 @@ namespace commands {
         }
     }
 
+    void sendGenParams(uint8_t patternIndex, const common::GenerationParameters& p) {
+        // Header: cmd | patternIndex<<8.
+        const uint32_t header = static_cast<uint32_t>(Command::GEN_PARAMS_SET) |
+            (static_cast<uint32_t>(patternIndex) << 8);
+        multicore_fifo_push_blocking(header);
+
+        // Word 1: scale | scaleRoot | quantize | patternProbability.
+        multicore_fifo_push_blocking(
+            static_cast<uint32_t>(p.scale) |
+            (static_cast<uint32_t>(p.scaleRoot) << 8) |
+            (static_cast<uint32_t>(p.quantize) << 16) |
+            (static_cast<uint32_t>(p.patternProbability) << 24));
+        // Word 2: humanizeRange | seedSet | coupling | stepLength.
+        multicore_fifo_push_blocking(
+            static_cast<uint32_t>(p.humanizeRange) |
+            (static_cast<uint32_t>(p.seedSet ? 1u : 0u) << 8) |
+            (static_cast<uint32_t>(p.coupling) << 16) |
+            (static_cast<uint32_t>(p.stepLength) << 24));
+        // Word 3: seed (full 32 bits).
+        multicore_fifo_push_blocking(p.seed);
+        // Words 4..7: the 16 per-step probability bytes, 4 per word.
+        for (uint8_t w = 0; w < 4; ++w) {
+            uint32_t word = 0;
+            for (uint8_t b = 0; b < 4; ++b) {
+                word |= static_cast<uint32_t>(p.stepProbability[w * 4 + b]) << (b * 8);
+            }
+            multicore_fifo_push_blocking(word);
+        }
+    }
+
+    namespace {
+    // Decode the 6 payload words (after the header) of a GEN_PARAMS_SET command
+    // into a GenerationParameters. Shared by receiveCommand / receiveCommandInto.
+    common::GenerationParameters decodeGenParamsPayload() {
+        common::GenerationParameters p;
+        const uint32_t w1 = multicore_fifo_pop_blocking();
+        p.scale = static_cast<common::ScaleId>(w1 & 0xFF);
+        p.scaleRoot = (w1 >> 8) & 0xFF;
+        p.quantize = static_cast<common::QuantizeMode>((w1 >> 16) & 0xFF);
+        p.patternProbability = (w1 >> 24) & 0xFF;
+        const uint32_t w2 = multicore_fifo_pop_blocking();
+        p.humanizeRange = w2 & 0xFF;
+        p.seedSet = ((w2 >> 8) & 0xFF) != 0;
+        p.coupling = static_cast<common::CouplingMode>((w2 >> 16) & 0xFF);
+        p.stepLength = (w2 >> 24) & 0xFF;
+        p.seed = multicore_fifo_pop_blocking();
+        for (uint8_t w = 0; w < 4; ++w) {
+            const uint32_t word = multicore_fifo_pop_blocking();
+            for (uint8_t b = 0; b < 4; ++b) {
+                p.stepProbability[w * 4 + b] = (word >> (b * 8)) & 0xFF;
+            }
+        }
+        return p;
+    }
+    }  // namespace
+
     CommandMessage receiveCommand() {
         commands::CommandMessage msg;
         if (multicore_fifo_rvalid()) {
@@ -131,6 +187,13 @@ namespace commands {
                         }
                     }
                 }
+            }
+            if (msg.cmd == Command::GEN_PARAMS_SET) {
+                // Drain the fixed 6-word payload so the FIFO stays aligned. The
+                // heap CommandMessage has no gen-params field; the engine applies
+                // gen-params via the snapshot path (receiveCommandInto), so here
+                // we only consume the words.
+                (void)decodeGenParamsPayload();
             }
         }
         return msg;
@@ -198,6 +261,10 @@ namespace commands {
                     }
                 }
             }
+        } else if (msg.cmd == Command::GEN_PARAMS_SET) {
+            // Fixed 6-word payload decoded into the snapshot's GenerationParameters
+            // (task 10.4). Allocation-free: a POD copy into the reused snapshot.
+            snapshot.setGenerationParameters(decodeGenParamsPayload());
         }
         return msg;
     }

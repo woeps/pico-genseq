@@ -99,12 +99,10 @@ void sendGateSet(uint8_t patternIndex, const GateSetConfig& config) {
             break;
         }
     }
-    // NOTE (generative-engine-expansion task 9): the per-step probability array,
-    // the per-Pattern probability, and the step length (for the tick->step map)
-    // live in Working State and persist, but are NOT yet transmitted to core1
-    // here — the GEN_PARAMS_SET FIFO transport is the consolidated step deferred
-    // to task 10.4. The gate array itself (above) IS sent today, so manual gate
-    // edits take effect immediately; probability reaches the engine at 10.4.
+    // NOTE (task 9/10.4): the gate ARRAY is sent here so manual gate edits take
+    // effect immediately. The per-step/per-Pattern probability and stepLength are
+    // transmitted separately via sendPatternGenParams() on commit (GEN_PARAMS_SET
+    // FIFO transport, task 10.4) — not on every scrub of a draft value.
 }
 
 void clampEuclidean(GateSetConfig& config) {
@@ -125,13 +123,9 @@ void sendPitchSetConfig(uint8_t patternIndex, const PitchSetConfig& config) {
     std::vector<uint8_t> pitches(config.pitches.begin(),
                                  config.pitches.begin() + config.count);
     commands::sendPitchSet(patternIndex, config.count, config.order, pitches);
-    // NOTE (generative-engine-expansion task 8): the scale constraint fields
-    // (config.scale / scaleRoot / quantize) live in Working State and persist,
-    // but are NOT yet transmitted to core1 here — the GEN_PARAMS_SET FIFO
-    // transport is the single consolidated step deferred to task 10.4. Until
-    // then the engine reads gen-params only via setPatternGenerationParameters
-    // (host tests / future transport), so these UI controls set-and-persist but
-    // do not drive the sequencer end-to-end. Tracked in tasks.md 10.4.
+    // NOTE (task 8/10.4): the scale fields (scale/scaleRoot/quantize) are carried
+    // to core1 by sendPatternGenParams() on commit (GEN_PARAMS_SET transport),
+    // not here — this function sends only the pitch set itself.
 }
 
 void restorePitchSetDraft(UIState& state) {
@@ -145,10 +139,41 @@ void sendVelocitySetConfig(uint8_t patternIndex, const VelocitySetConfig& config
     std::vector<uint8_t> velocities(config.velocities.begin(),
                                     config.velocities.begin() + config.count);
     commands::sendVelocitySet(patternIndex, config.count, config.order, velocities);
-    // NOTE (generative-engine-expansion task 10): humanize/seed/coupling live in
-    // Working State and persist, but are NOT yet transmitted to core1 here — the
-    // GEN_PARAMS_SET FIFO transport is the consolidated step deferred to task
-    // 10.4. Until then they reach the engine via setPatternGenerationParameters.
+    // NOTE (task 10/10.4): humanize/seed/coupling are carried to core1 by
+    // sendPatternGenParams() on commit (GEN_PARAMS_SET transport), not here.
+}
+
+// task 10.4: assemble the full GenerationParameters for a pattern from its three
+// per-stream configs (scale lives in PitchSet, probability+stepLength in GateSet,
+// humanize/seed/coupling in VelocitySet) and transmit them to core1 as one
+// GEN_PARAMS_SET command. Called after any gen-param edit so the engine's view
+// stays in sync with Working State through the real cross-core path.
+void sendPatternGenParams(const UIState& state, uint8_t patternIndex) {
+    if (patternIndex >= state.patternCount) return;
+    // Called on COMMIT (from commit*Edit), so every stream's config is current:
+    // read the committed per-stream configs and assemble the full gen-params.
+    const PitchSetConfig& pitch = state.pitchSetConfigs[patternIndex];
+    const GateSetConfig& gate = state.gateSetConfigs[patternIndex];
+    const VelocitySetConfig& vel = state.velocitySetConfigs[patternIndex];
+
+    common::GenerationParameters gp;
+    gp.scale = pitch.scale;
+    gp.scaleRoot = pitch.scaleRoot;
+    gp.quantize = pitch.quantize;
+    gp.patternProbability = gate.patternProbability;
+    gp.stepLength = noteLengthTicks(gate.noteLength);
+    const uint8_t n = gate.steps < common::GenerationParameters::kMaxSteps
+                          ? gate.steps : common::GenerationParameters::kMaxSteps;
+    for (uint8_t i = 0; i < common::GenerationParameters::kMaxSteps; ++i) {
+        gp.stepProbability[i] =
+            (i < n) ? gate.stepProbability[i] : common::STEP_PROB_INHERIT;
+    }
+    gp.humanizeRange = vel.humanizeRange;
+    gp.seedSet = vel.seedSet;
+    gp.seed = vel.seed;
+    gp.coupling = vel.coupling;
+
+    commands::sendGenParams(patternIndex, gp);
 }
 
 void restoreVelocitySetDraft(UIState& state) {
@@ -345,6 +370,9 @@ void commitGateSetEdit(UIState& state) {
     if (state.selectedPattern >= state.patternCount) return;
     state.gateSetConfigs[state.selectedPattern] = state.gateSetDraft;
     state.gateSetDirty = false;
+    // task 10.4: transmit the pattern's full gen-params to core1 on commit (gate
+    // carries per-Pattern/per-step probability + stepLength).
+    sendPatternGenParams(state, state.selectedPattern);
 }
 
 void undoGateSetEdit(UIState& state) {
@@ -426,6 +454,8 @@ void commitPitchSetEdit(UIState& state) {
     if (state.selectedPattern >= state.patternCount) return;
     state.pitchSetConfigs[state.selectedPattern] = state.pitchSetDraft;
     state.pitchSetDirty = false;
+    // task 10.4: pitch carries the scale constraint; transmit gen-params on commit.
+    sendPatternGenParams(state, state.selectedPattern);
 }
 
 void undoPitchSetEdit(UIState& state) {
@@ -519,6 +549,8 @@ void commitVelocitySetEdit(UIState& state) {
     if (state.selectedPattern >= state.patternCount) return;
     state.velocitySetConfigs[state.selectedPattern] = state.velocitySetDraft;
     state.velocitySetDirty = false;
+    // task 10.4: velocity carries humanize/seed/coupling; transmit on commit.
+    sendPatternGenParams(state, state.selectedPattern);
 }
 
 void undoVelocitySetEdit(UIState& state) {

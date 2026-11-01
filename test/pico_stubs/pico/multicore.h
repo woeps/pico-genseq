@@ -22,3 +22,13 @@ void multicore_launch_core1(void (*entry)(void));
 static inline void multicore_lockout_victim_init(void) {
     // No-op host double.
 }
+
+// Cross-core FIFO API. command.cpp uses these to transfer command payloads.
+// DECLARED here (not defined) so a test that compiles command.cpp host-side can
+// supply a FIFO double (e.g. a std::queue-backed stub). Targets that do not
+// compile command.cpp never reference these symbols. On real firmware the Pico
+// SDK provides the implementations.
+#include <cstdint>
+void multicore_fifo_push_blocking(uint32_t v);
+uint32_t multicore_fifo_pop_blocking(void);
+bool multicore_fifo_rvalid(void);

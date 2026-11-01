@@ -4,6 +4,7 @@
 #include <vector>
 #include "pico/multicore.h"
 #include "../common/pitch_set.h"
+#include "../common/GenerationParameters.h"
 
 namespace sequencer { class PatternSnapshot; }  // fwd (task 6.4 receive path)
 
@@ -52,6 +53,13 @@ namespace commands {
     void sendVelocitySet(uint8_t patternIndex, uint8_t count,
                          common::PlayingOrder order,
                          const std::vector<uint8_t>& velocities);
+
+    // generative-engine-expansion task 10.4 — send a pattern's Generation
+    // Parameters to core1 over the FIFO. Fixed 7-word payload (no per-element
+    // count), decoded into the PatternSnapshot's GenerationParameters by
+    // receiveCommandInto / receiveCommand. This is the single cross-core path
+    // that carries scale / probability / humanize / seed / coupling / stepLength.
+    void sendGenParams(uint8_t patternIndex, const common::GenerationParameters& params);
 
     /**
      * @brief Receive a command message from the UI core

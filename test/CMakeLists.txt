@@ -975,6 +975,10 @@ if(RAPIDCHECK_AVAILABLE)
     # compiles Reducer.cpp + its own main(); exclude it from the shared runner.
     set(EXAMPLE_VELOCITY_GENPARAMS_VIEW_SRC "${TEST_DIR}/example_velocity_genparams_view.cpp")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_VELOCITY_GENPARAMS_VIEW_SRC}")
+    # The GEN_PARAMS_SET FIFO round-trip (task 10.4) compiles command.cpp with a
+    # std::queue FIFO double + its own main(); exclude it from the shared runner.
+    set(EXAMPLE_GENPARAMS_FIFO_SRC "${TEST_DIR}/example_genparams_fifo.cpp")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_GENPARAMS_FIFO_SRC}")
     # The emission-lens example (generative-engine-expansion task 3.3) is its own
     # dedicated target with its own main(); exclude it from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_EMISSION_LENS_SRC}")
@@ -1117,3 +1121,21 @@ target_include_directories(genseq_example_velocity_genparams_view PRIVATE
 )
 target_link_libraries(genseq_example_velocity_genparams_view PRIVATE genseq_emission)
 add_test(NAME genseq_example_velocity_genparams_view COMMAND genseq_example_velocity_genparams_view)
+
+# ---------------------------------------------------------------------------
+# Example test: GEN_PARAMS_SET FIFO round-trip (generative-engine-expansion task
+# 10.4). Compiles the REAL command.cpp with a std::queue-backed FIFO double so
+# sendGenParams -> receiveCommandInto round-trips a GenerationParameters through
+# the actual cross-core encode/decode. Links genseq_emission for PatternSnapshot
+# + the enums. Own main().
+# ---------------------------------------------------------------------------
+add_executable(genseq_example_genparams_fifo
+    "${EXAMPLE_GENPARAMS_FIFO_SRC}"
+    "${SRC_DIR}/commands/command.cpp"
+)
+target_include_directories(genseq_example_genparams_fifo PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/commands"
+)
+target_link_libraries(genseq_example_genparams_fifo PRIVATE genseq_emission)
+add_test(NAME genseq_example_genparams_fifo COMMAND genseq_example_genparams_fifo)

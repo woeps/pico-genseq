@@ -63,6 +63,10 @@ void sendVelocitySet(uint8_t /*patternIndex*/, uint8_t /*count*/,
     // No-op host double.
 }
 
+void sendGenParams(uint8_t /*patternIndex*/, const common::GenerationParameters& /*params*/) {
+    // No-op host double.
+}
+
 }  // namespace commands
 
 namespace {
