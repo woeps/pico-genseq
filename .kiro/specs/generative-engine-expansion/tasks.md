@@ -112,19 +112,19 @@ part of this plan.
     - Boundary-apply tests immediately before/on/after beat and bar boundaries
     - _Requirements: 6.1, 6.2, 6.3_
 
-- [ ] 7. Persistence format v2 and pre-milestone migration
-  - [ ] 7.1 Bump `FORMAT_VERSION` to 2 and append the Generation Parameters block
+- [x] 7. Persistence format v2 and pre-milestone migration
+  - [x] 7.1 Bump `FORMAT_VERSION` to 2 and append the Generation Parameters block
     - Serialize scale/root/quantize, patternProbability, humanizeRange, seedSet/seed, coupling,
       count-driven stepProbability, and the explicit bit-packed gate array (new to the format —
       manual gates can diverge from the generator seed)
     - _Requirements: 6.5, 1.7, 2.6, 5.5, 9.8_
-  - [ ] 7.2 Implement the migration decoder
+  - [x] 7.2 Implement the migration decoder
     - version==2 decodes the appended block; version==1 decodes the v1 payload and sets all
       Generation Parameters to defaults (and derives the gate array from the stored generator
       params, as today); version>2/unknown stays BAD_VERSION
     - Preserve CRC, local-decode-then-assign, and the ReadCursor bounds guard
     - _Requirements: 6.5_
-  - [ ] 7.3 Add persistence host tests
+  - [x] 7.3 Add persistence host tests
     - v2 round-trips all Generation Parameters and the explicit gate array; a hand-built v1 record
       loads with defaults; truncation/CRC guards still hold; `out` untouched on failure
     - Extend the persistence test suite (`test/persistence/`), e.g. `property7_genparams_roundtrip.cpp`

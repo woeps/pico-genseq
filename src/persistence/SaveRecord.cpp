@@ -63,6 +63,19 @@ struct ReadCursor {
         pos += 2;
         return v;
     }
+
+    uint32_t u32LE() {
+        if (pos + 4 > len) {
+            overrun = true;
+            return 0;
+        }
+        uint32_t v = static_cast<uint32_t>(data[pos]) |
+                     (static_cast<uint32_t>(data[pos + 1]) << 8) |
+                     (static_cast<uint32_t>(data[pos + 2]) << 16) |
+                     (static_cast<uint32_t>(data[pos + 3]) << 24);
+        pos += 4;
+        return v;
+    }
 };
 
 // Build the standard CRC-32 (IEEE 802.3) lookup table once, in RAM, using the
@@ -125,6 +138,25 @@ std::vector<uint8_t> serialize(const PersistableConfig& cfg) {
 
         appendU8(payload, pat.midiChannel);
         appendU8(payload, pat.active);
+
+        // --- Generation Parameters block (format v2) ------------------------
+        appendU8(payload, pat.genScale);
+        appendU8(payload, pat.genScaleRoot);
+        appendU8(payload, pat.genQuantize);
+        appendU8(payload, pat.genPatternProbability);
+        appendU8(payload, pat.genHumanizeRange);
+        appendU8(payload, pat.genSeedSet);
+        appendU32LE(payload, pat.genSeed);
+        appendU8(payload, pat.genCoupling);
+        appendU8(payload, pat.genStepProbCount);
+        for (uint8_t i = 0; i < pat.genStepProbCount && i < MAX_SET_LEN; ++i) {
+            appendU8(payload, pat.genStepProbability[i]);
+        }
+        // Explicit gate array (count-driven; 0 == derive from generator on load).
+        appendU8(payload, pat.gateStepCount);
+        for (uint8_t i = 0; i < pat.gateStepCount && i < PatternConfig::kMaxGateEditSteps; ++i) {
+            appendU8(payload, pat.gateStates[i]);
+        }
     }
 
     const uint32_t payloadLength = static_cast<uint32_t>(payload.size());
@@ -162,8 +194,10 @@ LoadStatus deserialize(const uint8_t* bytes, std::size_t len,
         return LoadStatus::BAD_MAGIC;
     }
 
-    // 3. Version must match the supported format version.
-    if (bytes[2] != FORMAT_VERSION) {
+    // 3. Version must be one we understand. v2 is current; v1 is legacy but
+    //    still loadable (migrated below). Anything else is rejected (Req 6.5).
+    const uint8_t version = bytes[2];
+    if (version != FORMAT_VERSION && version != FORMAT_VERSION_V1_LEGACY) {
         return LoadStatus::BAD_VERSION;
     }
 
@@ -228,6 +262,37 @@ LoadStatus deserialize(const uint8_t* bytes, std::size_t len,
 
         pat.midiChannel = cur.u8();
         pat.active = cur.u8();
+
+        // Generation Parameters block (format v2 only). For a v1 record, `pat`
+        // keeps its struct defaults (behavior-preserving) and the gate array
+        // stays empty (derived from the generator params as before) — this IS
+        // the migration contract (Req 6.5).
+        if (version == FORMAT_VERSION) {
+            pat.genScale = cur.u8();
+            pat.genScaleRoot = cur.u8();
+            pat.genQuantize = cur.u8();
+            pat.genPatternProbability = cur.u8();
+            pat.genHumanizeRange = cur.u8();
+            pat.genSeedSet = cur.u8();
+            pat.genSeed = cur.u32LE();
+            pat.genCoupling = cur.u8();
+            const uint8_t rawStepProbCount = cur.u8();
+            const uint8_t stepProbCount =
+                rawStepProbCount > MAX_SET_LEN ? MAX_SET_LEN : rawStepProbCount;
+            pat.genStepProbCount = stepProbCount;
+            for (uint8_t i = 0; i < stepProbCount; ++i) {
+                pat.genStepProbability[i] = cur.u8();
+            }
+            const uint8_t rawGateStepCount = cur.u8();
+            const uint8_t gateStepCount =
+                rawGateStepCount > PatternConfig::kMaxGateEditSteps
+                    ? PatternConfig::kMaxGateEditSteps
+                    : rawGateStepCount;
+            pat.gateStepCount = gateStepCount;
+            for (uint8_t i = 0; i < gateStepCount; ++i) {
+                pat.gateStates[i] = cur.u8();
+            }
+        }
     }
 
     // If any guarded read ran past the declared payload, the record is

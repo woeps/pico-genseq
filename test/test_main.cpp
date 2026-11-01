@@ -28,6 +28,7 @@ bool runPersistProperty3();  // property3_crc_detection.cpp (persist-settings Pr
 bool runPersistProperty4();  // property4_invalid_records.cpp (persist-settings Property 4)
 bool runPersistProperty5();  // property5_capacity_guard.cpp (persist-settings Property 5)
 bool runPersistProperty6();  // property6_load_readonly.cpp (persist-settings Property 6)
+bool runPersistProperty7();  // property7_genparams_roundtrip.cpp (generative-engine task 7.3)
 
 int main() {
     bool ok = true;
@@ -45,5 +46,6 @@ int main() {
     ok &= runPersistProperty4();
     ok &= runPersistProperty5();
     ok &= runPersistProperty6();
+    ok &= runPersistProperty7();
     return ok ? 0 : 1;
 }

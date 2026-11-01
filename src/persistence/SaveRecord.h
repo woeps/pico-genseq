@@ -13,7 +13,12 @@ namespace persistence {
 // under C++17), which plain `constexpr` at namespace scope would not guarantee
 // if its address were taken in more than one TU.
 inline constexpr uint8_t MAGIC[2] = {'G', 'S'};  // "GS"
-inline constexpr uint8_t FORMAT_VERSION = 1;
+// Current format version. v2 (generative-engine-expansion) appends a Generation
+// Parameters block + an explicit gate array per pattern. v1 is still LOADABLE
+// (migrated: Generation Parameters default, gate array derived from the
+// generator params), so a pre-milestone save is never rejected (Req 6.5).
+inline constexpr uint8_t FORMAT_VERSION = 2;
+inline constexpr uint8_t FORMAT_VERSION_V1_LEGACY = 1;
 // magic (2) + version (1) + reserved (1) + payloadLength (4) + crc32 (4) = 12
 inline constexpr std::size_t HEADER_SIZE = 2 + 1 + 1 + 4 + 4;
 

@@ -126,10 +126,14 @@ void checkWrongMagic() {
 // the version check -> BAD_VERSION (Req 6.3). Because deserialize checks version (step 3) before
 // the declared-length check (step 4), the header alone is enough to reach it.
 void checkBadVersion() {
-    // Pick a version that is guaranteed != FORMAT_VERSION.
+    // Pick a version guaranteed to be neither the current FORMAT_VERSION nor the
+    // still-loadable legacy v1 (generative-engine-expansion: v1 is migrated, not
+    // rejected). Both valid versions are excluded so BAD_VERSION is the ONLY
+    // reason this record is rejected.
     int badVersion = *rc::gen::inRange<int>(0, 256);
-    if (badVersion == persistence::FORMAT_VERSION) {
-        badVersion = persistence::FORMAT_VERSION + 1;  // 2, still a valid u8
+    while (badVersion == persistence::FORMAT_VERSION ||
+           badVersion == persistence::FORMAT_VERSION_V1_LEGACY) {
+        badVersion = (badVersion + 1) & 0xFF;  // step to the next u8, wrapping
     }
 
     // Provide a small real payload and set the declared length to match, so the record would
