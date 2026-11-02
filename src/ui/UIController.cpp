@@ -127,18 +127,30 @@ void UIController::initialize()
         std::make_unique<persistence::Mb85rsFram>(*framSpi, /*regionSize=*/8192);
     recordStore = std::make_unique<persistence::RecordStore>(*framStore);
 
-    persistence::PersistableConfig cfg{};
+    // PersistableConfig is ~2.1 KB; a stack local here alone overflows core0's
+    // 2 KB stack on this deep boot path (and then core1's adjacent launch stack
+    // -- the core1 boot fault). initialize() runs exactly once and is not
+    // re-entrant, so hold the decode buffer in static storage instead of on the
+    // stack. Paired with the in-place UIState mutation below, this keeps the
+    // ~3.5 KB of boot-only buffers off core0's stack entirely.
+    static persistence::PersistableConfig cfg{};
     const persistence::LoadStatus status = recordStore->load(cfg);
 
-    // Start from the StateManager's current (default) UIState.
-    state::UIState bootState = state::getStateManager().getState();
+    // Mutate the StateManager's authoritative UIState IN PLACE (core1 boot-fault
+    // fix). UIState is ~1.4 KB; a by-value `UIState bootState` local here plus a
+    // setState() copy put ~2.8 KB of UIState copies on core0's 2 KB stack along
+    // the deepest boot path (FRAM load + restoreSequencerFromState), overflowing
+    // it into core1's adjacent launch stack and faulting core1 at launch. The
+    // StateManager already holds currentState in static storage, so we fold the
+    // restored config straight into it with no stack-resident UIState copy.
+    state::UIState& boot = state::getStateManager().mutableState();
 
     if (status == persistence::LoadStatus::OK) {
-        // Valid saved config: fold it into the UIState mirror, install it as the
-        // authoritative state, then replay the sync commands to seed core1 from
-        // the restored configuration (Req 5.3, 5.4).
-        state::applyPersistableConfig(bootState, cfg);
-        state::getStateManager().setState(bootState);
+        // Valid saved config: fold it into the authoritative state in place and
+        // notify, then replay the sync commands to seed core1 from the restored
+        // configuration (Req 5.3, 5.4).
+        state::applyPersistableConfig(boot, cfg);
+        state::getStateManager().notifyStateChanged();
 
         const state::UIState& restored = state::getStateManager().getState();
         state::restoreSequencerFromState(restored);
@@ -163,9 +175,9 @@ void UIController::initialize()
         //   - BAD_VERSION / TRUNCATED : an unrecognized or malformed span,
         //     indistinguishable from junk - not treated as the user's save.
         if (persistence::shouldWarnOnBootLoad(status)) {
-            bootState.saveBanner = state::SaveBanner::NOT_LOADED;
+            boot.saveBanner = state::SaveBanner::NOT_LOADED;
         }
-        state::getStateManager().setState(bootState);
+        state::getStateManager().notifyStateChanged();
 
         // Seed core1 with the default pattern 0, exactly as before this feature.
         const state::UIState& defaults = state::getStateManager().getState();
