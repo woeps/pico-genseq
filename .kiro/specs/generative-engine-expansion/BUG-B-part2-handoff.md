@@ -84,7 +84,55 @@ at FaultSP `0x20040f70` is all-zero; my core1 HardFault handler fires but the HW
 never stacked a frame). Recurring non-code words on core1's stack top:
 `0x03021e00`, `0x28070302`, `0x64000000` (look like packed FRAM/command data).
 
-### Where to dig next (fresh session)
+## UPDATE 2 (2026-11-02, later) — mechanism hunt; KEY control: M2 does the same FRAM load and survives
+
+Dug into *why* core0's FRAM `load()` SPI reads fault core1. Results:
+
+- **Every software mechanism ELIMINATED:** `spi_read_blocking` is a pure RAM
+  busy-poll (no IRQ/spinlock/DMA); the FRAM read buffer `cfg` is at `0x200016f4`
+  (far from core1's stack `0x20040800–0x20041000`); core1's stack bank (SCRATCH_X)
+  holds only `core1_stack` (no aliasing); core1 calls no `printf`; the LCD/I2C
+  `Display` is NOT instantiated by `UIController` (no GP10-13 I2C/SPI pin clash);
+  `printf` + TinyUSB are present in the NO_FRAM build where core1 LIVES.
+- **`readRecord` heap alloc was NOT the cause.** `RecordStore::readRecord` did a
+  per-call ~4 KB `std::vector` on core0 (and the `writeSlotRegion` comment flags
+  the SAME bug already fixed on the SAVE path). Replaced it with a static decode
+  buffer (committed `6b23f07`, a correct improvement) — **core1 still faults**, so
+  core0 load-path heap contention is not it.
+- **SLOW_SPI test (`GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI`, 100 kHz vs 8 MHz):** core1
+  fault moved from loopCount **14,858 → 62,929 (~4.2×)**. So the fault fires at a
+  fixed point **DURING the SPI read transfer** and **scales with transfer
+  duration** — not a fixed loop count or one-shot event.
+- **★ KEY CONTROL — M2 (`ff900c9`) does the IDENTICAL FRAM boot load** (same
+  `framSpi->init()` → `recordStore->load()` → `restoreSequencerFromState`, same
+  `readRecord` `std::vector`) and **core1 survives (boots H:pong).** Therefore the
+  FRAM load is only the **trigger/timing**; the ROOT CAUSE is an **M3 change to
+  core1's own path** that made core1 fragile to FRAM-read-time activity. core1 runs
+  ~15k idle loops fine, then dies *when the FRAM read runs*.
+- Fault is a HardFault with an **unstackable frame** (SP `0x20040f70` is valid and
+  shallow — NOT stack overflow). PICO_COPY_TO_RAM (whole image in RAM) still
+  faults → not XIP starvation.
+
+### Where to dig next (fresh session) — REVISED by UPDATE 2
+1. **Diff M2→M3 on core1's EXACT idle path** and run it to ground:
+   `sequencer_task` (identical M2↔M3), `Sequencer::update()` idle branch,
+   `receiveCommandInto` + `PatternSnapshot::clear()` (M3 enlarged the snapshot with
+   `GenerationParameters`), `g_commandSnapshot` (hoisted to file scope in part-1
+   fix). Something M3 added to what core1 touches every idle loop is the fragility.
+2. Since the fault scales with SPI *duration*, test whether it's **sustained SPI1
+   bus activity** specifically: add a knob doing a SHORT (8-byte) vs the full
+   ~4088-byte FRAM read — does a short read still fault? If only long reads do,
+   it is duration/bus/electrical; if even a short read faults, it is the act of
+   any SPI1 transfer.
+3. Consider an **electrical / power** interaction (SPI1 switching on GP10-13 vs the
+   probe-powered rail) — but PROVE it, do not assume; the M2 control argues against
+   pure electrical since M2 drives the same SPI and is fine.
+4. The faulting PC is unrecoverable (stacking fault) — reason from the trigger.
+5. Pragmatic FIX regardless of mechanism: M2 shipped FRAM saves working, so
+   compare M2's vs M3's core1 steady-state memory/stack use; if M3 core1 is simply
+   closer to an edge, the fix may be shrinking core1's per-loop footprint.
+
+### Original "where to dig next" (pre-UPDATE-2, partly superseded)
 1. **Why do SPI1 blocking reads on core0 fault core1?** The driver is clean, so
    suspect a lower layer: a shared **hardware spinlock** (SDK `spi_*` / `sleep_*` /
    the default alarm pool take `PICO_SPINLOCK_ID_*`), a **clock/PLL/RESETS**
