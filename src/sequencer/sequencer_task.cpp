@@ -23,6 +23,16 @@ namespace sequencer {
 // Global pointer for multicore communication (moved from sequencer.cpp)
 static Sequencer* globalSequencer = nullptr;
 
+// Reused fixed-capacity decode buffer (task 6.4, Req 7.9). Hoisted from a
+// FUNCTION-LOCAL static inside sequencer_task() to FILE SCOPE so its
+// construction is a zero-init in BSS at image load — NOT a lazy, __cxa_guard-
+// protected first-use construction that runs ON CORE1. The guarded local-static
+// init path is a BUG B suspect: the C++ ABI guard acquire/release and the
+// guarded zeroing run on core1 during its very first loop entry, and the guard
+// machinery is not obviously safe on this core/runtime. A file-scope POD has no
+// guard and no runtime constructor, so core1 never executes that path.
+static sequencer::PatternSnapshot g_commandSnapshot;
+
 #if GENSEQ_CORE1_BOOT_TRACE
 // ---------------------------------------------------------------------------
 // Core1 boot-fault breadcrumb (BUG B diagnosis, temporary — GENSEQ_CORE1_BOOT_TRACE).
@@ -106,11 +116,9 @@ static void sequencer_task() {
     g_core1Stage = 1;  // reached task entry
 #endif
     if (globalSequencer) {
-        // Reused fixed-capacity decode buffer (task 6.4, Req 7.9): allocated once
-        // here, never on the per-command path. receiveCommandInto() decodes each
-        // command's payload into this snapshot in place, so core1's steady-state
-        // receive loop performs no heap allocation.
-        static sequencer::PatternSnapshot commandSnapshot;
+        // Decode buffer is the file-scope g_commandSnapshot (see above): no
+        // function-local-static guard runs on core1.
+        sequencer::PatternSnapshot& commandSnapshot = g_commandSnapshot;
         while (true) {
             // Cooperative pause point: if core0 is about to write flash it
             // sets the pause request; we acknowledge and spin in RAM (IRQs
