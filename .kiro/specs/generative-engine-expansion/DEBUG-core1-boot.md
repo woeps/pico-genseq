@@ -5,6 +5,63 @@ pico-genseq Milestone 3. Everything needed to start cold is here.
 
 Repo: `/home/chris/Projects/pico/pico-genseq`, branch `agents`.
 
+> ## SESSION FINDINGS 2026-11-02 (LATEST) — BUG B is TWO faults; part 1 FIXED, part 2 localized — READ THIS FIRST
+>
+> Continued with the breadcrumb harness. BUG B resolved into **two distinct core1
+> faults**; the first is fixed and committed.
+>
+> ### BUG B part 1 — core1 hangs in bootrom memset during `__cxa_guard` static init — **FIXED** (`f4c9054`)
+> The decode buffer `commandSnapshot` was a **function-local static** in
+> `sequencer_task()`. Its lazy, `__cxa_guard`-protected first-use construction
+> runs **on core1**, and on silicon that guarded construction **hung core1 inside
+> the bootrom `memset` store loop** (ROM `0x2710`, func `'MS'`@`0x26dd`; the
+> dispatch table at `0x20001420` and the size arg were both fine — the store loop
+> simply never progressed when core1 ran alone; it only advanced one bus
+> transaction per SWD resume). Fix: hoist to a **file-scope POD static**
+> `g_commandSnapshot` (zero-init in BSS at image load, no guard, no core1 runtime
+> ctor). **Proven on hardware**: with the UI disabled, core1 went from frozen
+> (0/2576 loops) to **2M+ loops and climbing**, no fault. Host 41/41.
+> ROM funcs were mapped from the live ROM table: `0x2641`='MC' memcpy,
+> `0x2629`='C4' memcpy44, `0x26dd`='MS' memset.
+>
+> ### BUG B part 2 — async core1 HardFault at ~15k loops, ONLY with the UI task active — **STILL OPEN**
+> With part 1 fixed, the full build (UI task on) still fails: core1 runs
+> **~14,900–15,000 loops** then **HardFaults** (`g_core1FaultHit` set; ICSR
+> `VECTACTIVE=3` confirms HardFault). Hard facts:
+> - `applyCount=0`, `lastRealCmd=0xFF` → core1 **never completes a real command
+>   apply**; it faults during the FIRST real FIFO receive, as core0 starts the
+>   restore burst. `g_core1Stage` at fault **jitters (2 and 5)** run-to-run →
+>   the fault is **asynchronous** to core1's code position, not a specific line.
+> - core0 is blocked in `multicore_fifo_push_blocking` (pushing restore-burst
+>   commands a dead core1 won't drain) — a consequence, not the cause.
+> - **RULED OUT for part 2:** XIP/flash-fetch disruption (built with
+>   `PICO_COPY_TO_RAM=1`, whole image in RAM — core1 STILL faults at ~15k, same
+>   as flash); unhandled IRQ on core1 (`NVIC_ISER=0` — core1 enables no IRQs;
+>   bits in ISPR are just core0's DMA/timer/FIFO pending, not taken on core1);
+>   command-apply heap/vector path (never reached, applyCount=0); corrupted
+>   `playing`/vtables (part-1 pass showed them sane); core0 stack overflow (BUG A,
+>   fixed). The exception frame is **unstackable** (`g_core1FaultPC=0`), so it is a
+>   bus-error-type HardFault, escalated, SP sane (~`0x20040f70`).
+> - **Trigger correlation:** part 2 appears exactly when `createUITask` runs
+>   (`ws2812_dma.c` sets up `DMA_IRQ_0` + its handler `dma_complete_handler`, which
+>   arms a repeating `add_alarm_in_us` timer; LED matrix refresh + FRAM + the
+>   restore FIFO burst all begin here). NO_UI build has none of this and (post
+>   part-1 fix) core1 runs forever.
+> - **Leading hypotheses for a fresh session:** (a) a cross-core **memory
+>   corruption** of the `Sequencer`/`noteLifecycle`/`metrics` object core1 reads in
+>   `update()` the instant core0's UI/DMA/alarm starts (async bus fault on a
+>   bad-address read); (b) the **alarm pool / `add_alarm_in_us`** or DMA setup on
+>   core0 disturbing shared state core1 touches; (c) the SIO FIFO interaction at
+>   first push. Next steps: breadcrumb core0's `createUITask`/`restoreSequencerFromState`
+>   milestones to pin what core0 did at the exact loop count; add a watchpoint on
+>   the `Sequencer` object header once a stable boot allows it; try disabling just
+>   the WS2812 DMA/alarm (keep the rest of the UI) to bisect within `createUITask`.
+> - Breadcrumbs for part 2 committed (`1b6f58f`, OFF by default):
+>   `g_core1LastRealCmd`, `g_core1ApplyBranch` (1=GATE 2=PITCH 3=VEL 4=GENPARAMS
+>   5=PLAY 6=STOP 7=BPM 8=ACT 9=DEACT 10=ADD 11=REMOVE 100=survived),
+>   `g_core1ApplyCount`, `g_core1ApplyParam`. Resolve addrs per build with
+>   `arm-none-eabi-nm | grep g_core1`.
+>
 > ## SESSION FINDINGS 2026-11-02 (LATE) — GPIO/RAM-breadcrumb pass — READ THIS FIRST, it OVERTURNS the launch-fault story below
 >
 > Using a firmware breadcrumb harness (committed, OFF by default — build with
