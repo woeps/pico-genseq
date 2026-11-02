@@ -137,19 +137,54 @@ Diffed M2 (`ff900c9`) → M3 (`cae2666`) on core1's exact idle path and tested o
   is executing.** core1 is faulted **externally** by core0's FRAM-read activity at
   that instant; it is not core1's own operation that trips it.
 
-### Leading remaining hypothesis (needs the physical bench, not SWD)
-An **electrical / power transient** from sustained SPI1 switching (GP10–13) on the
-**probe-powered rail** (the target is powered through the picoprobe). This fits
-everything no software theory could: wall-clock-timed to the SPI read, scales with
-its duration, unstackable frame (a brownout/glitch, not a logic fault), every
-software mechanism eliminated, and M2 vs M3 being a *marginal* difference (M2
-survives the same load — it may simply sit on the safe side of a power/timing
-edge). **To confirm/refute, a human needs a scope/meter at the bench:** watch the
-3V3 rail (and the FRAM Vcc) during the FRAM read for a dip, and/or power the target
-from a stable bench supply instead of through the probe and re-test. If it's power,
-the fix is decoupling / a real supply, not firmware. If the rail is clean, re-open
-the firmware hunt (capture the faulting instruction with an external analyzer on
-the trace/fault pins, since the stacked frame is unrecoverable over SWD).
+## UPDATE 4 (2026-11-02) — BENCH CAPTURE: power REFUTED, fault proven locked to the FRAM read
+
+Wired a BS05U mixed-signal analyzer (L0=GP7 FRAM-read marker, L1=GP6 fault marker,
+analog A=3V3 rail, common GND) and captured the live boot→fault transition
+(firmware got a `GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN=7` marker + a
+`GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS` boot delay so a one-shot re-arming trigger
+could catch it; commit `2b0fa9d`).
+
+**Result:**
+- The **fault (GP6) rises ~5.3 ms INTO the 15.5 ms FRAM-read (GP7) window** — the
+  fault is *locked to core0's FRAM read*, proven on an external instrument with
+  zero SWD perturbation.
+- The **3V3 rail is FLAT: 3.307–3.412 (~53 mV, noise-level), NO dip** during the
+  read or at the fault.
+- **⇒ The power / brownout hypothesis (UPDATE 3's lead) is REFUTED.** No rail
+  collapse. The core1 fault is a **logical / bus interaction** tied to core0's
+  sustained SPI1 read activity, with a clean supply.
+- The 15.5 ms read is ~4× a single 4088-byte@8MHz transfer because `load()` reads
+  multiple slots (`selectNewest` per slot + `load`); the fault lands during the
+  first/second `readRecord` SPI read. (So the FRAM returns real data — not a
+  floating-MISO runaway.)
+- The faulting PC remains **unrecoverable**: the fault is a stacking fault (frame
+  zero at a valid SP) and fires too fast (~5 ms in) for an SWD poll-and-halt to
+  catch before the double-fault lockup clobbers the context (tried a GP7-anchored
+  halt — still landed in the handler spin).
+
+### Where to dig next (fresh session) — REVISED by UPDATE 4
+Power is out; it's logical/bus. Most promising:
+1. **Capture the faulting PC with the analyzer, not SWD.** Instrument core1 to
+   emit its progress as a few-bit GPIO "PC class" code (e.g. which function /
+   which quarter of the idle loop it's in) on spare trace pins, and read which
+   code is latched when GP6 fires. That localizes the faulting region without
+   needing the (destroyed) stacked frame.
+2. **Bus-fabric / peripheral theory with a clean rail:** core0's `spi_read_blocking`
+   hammers the SPI1 DR register in a tight loop; test whether it's the *SPI1
+   peripheral* specifically (move FRAM to SPI0? use a different SPI baud/format?)
+   or sustained bus master activity in general (reproduce with a tight core0
+   loop doing unrelated MMIO reads at the same rate — does THAT fault core1?).
+3. **M2 vs M3 at the bus level:** M2 survives the identical load, so compare what
+   core1 is *fetching from* during the read window (M3's larger code/data layout
+   may put core1's hot code in a flash/RAM region that contends differently).
+4. A tight core0 busy-loop with NO SPI (just `for(;;) count++;`) during the same
+   window — does core1 still fault? Splits "SPI specifically" from "any sustained
+   core0 activity at that moment".
+
+### (superseded) Leading hypothesis from UPDATE 3 — POWER — now REFUTED by UPDATE 4
+An electrical/power transient on the probe-powered rail. The BS05U 3V3 capture
+showed a flat rail, so this is ruled out. Kept for the record.
 
 ### Where to dig next (fresh session) — REVISED by UPDATE 2
 1. **Diff M2→M3 on core1's EXACT idle path** and run it to ground:
