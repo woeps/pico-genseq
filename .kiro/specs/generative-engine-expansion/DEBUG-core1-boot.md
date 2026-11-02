@@ -5,6 +5,74 @@ pico-genseq Milestone 3. Everything needed to start cold is here.
 
 Repo: `/home/chris/Projects/pico/pico-genseq`, branch `agents`.
 
+> ## SESSION FINDINGS 2026-11-02 (LATE) — GPIO/RAM-breadcrumb pass — READ THIS FIRST, it OVERTURNS the launch-fault story below
+>
+> Using a firmware breadcrumb harness (committed, OFF by default — build with
+> `-DGENSEQ_CORE1_BOOT_TRACE=ON`; read the `g_core1*` BSS symbols over SWD after a
+> self-reset) the core1 fault was traced far more precisely than the SWD-only
+> passes managed. **Everything in the older blocks claiming "core1 faults at
+> launch / before `core1_trampoline` / before its own code" is WRONG** — that was
+> stale double-fault-lockup state from a prior build read as the live fault.
+>
+> ### What core1 actually does (current `bisect/core1-boot-fault` tip)
+> - core1 **launches fine, runs its real task loop** (`sequencer_task` →
+>   `receiveCommandInto` → `processCommand` → `update`) **thousands of times**,
+>   then dies. It is NOT an early/launch fault.
+> - **Deterministic**: full build (HOST_CONTROL + TRACE + UI) → core1 **HardFaults**
+>   at ~**15,380** loops (`g_core1LoopCount≈0x3c17`), `lastCmd=NOOP` (idle spin),
+>   `playing=0` (NOT corrupted), `output`/`clock` vtable ptrs VALID flash addrs
+>   (so NOT a corrupted-vtable virtual call in core1's own object). The core1-local
+>   naked HardFault handler fires (`g_core1FaultHit=0xFA017ED0`) but the stacked
+>   exception frame is **all-zero / unstackable** → the stacked PC is unrecoverable
+>   (stacking itself faulted; EXC_RETURN=0xfffffff9 = MSP, no FP).
+> - **Isolation test** (`-DGENSEQ_CORE1_BOOT_TRACE_NO_UI=ON`, which skips
+>   `createUITask` so core0 just `tight_loop_contents()`): core1 **STILL dies**,
+>   deterministically at **2576** loops (`0xa10`), but DIFFERENTLY — no HardFault
+>   (`faultHit=0`); core1 is **HUNG in the BOOTROM** (`PC≈0x2734`, static across
+>   samples; loop count frozen) with `LR` → `receiveCommandInto`'s `__wrap_memset`
+>   path. Same via a clean debugger boot (`reset halt`+`resume`), so NOT a
+>   watchdog-reset artifact.
+> - **Therefore core0's UI/application code is NOT the corruptor** (core1 dies with
+>   the UI task entirely disabled). UI activity only shifts the failure TIMING
+>   (15k vs 2.5k loops) and MODE (HardFault vs bootrom hang).
+> - **RULED OUT this pass:** XIP-during-flash-write (no `flash_range_program`/
+>   `erase` is even linked into the binary — the FRAM store does no flash writes);
+>   unprotected cross-core heap race (malloc/free/realloc all serialize on the one
+>   `__wrap_free` mutex `0x20002584`); `GateSet`/`PitchSet` rule-of-three (they hold
+>   `std::vector` by value, implicit deep copy is correct); core0 stack overflow
+>   into core1 (BUG A, fixed; core0 SP now healthy and core1 still dies).
+>
+> ### Leading hypothesis to chase next (fresh session, self-reset loop is cheap)
+> core1 **hangs/faults inside a BOOTROM function** (looks like the ROM
+> `memset`/`memcpy` reached from `receiveCommandInto`/`snapshot.clear()`). The
+> RP2040 bootrom's shared routines are NOT guaranteed concurrent-safe across both
+> cores. Next steps, most decisive first:
+>   1. **Breadcrumb core0 too** (what is core0 doing — esp. any bootrom/ROM call,
+>      `memcpy`/`memset`, FRAM/SPI, USB IRQ — at the instant core1's loop count
+>      freezes). Confirm/deny concurrent bootrom use.
+>   2. **Build M2 (`ff900c9`) with an equivalent loop-count breadcrumb** and check
+>      whether M2's core1 loops forever (isolates the regression to M3 core1 code
+>      vs a latent concurrency bug M3 merely exposes by timing).
+>   3. Identify bootrom `0x2734` precisely (ROM func table) — is it `memset`,
+>      `memcpy`, or a wait/holding routine.
+>   4. Try replacing the SDK bootrom-accelerated `memset`/`memcpy` on the core1
+>      path with a plain byte loop (or `-DPICO_USE_OPTIMISTIC_SBRK`/ROM-memcpy off)
+>      and see if core1 survives — would confirm the ROM-function concurrency bug.
+>
+> ### Breadcrumb harness (committed `ab1ac21`, all OFF by default; host 41/41 green)
+> - `GENSEQ_CORE1_BOOT_TRACE`: `g_core1Stage` (1=entry 2=looptop 3=after-receive
+>   4=before-processCommand 5=after 6=after-update), `g_core1LoopCount`,
+>   `g_core1LastCmd`, `g_core1UpdateN`, `g_core1Playing`, `g_core1OutputVtbl`,
+>   `g_core1ClockVtbl`, plus a naked core1 HardFault handler →
+>   `g_core1Fault{Hit,PC,LR,R0,SP}`. Resolve the symbol addresses per build with
+>   `arm-none-eabi-nm genseq.elf | grep g_core1` (they move when BSS changes).
+> - `GENSEQ_CORE1_BOOT_TRACE_NO_UI`: skip `createUITask` (core0 idles).
+> - Links `hardware_exception` (temporary). REMOVE the whole harness once fixed.
+> - Scratch helpers this session: `$KIROCREW_SCRATCH/{genseq-env.sh,flash.sh,wdreset.sh,probe.py}`
+>   (scratch is per-session; recreate from the brief/env if gone). Build+bench env:
+>   `PICO_SDK_PATH=/home/chris/Projects/pico/pico-sdk` (CMake actually uses the
+>   installed `~/.pico-sdk/sdk/2.1.1`), toolchain `~/.pico-sdk/toolchain/14_2_Rel1`.
+>
 > ## SESSION FINDINGS 2026-11-02 (read this FIRST — supersedes the ranked plan below)
 >
 > Worktree `/home/chris/Projects/pico/pico-genseq-wt-bisect-the-pico-genseq-core1-boot-fault`,
