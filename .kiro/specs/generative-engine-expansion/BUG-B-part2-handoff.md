@@ -113,6 +113,44 @@ Dug into *why* core0's FRAM `load()` SPI reads fault core1. Results:
   shallow — NOT stack overflow). PICO_COPY_TO_RAM (whole image in RAM) still
   faults → not XIP starvation.
 
+## UPDATE 3 (2026-11-02) — core1 idle path is byte-identical M2↔M3; fault is WALL-CLOCK-timed
+
+Diffed M2 (`ff900c9`) → M3 (`cae2666`) on core1's exact idle path and tested on HW:
+
+- **core1 idle code is essentially UNCHANGED M2↔M3.** `sequencer_task` and
+  `core_pause.cpp` are identical; `Sequencer::update()` is byte-for-byte the same
+  size (0x478) with the same prologue; `receiveCommandInto` only grew a
+  `GEN_PARAMS_SET` branch that the idle (NOOP) path never takes. The only per-idle
+  change is `PatternSnapshot::clear()` doing one extra `genParams_ =
+  GenerationParameters{}` (small POD). So the fragility is **not** a changed core1
+  instruction.
+- core1's idle `clear()` compiles to **bootrom `__wrap_memset` + `__wrap_memcpy`**
+  calls every loop (same mechanism as the part-1 ROM-memset hang).
+- **NO_ROM_CLEAR test** (`GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR`, zero `gateBits_`
+  via a volatile loop): inconclusive — the `genParams_` copy still emits a ROM
+  memcpy, so ROM calls were not fully removed, and core1 still faulted. BUT it
+  revealed the decisive fact below.
+- **★★ THE FAULT IS WALL-CLOCK-TIMED.** Making `clear()` slower (volatile loop)
+  dropped the fault loopCount **14,858 → 9,696**; the 100 kHz SLOW_SPI test raised
+  it to **62,929**. The fault fires at a **fixed moment in real time — when core0
+  runs the FRAM read — regardless of how many loops core1 has done or what core1
+  is executing.** core1 is faulted **externally** by core0's FRAM-read activity at
+  that instant; it is not core1's own operation that trips it.
+
+### Leading remaining hypothesis (needs the physical bench, not SWD)
+An **electrical / power transient** from sustained SPI1 switching (GP10–13) on the
+**probe-powered rail** (the target is powered through the picoprobe). This fits
+everything no software theory could: wall-clock-timed to the SPI read, scales with
+its duration, unstackable frame (a brownout/glitch, not a logic fault), every
+software mechanism eliminated, and M2 vs M3 being a *marginal* difference (M2
+survives the same load — it may simply sit on the safe side of a power/timing
+edge). **To confirm/refute, a human needs a scope/meter at the bench:** watch the
+3V3 rail (and the FRAM Vcc) during the FRAM read for a dip, and/or power the target
+from a stable bench supply instead of through the probe and re-test. If it's power,
+the fix is decoupling / a real supply, not firmware. If the rail is clean, re-open
+the firmware hunt (capture the faulting instruction with an external analyzer on
+the trace/fault pins, since the stacked frame is unrecoverable over SWD).
+
 ### Where to dig next (fresh session) — REVISED by UPDATE 2
 1. **Diff M2→M3 on core1's EXACT idle path** and run it to ground:
    `sequencer_task` (identical M2↔M3), `Sequencer::update()` idle branch,
