@@ -12,6 +12,17 @@
 #include "pico/time.h"
 #include <cstdio>
 
+// Temporary BUG B part 2 isolation knobs (OFF by default).
+#ifndef GENSEQ_CORE1_BOOT_TRACE_NO_RESTORE
+#define GENSEQ_CORE1_BOOT_TRACE_NO_RESTORE 0
+#endif
+#ifndef GENSEQ_CORE1_BOOT_TRACE_NO_FRAM
+#define GENSEQ_CORE1_BOOT_TRACE_NO_FRAM 0
+#endif
+#ifndef GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD
+#define GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD 0
+#endif
+
 namespace {
 // Completion / watchdog bounds from the design (Req 1.1, 7.5). save() here is
 // synchronous and bounded by the RP2040 flash erase+program time (a handful of
@@ -122,7 +133,9 @@ void UIController::initialize()
         pins.cs = FRAM_SPI_PIN_CS;
         framSpi = std::make_unique<persistence::Mb85rsFramSpi>(pins);
     }
+#if !GENSEQ_CORE1_BOOT_TRACE_NO_FRAM
     framSpi->init();
+#endif
     framStore =
         std::make_unique<persistence::Mb85rsFram>(*framSpi, /*regionSize=*/8192);
     recordStore = std::make_unique<persistence::RecordStore>(*framStore);
@@ -134,7 +147,15 @@ void UIController::initialize()
     // stack. Paired with the in-place UIState mutation below, this keeps the
     // ~3.5 KB of boot-only buffers off core0's stack entirely.
     static persistence::PersistableConfig cfg{};
+#if GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD || GENSEQ_CORE1_BOOT_TRACE_NO_FRAM
+    // BUG B part 2 isolation: skip the FRAM SPI load (treat as no saved config).
+    // NO_FRAM also skips init() above; NO_FRAM_LOAD keeps init() but skips the
+    // repeated read transfers -> splits "SPI/peripheral bring-up" from "SPI
+    // traffic" as the core1 corruptor.
+    const persistence::LoadStatus status = persistence::LoadStatus::ABSENT;
+#else
     const persistence::LoadStatus status = recordStore->load(cfg);
+#endif
 
     // Mutate the StateManager's authoritative UIState IN PLACE (core1 boot-fault
     // fix). UIState is ~1.4 KB; a by-value `UIState bootState` local here plus a
@@ -153,7 +174,13 @@ void UIController::initialize()
         state::getStateManager().notifyStateChanged();
 
         const state::UIState& restored = state::getStateManager().getState();
+#if !GENSEQ_CORE1_BOOT_TRACE_NO_RESTORE
+        // BUG B part 2 isolation: NO_RESTORE skips the cross-core FIFO command
+        // burst (PATTERN_ADD/GATE_SET/... pushed to core1) while keeping FRAM
+        // load + state apply + the UI loop. If core1 survives, the restore
+        // burst / FIFO interaction is the part-2 corruptor.
         state::restoreSequencerFromState(restored);
+#endif
     } else {
         // No valid saved config. Keep the firmware defaults and leave the
         // Storage_Region untouched (load is read-only).

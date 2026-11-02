@@ -134,10 +134,29 @@ option(GENSEQ_CORE1_BOOT_TRACE
 # with nothing else on core0. Proves whether the corruptor lives in createUITask.
 option(GENSEQ_CORE1_BOOT_TRACE_NO_UI
        "Skip createUITask (BUG B isolation; requires GENSEQ_CORE1_BOOT_TRACE)" OFF)
+# TEMPORARY isolation knob (BUG B part 2): run the full UI EXCEPT the WS2812
+# DMA/PIO/IRQ + alarm setup, to test whether that subsystem is the corruptor.
+option(GENSEQ_CORE1_BOOT_TRACE_NO_DMA
+       "Skip WS2812 DMA/alarm setup (BUG B part 2 isolation)" OFF)
+# TEMPORARY isolation knob (BUG B part 2): skip the restoreSequencerFromState
+# cross-core FIFO command burst, to test whether it is the corruptor.
+option(GENSEQ_CORE1_BOOT_TRACE_NO_RESTORE
+       "Skip restoreSequencerFromState FIFO burst (BUG B part 2 isolation)" OFF)
+# TEMPORARY isolation knob (BUG B part 2): skip the FRAM SPI init+load, to test
+# whether FRAM/SPI activity is the corruptor.
+option(GENSEQ_CORE1_BOOT_TRACE_NO_FRAM
+       "Skip FRAM init+load (BUG B part 2 isolation)" OFF)
+# Skip only the FRAM read transfers (keep init) -- splits bring-up from traffic.
+option(GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD
+       "Skip only recordStore->load, keep framSpi->init (BUG B part 2 isolation)" OFF)
 
 target_compile_definitions(genseq PRIVATE
     GENSEQ_CORE1_BOOT_TRACE=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE}>
     GENSEQ_CORE1_BOOT_TRACE_NO_UI=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_UI}>
+    GENSEQ_CORE1_BOOT_TRACE_NO_DMA=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_DMA}>
+    GENSEQ_CORE1_BOOT_TRACE_NO_RESTORE=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_RESTORE}>
+    GENSEQ_CORE1_BOOT_TRACE_NO_FRAM=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_FRAM}>
+    GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD}>
     GENSEQ_PERFORMANCE_TRACE_ENABLED=$<BOOL:${GENSEQ_PERFORMANCE_TRACE_ENABLED}>
     GENSEQ_TRACE_TICK_PIN=${GENSEQ_TRACE_TICK_PIN}
     GENSEQ_TRACE_MIDI_PIN=${GENSEQ_TRACE_MIDI_PIN}
