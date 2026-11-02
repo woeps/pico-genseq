@@ -149,6 +149,10 @@ option(GENSEQ_CORE1_BOOT_TRACE_NO_FRAM
 # Skip only the FRAM read transfers (keep init) -- splits bring-up from traffic.
 option(GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD
        "Skip only recordStore->load, keep framSpi->init (BUG B part 2 isolation)" OFF)
+# TEMPORARY: run FRAM SPI at 100 kHz instead of 8 MHz, to separate an electrical/
+# timing cause from a logical one for the part-2 fault.
+option(GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI
+       "Run FRAM SPI at 100 kHz (BUG B part 2 electrical-vs-logical test)" OFF)
 
 target_compile_definitions(genseq PRIVATE
     GENSEQ_CORE1_BOOT_TRACE=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE}>
@@ -157,6 +161,7 @@ target_compile_definitions(genseq PRIVATE
     GENSEQ_CORE1_BOOT_TRACE_NO_RESTORE=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_RESTORE}>
     GENSEQ_CORE1_BOOT_TRACE_NO_FRAM=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_FRAM}>
     GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD}>
+    GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI}>
     GENSEQ_PERFORMANCE_TRACE_ENABLED=$<BOOL:${GENSEQ_PERFORMANCE_TRACE_ENABLED}>
     GENSEQ_TRACE_TICK_PIN=${GENSEQ_TRACE_TICK_PIN}
     GENSEQ_TRACE_MIDI_PIN=${GENSEQ_TRACE_MIDI_PIN}

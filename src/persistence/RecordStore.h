@@ -159,9 +159,25 @@ private:
         const std::size_t half = store_.capacity() / 2;
         if (half <= SlotHeader::kSize) return LoadStatus::TRUNCATED;
         const std::size_t recLen = half - SlotHeader::kSize;
-        std::vector<uint8_t> rec(recLen);
-        store_.read(slotOffset(slot) + SlotHeader::kSize, rec.data(), recLen);
-        return deserialize(rec.data(), recLen, out);
+
+        // core1 boot-fault fix (BUG B part 2): the read buffer MUST NOT be a
+        // per-call heap allocation. readRecord() runs on core0 during boot load
+        // (selectNewest() calls it per slot, then load() again) while core1 is
+        // concurrently allocating/freeing on its command path; a ~4 KB
+        // std::vector here collided on the shared allocator and asynchronously
+        // double-faulted core1 (LED dark, serial silent). This is the SAME class
+        // of bug already removed from the SAVE path (see writeSlotRegion's
+        // comment) -- the load path still had it. A fixed-capacity static buffer
+        // is allocation-free: load() is one-shot and not re-entrant (boot only),
+        // so a single shared decode buffer is safe and never touches the heap.
+        // Sized to one slot of the DEFAULT 8 KiB region (the store is only ever
+        // constructed with regionSize 8192); a larger region is rejected rather
+        // than silently heap-allocating.
+        static constexpr std::size_t kMaxRecLen = (8192u / 2u) - SlotHeader::kSize;
+        static uint8_t recBuf[kMaxRecLen];
+        if (recLen > kMaxRecLen) return LoadStatus::TRUNCATED;
+        store_.read(slotOffset(slot) + SlotHeader::kSize, recBuf, recLen);
+        return deserialize(recBuf, recLen, out);
     }
 
     // Pick the slot with the highest generation whose SlotHeader is valid AND
