@@ -248,3 +248,33 @@ Leading hypotheses to test next (deliberately, with the probe attached):
 The entire M3 engine + UI is host-proven (41/41, incl. the real-command.cpp
 GEN_PARAMS_SET FIFO round-trip). This is a hardware-only bring-up defect to pin
 in a focused bench session, as task 11.2.
+
+### Update (sharpened, reproducible): core1 faults applying a boot-sync command
+
+Later session findings refine the above. The core0 host-control RX silence was a
+SEPARATE, now-FIXED bug: UIState grew to ~1.4 KB and was copied by value in the
+reducer/handleEvent path, overflowing core0's 2 KB stack — fixed by reducing
+UIState in place (commit "reduce UIState in place", host 41/41).
+
+The remaining HARDWARE defect is now deterministic and isolated:
+- M2 (ff900c9) boots clean (LED on). Flashing the latest M3 build over the SAME
+  FRAM record → boot fails, LED dark. Reproducible, so it is an M3 code bug, not
+  flakiness.
+- core0 wedges at multicore_fifo_wready (blocked pushing a boot-sync command).
+- core1 LAUNCHES then faults (PC in a fault/lockup handler, NOT bootrom), i.e. it
+  crashes APPLYING a command from restoreSequencerFromState's sync burst.
+- The FRAM record is read CORRECTLY: latest's v1 decode order matches M2's v1
+  serialize byte-for-byte, and the host property7 v1-migration test passes. So the
+  loaded PersistableConfig is valid; the fault is downstream on core1's apply path.
+
+Isolation target (bisect deliberately, probe attached, board known-good on M2
+first): the fault is in core1's enlarged Sequencer / command-apply path
+(per-pattern GenerationParameters, std::vector<PatternRng>, the task-10.4
+GEN_PARAMS_SET handling, or expandGateStates' interaction with the sync burst).
+Suggested bisection: build M3 with emitStep/PatternRng/GEN_PARAMS_SET reverted to
+confirm core1 boots, then re-add each to find the trigger. Also test core1 launch
+with multicore_launch_core1_with_stack + a larger explicit stack, since the
+core0 overflow proved the 2 KB default is marginal for the enlarged structures.
+
+The entire M3 engine + UI + the GEN_PARAMS_SET transport remain host-proven
+(41/41). This is a hardware bring-up defect to pin in a focused bench session.
