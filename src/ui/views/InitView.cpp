@@ -16,14 +16,14 @@ void InitView::onEnter()
     ledMatrix.clear();
 }
 
-state::UIState InitView::handleEvent(const state::UIState& state, const events::Event& event)
+void InitView::handleEvent(state::UIState& state, const events::Event& event)
 {
     if (event.type != events::EventType::KEY_PRESSED &&
         event.type != events::EventType::KEY_HELD) {
-        return state;
+        return;
     }
 
-    state::UIState newState = state;
+    state::UIState& newState = state;  // in-place: no 1.4KB copy
 
     switch (combo(event.data.key.id, event.data.key.mods)) {
         case combo(KeyId::UP):               state::setValue(newState, state.value + 1);  break;
@@ -33,7 +33,7 @@ state::UIState InitView::handleEvent(const state::UIState& state, const events::
         default: break;
     }
 
-    return newState;
+    return;
 }
 
 void InitView::render(const state::UIState& state)

@@ -94,10 +94,9 @@ class RecordingView : public ui::IView {
 public:
     bool handleEventCalled = false;
 
-    ui::state::UIState handleEvent(const ui::state::UIState& state,
-                                   const ui::events::Event& /*event*/) override {
+    void handleEvent(ui::state::UIState& /*state*/,
+                     const ui::events::Event& /*event*/) override {
         handleEventCalled = true;
-        return state;
     }
 
     void render(const ui::state::UIState& /*state*/) override {
@@ -123,11 +122,12 @@ int main() {
     // ---- Case A (Req 1.1, 1.2): Ctrl+S is recognized and consumed globally. ----
     {
         RecordingView view;
-        const state::UIState state{};  // defaults: saveRequested == false
+        state::UIState state{};  // defaults: saveRequested == false
         const events::Event event =
             events::Event::keyPressed(KeyId::S, mod::CTRL, /*ts=*/1000);
 
-        const state::UIState result = state::reduce(state, event, &view);
+        state::reduce(state, event, &view);
+        const state::UIState& result = state;
 
         // The Save_Combo sets the request flag...
         expect(result.saveRequested == true,
@@ -140,11 +140,12 @@ int main() {
     // ---- Case B (Req 1.3 sanity): plain S (no CTRL) routes to the view, no save. ----
     {
         RecordingView view;
-        const state::UIState state{};  // defaults: saveRequested == false
+        state::UIState state{};  // defaults: saveRequested == false
         const events::Event event =
             events::Event::keyPressed(KeyId::S, mod::NONE, /*ts=*/2000);
 
-        const state::UIState result = state::reduce(state, event, &view);
+        state::reduce(state, event, &view);
+        const state::UIState& result = state;
 
         // A plain S must never request a save...
         expect(result.saveRequested == false,
@@ -167,7 +168,8 @@ int main() {
         const events::Event event =
             events::Event::keyPressed(KeyId::S, mod::CTRL, /*ts=*/3000);
 
-        const state::UIState result = state::reduce(state, event, &view);
+        state::reduce(state, event, &view);
+        const state::UIState& result = state;
 
         // Idempotent: re-setting the flag while it is already set is harmless.
         expect(result.saveRequested == true,

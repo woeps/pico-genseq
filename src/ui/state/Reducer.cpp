@@ -697,26 +697,23 @@ void applyGlobal(UIState& state, KeyId id) {
 
 } // namespace
 
-UIState reduce(const UIState& state, const events::Event& event, ui::IView* activeView) {
+void reduce(UIState& state, const events::Event& event, ui::IView* activeView) {
     if (isSaveCombo(event)) {
-        UIState next = state;
-        requestSave(next);          // record intent; UI loop performs the save
-        return next;                // consumed globally; never routed to a view (Req 1.2)
+        requestSave(state);         // record intent; UI loop performs the save
+        return;                     // consumed globally; never routed to a view (Req 1.2)
     }
 
     if (isReserved(event.data.key.id)) {
-        UIState next = state;
         if (event.type == events::EventType::KEY_PRESSED &&
             event.data.key.mods == mod::NONE) {
-            applyGlobal(next, event.data.key.id);
+            applyGlobal(state, event.data.key.id);
         }
-        return next;    // consumed either way - never reaches a view
+        return;    // consumed either way - never reaches a view
     }
 
     if (activeView) {
-        return activeView->handleEvent(state, event);
+        activeView->handleEvent(state, event);
     }
-    return state;
 }
 
 } // namespace ui::state

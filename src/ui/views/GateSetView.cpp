@@ -20,14 +20,14 @@ void GateSetView::onEnter()
     ledMatrix.clear();
 }
 
-state::UIState GateSetView::handleEvent(const state::UIState& state, const events::Event& event)
+void GateSetView::handleEvent(state::UIState& state, const events::Event& event)
 {
     if (event.type != events::EventType::KEY_PRESSED &&
         event.type != events::EventType::KEY_HELD) {
-        return state;
+        return;
     }
 
-    state::UIState newState = state;
+    state::UIState& newState = state;  // in-place: no 1.4KB copy
     const bool isPressed = event.type == events::EventType::KEY_PRESSED;
     const bool coarse = (event.data.key.mods & mod::SHIFT) != 0;
     switch (combo(event.data.key.id, event.data.key.mods & ~mod::SHIFT)) {
@@ -57,7 +57,7 @@ state::UIState GateSetView::handleEvent(const state::UIState& state, const event
             break;
         default: break;
     }
-    return newState;
+    return;
 }
 
 void GateSetView::render(const state::UIState& state)

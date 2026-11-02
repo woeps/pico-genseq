@@ -63,14 +63,14 @@ void PitchSetView::onEnter()
     ledMatrix.clear();
 }
 
-state::UIState PitchSetView::handleEvent(const state::UIState& state, const events::Event& event)
+void PitchSetView::handleEvent(state::UIState& state, const events::Event& event)
 {
     if (event.type != events::EventType::KEY_PRESSED &&
         event.type != events::EventType::KEY_HELD) {
-        return state;
+        return;
     }
 
-    state::UIState newState = state;
+    state::UIState& newState = state;  // in-place: no 1.4KB copy
     const bool isPressed = event.type == events::EventType::KEY_PRESSED;
     const bool coarse = (event.data.key.mods & mod::SHIFT) != 0;
     switch (combo(event.data.key.id, event.data.key.mods & ~mod::SHIFT)) {
@@ -91,7 +91,7 @@ state::UIState PitchSetView::handleEvent(const state::UIState& state, const even
             break;
         default: break;
     }
-    return newState;
+    return;
 }
 
 void PitchSetView::render(const state::UIState& state)
