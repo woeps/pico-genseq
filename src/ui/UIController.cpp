@@ -10,6 +10,7 @@
 #include "../config/pins.h"
 #include "../instrumentation/PerformanceTrace.h"
 #include "pico/time.h"
+#include "hardware/gpio.h"
 #include <cstdio>
 
 // Temporary BUG B part 2 isolation knobs (OFF by default).
@@ -18,6 +19,17 @@
 #endif
 #ifndef GENSEQ_CORE1_BOOT_TRACE_NO_FRAM
 #define GENSEQ_CORE1_BOOT_TRACE_NO_FRAM 0
+#endif
+// BUG B part 2 bench marker: GPIO driven HIGH for the whole core0 FRAM-read
+// window (-1 = disabled). Lets a logic analyzer time-correlate the FRAM read
+// against core1's fault pin and the rail.
+#ifndef GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN
+#define GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN -1
+#endif
+// Bench capture aid: delay (ms) before the FRAM read so a one-shot analyzer can
+// arm and catch the boot->fault transition live. 0 = no delay.
+#ifndef GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS
+#define GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS 0
 #endif
 #ifndef GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD
 #define GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD 0
@@ -154,7 +166,30 @@ void UIController::initialize()
     // traffic" as the core1 corruptor.
     const persistence::LoadStatus status = persistence::LoadStatus::ABSENT;
 #else
+#if GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN >= 0
+    // BUG B part 2 bench marker: drive a GPIO HIGH for the whole duration of the
+    // core0 FRAM read, so a logic analyzer / BS05U can time-correlate core1's
+    // fault pin (GENSEQ_TRACE_FAULT_PIN) and the 3V3 rail against the EXACT
+    // window core0 is reading FRAM over SPI1. Raw SIO writes: no SDK gpio_put
+    // indirection, safe to call before/independent of PerformanceTrace init.
+    gpio_init(GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN);
+    gpio_set_dir(GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN, GPIO_OUT);
+    gpio_put(GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN, 0);
+#endif
+#if GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS > 0
+    // Bench capture aid: hold the FRAM read off for a fixed delay after boot so a
+    // one-shot analyzer can be armed and catch the boot->fault transition live
+    // (core1 keeps idle-looping fine during the delay; the fault only fires once
+    // the FRAM read below runs). Trace-build only.
+    sleep_ms(GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS);
+#endif
+#if GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN >= 0
+    gpio_put(GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN, 1);  // marker HIGH: FRAM read begins
+#endif
     const persistence::LoadStatus status = recordStore->load(cfg);
+#if GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN >= 0
+    gpio_put(GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN, 0);
+#endif
 #endif
 
     // Mutate the StateManager's authoritative UIState IN PLACE (core1 boot-fault

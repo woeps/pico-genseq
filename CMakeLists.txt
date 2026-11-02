@@ -158,6 +158,12 @@ option(GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI
 # core1's ROM-function calls (concurrent with core0 FRAM SPI) are the corruptor.
 option(GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR
        "Zero snapshot without bootrom memset/memcpy (BUG B part 2 test)" OFF)
+# Bench marker: GPIO held HIGH for the whole core0 FRAM-read window, for
+# analyzer/scope time-correlation against the fault pin and the 3V3 rail. -1 off.
+set(GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN -1 CACHE STRING
+    "GPIO driven high during the core0 FRAM read (BUG B part 2 bench marker)")
+set(GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS 0 CACHE STRING
+    "Delay (ms) before the FRAM read so an analyzer can arm (BUG B part 2)")
 
 target_compile_definitions(genseq PRIVATE
     GENSEQ_CORE1_BOOT_TRACE=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE}>
@@ -168,6 +174,8 @@ target_compile_definitions(genseq PRIVATE
     GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD}>
     GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI}>
     GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR}>
+    GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN=${GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN}
+    GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS=${GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS}
     GENSEQ_PERFORMANCE_TRACE_ENABLED=$<BOOL:${GENSEQ_PERFORMANCE_TRACE_ENABLED}>
     GENSEQ_TRACE_TICK_PIN=${GENSEQ_TRACE_TICK_PIN}
     GENSEQ_TRACE_MIDI_PIN=${GENSEQ_TRACE_MIDI_PIN}
