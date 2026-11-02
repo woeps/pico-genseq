@@ -45,18 +45,38 @@ Repo: `/home/chris/Projects/pico/pico-genseq`, branch `agents`.
 > - **ELIMINATED theories:** vector realloc in `addPattern`; core1 stack too small
 >   (`PICO_CORE1_STACK_SIZE` bump had zero effect — core1 uses ~128 B before dying);
 >   core0 overflow corrupting core1.
-> - **Next hypotheses to test (fresh session):** a global/`static` **constructor or
->   `runtime_run_per_core_initializers` step** that faults on core1 specifically
->   (e.g. something touching a peripheral/flag core1 shouldn't, or a `__not_in_flash`
->   / SCRATCH object init); OR core1 taking a fault on its very first real memory
->   access (bad VTOR-relative or a data object placed where core1 can't reach it
->   yet). Technique that worked: `openocd` @2 MHz with a **2 s settle** (target is
->   powered THROUGH the picoprobe, so the rail must stabilise before the multidrop
->   target-select — see Bench procedure), HW breakpoints on `0x1001200c`
->   (core1_trampoline) / `0x10012010` (core1_wrapper) / `0x10003594`
->   (sequencer_task) set BEFORE core0 launches, then catch core1's first
->   instruction and single-step into the faulting one. Cross-check against the
->   M2→M3 diff of per-core-init / global-ctor-bearing files.
+> - **More (2026-11-02, further probing):** HW breakpoints on `0x1001200c`
+>   (core1_trampoline), `0x10012010` (core1_wrapper) and `0x10003594`
+>   (sequencer_task), set before core0 launches core1, **NEVER FIRE** — core1
+>   HardFaults *before* it reaches `core1_trampoline`, i.e. in the bootrom/SIO
+>   FIFO launch handshake handoff itself (core1 pops a bad `pc` and jumps to
+>   garbage). `r0` at fault varied across runs (0x0, 0x20040fa4). Core0 DOES
+>   finish the handshake (it proceeds to restoreSequencerFromState), so the
+>   handoff *completes* but delivers a corrupt entry to core1. The SIO FIFO
+>   carried ROE (read-on-empty). The launch handshake is NOT reliably
+>   single-steppable over this multidrop SWD link — mid-handshake register reads
+>   return nonsense; do not trust them.
+> - **RECOMMENDED next technique (don't keep SWD-stepping the handshake):**
+>   instrument the FIRMWARE instead. (a) Put a GPIO/LED marker as the very first
+>   thing `sequencer_task` does (toggle a trace pin before anything else) and a
+>   second marker inside a minimal HardFault handler — a PicoScope/LA then shows
+>   whether core1 ever reaches its entry and whether it enters the fault handler,
+>   with NO SWD interference. (b) Temporarily replace `multicore_launch_core1`
+>   with `multicore_launch_core1_with_stack` using an EXPLICIT stack, or add a
+>   `multicore_fifo_drain()` + clear of the SIO FIFO error state (ROE/WOF) on
+>   core0 immediately before launch, and test — if ROE is the culprit the clean
+>   launch fixes it. (c) Bisect the M2→M3 SEQUENCER engine commits (0fb250d,
+>   382c0e7, 1d042cd, f3b4513, 5543f4d, ed18609) by building each at its tip and
+>   self-reset-testing — the launch path is byte-identical M2↔M3, so the trigger
+>   is something the enlarged core1 Sequencer/engine does, not the launch code.
+>   Self-reset loop (flash → wdreset.sh → probe) is agent-driven; use it.
+> - **Leading unified read:** core1's bootrom pops a corrupt `pc` from its launch
+>   stack handoff. What could corrupt that single word, given SCRATCH_X holds only
+>   core1_stack and core0's stack is now healthy? Suspect the FIFO ROE/handshake
+>   timing, or an M3 object whose static init (run on core0 before launch) writes
+>   near `0x20040ff4`. Verify by reading `0x20040ff4..0x20041000` right AFTER the
+>   push (breakpoint core0 just after `multicore_launch_core1_raw`'s push loop)
+>   and confirming word[0]==0x10012010 (core1_wrapper), word[2]==entry.
 >
 > ### Bench method correction (IMPORTANT)
 > Target is powered THROUGH the picoprobe, so a manual "power-cycle" = **replug the
