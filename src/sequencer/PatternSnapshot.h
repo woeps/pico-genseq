@@ -29,6 +29,10 @@
 // header-only canonical id / PlayingOrder enum, so it compiles in firmware and
 // host tests identically. No logging lives here (Req 7.10).
 
+#ifndef GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR
+#define GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR 0
+#endif
+
 namespace sequencer {
 
 class PatternSnapshot {
@@ -48,7 +52,18 @@ public:
         pitchOrder_ = common::PlayingOrder::FORWARDS;
         velocityOrder_ = common::PlayingOrder::FORWARDS;
         genParams_ = common::GenerationParameters{};  // back to behavior-preserving
+#if GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR
+        // BUG B part 2 test: zero gateBits_ WITHOUT the compiler lowering the loop
+        // to the bootrom memset/memcpy (core1 died inside ROM memset in part 1,
+        // and this clear() runs every idle loop while core0 hammers FRAM SPI).
+        // A volatile-pointer word loop defeats the memset idiom recognizer.
+        {
+            volatile uint32_t* p = gateBits_;
+            for (uint16_t i = 0; i < kGateWords; ++i) p[i] = 0u;
+        }
+#else
         for (uint16_t i = 0; i < kGateWords; ++i) gateBits_[i] = 0;
+#endif
     }
 
     // --- Gates (packed bitset) -----------------------------------------------

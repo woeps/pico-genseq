@@ -153,6 +153,11 @@ option(GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD
 # timing cause from a logical one for the part-2 fault.
 option(GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI
        "Run FRAM SPI at 100 kHz (BUG B part 2 electrical-vs-logical test)" OFF)
+# TEMPORARY: zero PatternSnapshot.gateBits_ with a volatile loop so core1's
+# per-idle-loop clear() does NOT call the bootrom memset/memcpy — tests whether
+# core1's ROM-function calls (concurrent with core0 FRAM SPI) are the corruptor.
+option(GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR
+       "Zero snapshot without bootrom memset/memcpy (BUG B part 2 test)" OFF)
 
 target_compile_definitions(genseq PRIVATE
     GENSEQ_CORE1_BOOT_TRACE=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE}>
@@ -162,6 +167,7 @@ target_compile_definitions(genseq PRIVATE
     GENSEQ_CORE1_BOOT_TRACE_NO_FRAM=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_FRAM}>
     GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD}>
     GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI}>
+    GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR}>
     GENSEQ_PERFORMANCE_TRACE_ENABLED=$<BOOL:${GENSEQ_PERFORMANCE_TRACE_ENABLED}>
     GENSEQ_TRACE_TICK_PIN=${GENSEQ_TRACE_TICK_PIN}
     GENSEQ_TRACE_MIDI_PIN=${GENSEQ_TRACE_MIDI_PIN}
