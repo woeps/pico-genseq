@@ -435,31 +435,55 @@ void Sequencer::processCommand(const commands::CommandMessage& msg,
 
     instrumentation::PerformanceTrace::operationApplyBegin();
 
+#if GENSEQ_CORE1_BOOT_TRACE
+    {
+        // BUG B part 2: record the last REAL (applicable) command core1 applied
+        // and a per-branch marker, so after the ~15k-loop fault we can see which
+        // command/apply path core1 died in (the HW frame is unstackable).
+        extern volatile uint32_t g_core1LastRealCmd;
+        extern volatile uint32_t g_core1ApplyBranch;
+        extern volatile uint32_t g_core1ApplyCount;
+        extern volatile uint32_t g_core1ApplyParam;
+        g_core1LastRealCmd = static_cast<uint32_t>(msg.cmd);
+        g_core1ApplyParam  = msg.param1;
+        ++g_core1ApplyCount;
+    }
+#define BB2_BRANCH(n) do { extern volatile uint32_t g_core1ApplyBranch; g_core1ApplyBranch = (n); } while (0)
+#else
+#define BB2_BRANCH(n) do {} while (0)
+#endif
+
     switch (msg.cmd) {
         case commands::Command::PATTERN_GATE_SET:
+            BB2_BRANCH(1);
             setPatternGateSetFromSnapshot(msg.param1, snapshot);
             break;
         case commands::Command::PATTERN_PITCH_SET:
+            BB2_BRANCH(2);
             setPatternPitchSetFromSnapshot(msg.param1, snapshot);
             break;
         case commands::Command::PATTERN_VELOCITY_SET:
+            BB2_BRANCH(3);
             setPatternVelocitySetFromSnapshot(msg.param1, snapshot);
             break;
         case commands::Command::GEN_PARAMS_SET:
+            BB2_BRANCH(4);
             setPatternGenParamsFromSnapshot(msg.param1, snapshot);
             break;
-        case commands::Command::PLAY:            play(); break;
-        case commands::Command::STOP:            stop(); break;
-        case commands::Command::BPM_SET:         setBPM(msg.param1); break;
-        case commands::Command::PATTERN_ACTIVATE:   activatePattern(msg.param1); break;
-        case commands::Command::PATTERN_DEACTIVATE: deactivatePattern(msg.param1); break;
-        case commands::Command::PATTERN_ADD:     addPattern(common::Pattern()); break;
-        case commands::Command::PATTERN_REMOVE:  removePattern(msg.param1); break;
+        case commands::Command::PLAY:            BB2_BRANCH(5); play(); break;
+        case commands::Command::STOP:            BB2_BRANCH(6); stop(); break;
+        case commands::Command::BPM_SET:         BB2_BRANCH(7); setBPM(msg.param1); break;
+        case commands::Command::PATTERN_ACTIVATE:   BB2_BRANCH(8); activatePattern(msg.param1); break;
+        case commands::Command::PATTERN_DEACTIVATE: BB2_BRANCH(9); deactivatePattern(msg.param1); break;
+        case commands::Command::PATTERN_ADD:     BB2_BRANCH(10); addPattern(common::Pattern()); break;
+        case commands::Command::PATTERN_REMOVE:  BB2_BRANCH(11); removePattern(msg.param1); break;
         default: break;
     }
+    BB2_BRANCH(100);  // survived the apply
 
     ++metrics.operationsApplied;
     instrumentation::PerformanceTrace::operationApplyEnd();
+#undef BB2_BRANCH
 }
 
 void Sequencer::setPatternGateSetFromSnapshot(size_t patternIndex,

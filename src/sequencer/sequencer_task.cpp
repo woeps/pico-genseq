@@ -59,6 +59,11 @@ volatile uint32_t g_core1UpdateN     = 0;
 volatile uint32_t g_core1Playing     = 0;
 volatile uint32_t g_core1OutputVtbl  = 0;
 volatile uint32_t g_core1ClockVtbl   = 0;
+// BUG B part 2: command-apply breadcrumbs (written by Sequencer::processCommand).
+volatile uint32_t g_core1LastRealCmd = 0xFF;
+volatile uint32_t g_core1ApplyBranch = 0;
+volatile uint32_t g_core1ApplyCount  = 0;
+volatile uint32_t g_core1ApplyParam  = 0;
 
 // C worker: given the exact exception-frame SP, snapshot R0 and the stacked PC.
 extern "C" __attribute__((used)) void core1BootTraceFaultCapture(uint32_t sp, uint32_t lr) {
