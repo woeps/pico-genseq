@@ -5,7 +5,67 @@ pico-genseq Milestone 3. Everything needed to start cold is here.
 
 Repo: `/home/chris/Projects/pico/pico-genseq`, branch `agents`.
 
+> ## SESSION FINDINGS 2026-11-02 (read this FIRST — supersedes the ranked plan below)
+>
+> Worktree `/home/chris/Projects/pico/pico-genseq-wt-bisect-the-pico-genseq-core1-boot-fault`,
+> branch `bisect/core1-boot-fault` (off `master`/`cae2666`; the old `agents`
+> branch was merged into `master`). Fault reproduced cleanly and bisected on
+> silicon. **TWO DISTINCT BUGS** were confirmed — do not conflate them.
+>
+> ### BUG A — core0 boot-path stack overflow — **FIXED & VERIFIED** (committed)
+> `UIController::initialize()` held `PersistableConfig cfg` (~2108 B) **and**
+> `UIState bootState` (~1436 B + a `setState()` copy) as by-value locals on
+> core0's 2 KB stack, on the deepest boot path (FRAM load +
+> `restoreSequencerFromState`). Measured `initialize()` frame = **4260 B**
+> (bigger than the whole 2 KB stack). SWD proved core0 SP reached **`0x20040e68`**,
+> ~2.4 KB BELOW its own `__StackBottom` (`0x20041800`) — i.e. core0 overflowed
+> down into core1's adjacent launch-stack region.
+> Fix (commits `a2a6fde` + `9f0c982`): `cfg` → function-local `static`; fold the
+> restored config into StateManager's UIState **in place** via new
+> `mutableState()`/`notifyStateChanged()`. `initialize()` frame 4260 B → ~60 B;
+> core0 SP after fix = **`0x20041ee8`** (healthy). Host suite **41/41** green.
+> Also kept: `reserve(PATTERN_CAPACITY)` in the Sequencer ctor (defense-in-depth).
+>
+> ### BUG B — core1 faults at launch — **STILL OPEN**, but much narrower now
+> With BUG A fixed and core0's stack proven pristine, **core1 STILL faults** →
+> LED dark, serial silent. So BUG B is INDEPENDENT of core0's stack (the
+> "core0 overflow corrupts core1's launch stack" theory is **disproven** by the
+> fix not helping). Hard facts captured:
+> - core1 is in a **double-fault LOCKUP** (PC `0xfffffffe`, LR `0xfffffff9`).
+> - core1 faults **before `core1_wrapper` (`0x10012010`) and before
+>   `sequencer_task` (`0x10003594`)** — i.e. in the SDK launch/`core1_trampoline`
+>   /`runtime_run_per_core_initializers` path, before any GenSeq core1 code.
+> - At fault: only ~128 B of core1 stack used (SP `0x20040f80`), R0–R11 ≈ 0,
+>   `r4=0` in the wrapper, exception frame unreadable (stacking itself faulted →
+>   SP/entry was bad). SIO FIFO status `0xd0000050 = 0x0b` (ROE/read-on-empty set).
+> - core0 DID complete the launch handshake (it's now wedged later, in
+>   `restoreSequencerFromState`→`syncPitchSet`→FIFO push, because dead core1
+>   never drains) — so core1 got a valid entry and started, then died instantly.
+> - SCRATCH_X holds ONLY `core1_stack` (nothing overwrites the launch stack).
+> - **ELIMINATED theories:** vector realloc in `addPattern`; core1 stack too small
+>   (`PICO_CORE1_STACK_SIZE` bump had zero effect — core1 uses ~128 B before dying);
+>   core0 overflow corrupting core1.
+> - **Next hypotheses to test (fresh session):** a global/`static` **constructor or
+>   `runtime_run_per_core_initializers` step** that faults on core1 specifically
+>   (e.g. something touching a peripheral/flag core1 shouldn't, or a `__not_in_flash`
+>   / SCRATCH object init); OR core1 taking a fault on its very first real memory
+>   access (bad VTOR-relative or a data object placed where core1 can't reach it
+>   yet). Technique that worked: `openocd` @2 MHz with a **2 s settle** (target is
+>   powered THROUGH the picoprobe, so the rail must stabilise before the multidrop
+>   target-select — see Bench procedure), HW breakpoints on `0x1001200c`
+>   (core1_trampoline) / `0x10012010` (core1_wrapper) / `0x10003594`
+>   (sequencer_task) set BEFORE core0 launches, then catch core1's first
+>   instruction and single-step into the faulting one. Cross-check against the
+>   M2→M3 diff of per-core-init / global-ctor-bearing files.
+>
+> ### Bench method correction (IMPORTANT)
+> Target is powered THROUGH the picoprobe, so "power-cycle" = **replug the
+> picoprobe USB**, and SWD `dap0` will NOT connect right after a replug until the
+> rail settles. Use `adapter speed 2000` + a `sleep 2` before `init` (baked into
+> the flash helper). `reset run` is still forbidden on this multidrop target.
+
 ## Status going in
+
 
 - M3 is code-complete, **host-proven 41/41** (build under `$KIROCREW_SCRATCH`,
   NOT the stale `./build`). Latest commits: `f49ec9b` (v1 gate seeding),
