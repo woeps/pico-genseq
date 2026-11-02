@@ -29,6 +29,17 @@ Sequencer::Sequencer(IMidiOutput& output, IMonotonicClock& clock)
       noteLifecycle(meteredOutput) {
     // MIDI transport and monotonic time are injected; no hardware setup here.
     timeline.setBpm(120);
+    // Fixed-capacity reservation (core1 boot-fault fix). The boot-sync
+    // PATTERN_ADD burst calls addPattern() repeatedly on core1 while restoring a
+    // saved config; without this, each grow reallocates the ~160-byte Pattern
+    // vector (and the parallel id/RNG vectors) on core1 mid-boot, which faults
+    // this build. PATTERN_CAPACITY is the hard cap addPattern() already enforces,
+    // so reserving it here allocates the backing store exactly once at
+    // construction (on core0, before core1 launches) and no push_back/emplace_back
+    // below ever moves it again.
+    patterns.reserve(common::PATTERN_CAPACITY);
+    patternIds.reserve(common::PATTERN_CAPACITY);
+    patternRng.reserve(common::PATTERN_CAPACITY);
     // Allocate a stable identity for the initial pattern slot.
     patternIds.push_back(idAllocator.allocate());
     // One generation RNG per pattern slot, kept parallel to `patterns`.
