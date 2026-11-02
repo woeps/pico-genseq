@@ -84,6 +84,7 @@ target_link_libraries(genseq
     hardware_dma
     hardware_sync
     hardware_watchdog
+    hardware_exception  # TEMPORARY: core1 boot-fault handler (GENSEQ_CORE1_BOOT_TRACE); remove with the diagnostic
     tinyusb_host
     tinyusb_board
 )
@@ -122,7 +123,21 @@ set(GENSEQ_TRACE_TICK_WIDEN_US 0 CACHE STRING
 option(GENSEQ_HOST_CONTROL
        "Enable the host-control serial command channel for bench testing" OFF)
 
+# TEMPORARY core1 boot-fault diagnostic (BUG B). When ON, core1 writes stage
+# breadcrumbs to BSS and installs a core1-local HardFault handler that captures
+# the true stacked faulting PC (the hardware frame is unreadable once core1
+# double-faults). Read the g_core1* symbols over SWD after a self-reset. Never
+# ship enabled. Remove once BUG B is fixed.
+option(GENSEQ_CORE1_BOOT_TRACE
+       "Enable the temporary core1 boot-fault breadcrumb + fault handler" OFF)
+# TEMPORARY isolation knob (BUG B): skip the whole core0 UI task so core1 idles
+# with nothing else on core0. Proves whether the corruptor lives in createUITask.
+option(GENSEQ_CORE1_BOOT_TRACE_NO_UI
+       "Skip createUITask (BUG B isolation; requires GENSEQ_CORE1_BOOT_TRACE)" OFF)
+
 target_compile_definitions(genseq PRIVATE
+    GENSEQ_CORE1_BOOT_TRACE=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE}>
+    GENSEQ_CORE1_BOOT_TRACE_NO_UI=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_UI}>
     GENSEQ_PERFORMANCE_TRACE_ENABLED=$<BOOL:${GENSEQ_PERFORMANCE_TRACE_ENABLED}>
     GENSEQ_TRACE_TICK_PIN=${GENSEQ_TRACE_TICK_PIN}
     GENSEQ_TRACE_MIDI_PIN=${GENSEQ_TRACE_MIDI_PIN}

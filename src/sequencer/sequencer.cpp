@@ -81,6 +81,25 @@ void Sequencer::init() {
 }
 
 void Sequencer::update() {
+#if GENSEQ_CORE1_BOOT_TRACE
+    // BUG B diagnostic: snapshot the fields the idle path reads, so after a fault
+    // we can tell from RAM whether `playing` was corrupted (would wrongly take
+    // the playing path -> virtual call through a possibly-bad output/clock) or a
+    // shared pointer went bad. g_core1UpdateN counts update() entries.
+    {
+        extern volatile uint32_t g_core1UpdateN;
+        extern volatile uint32_t g_core1Playing;
+        extern volatile uint32_t g_core1OutputVtbl;
+        extern volatile uint32_t g_core1ClockVtbl;
+        ++g_core1UpdateN;
+        g_core1Playing = playing ? 1u : 0u;
+        // Read the vtable pointers of the injected references (first word of the
+        // object = its vptr). A corrupt/null vptr here is the call-through-0 cause.
+        g_core1OutputVtbl = *reinterpret_cast<const volatile uint32_t*>(&output);
+        g_core1ClockVtbl  = *reinterpret_cast<const volatile uint32_t*>(&clock);
+    }
+#endif
+
     // Publish the sounding-note count every call — BEFORE the not-playing early
     // return — so it reflects Stop's releaseAll() (0 after Stop) rather than
     // freezing at the last played value. Single aligned 32-bit store, read
