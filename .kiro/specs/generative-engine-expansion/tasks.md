@@ -213,3 +213,38 @@ part of this plan.
       power-cycle + load
     - Store commands, seeds, firmware revision, analyzer setup, and captures as milestone evidence
     - _Requirements: 4.3, 6.2, 10.5, 10.6_
+
+## Open hardware issue (blocks 11.2/11.3) — core1 fails to launch at boot
+
+On the RP2040 bench, the M3 firmware boots core0 fully (UART prints through
+"Entering Main View", so UIController::initialize + the FRAM load + the
+restoreSequencerFromState sync all run), but **core1 never starts
+sequencer_task** — SWD shows core1 parked in the bootrom (PC 0x12a) and core0
+then wedged in `multicore_fifo_push_blocking` (`multicore_fifo_wready`,
+multicore.h:157) because nothing drains the inter-core FIFO. OpenOCD reports the
+core1 state as "double fault / lockup". A HardFault handler installed to capture
+the stacked frame never ran, consistent with core1 not executing app code at all
+(fault during exception entry / never-launched → lockup, not a handled fault).
+
+Evidence gathered (this session):
+- core0 boot UART: full normal boot to Main View.
+- core0 PC at hang: multicore_fifo_wready (blocked push).
+- core1 PC: 0x0000012a (bootrom); a hw breakpoint on sequencer_task was never hit.
+- This is NOT the v1 gate-seeding bug (fixed this session in PersistMapping) and
+  NOT a PatternSnapshot stack overflow (commandSnapshot is static). The boot
+  order in main() and core1's apply path are byte-identical to M2.
+
+Leading hypotheses to test next (deliberately, with the probe attached):
+1. core1 launch-handshake vs command FIFO collision — `multicore_launch_core1`
+   uses the SIO FIFO for its boot handshake, and the app reuses that same FIFO
+   for commands:: messages. If any FIFO traffic races the launch handshake the
+   launch can fail. Test: confirm core1 reaches sequencer_task's first
+   instruction before any sendCommand runs; add a launch barrier if needed.
+2. core1 faults immediately in sequencer_task static init / first processCommand
+   on the enlarged Pattern/Sequencer (GenerationParameters per Pattern,
+   std::vector<PatternRng>). Test: launch with multicore_launch_core1_with_stack
+   and an explicit larger stack; breakpoint-step sequencer_task from entry.
+
+The entire M3 engine + UI is host-proven (41/41, incl. the real-command.cpp
+GEN_PARAMS_SET FIFO round-trip). This is a hardware-only bring-up defect to pin
+in a focused bench session, as task 11.2.

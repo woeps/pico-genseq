@@ -113,11 +113,31 @@ void applyPersistableConfig(UIState& state,
         gate.noteLength = static_cast<NoteLength>(p.gateNoteLength);
         gate.gateLength = p.gateLength;
         // R9: restore explicit gate states + probability. A v1 record has
-        // gateStepCount==0 / genStepProbCount==0, so gateStates stay all-zero
-        // (seeded from the generator on edit entry) and probability stays INHERIT
-        // / 100 — behavior-preserving.
-        for (uint8_t j = 0; j < p.gateStepCount && j < MAX_GRID_STEPS; ++j) {
-            gate.gateStates[j] = p.gateStates[j];
+        // gateStepCount==0: SEED gateStates from the Euclidean generator so the
+        // restored pattern keeps its rhythm (expandGateStates of a seeded config
+        // == createEuclidean output). A v2 record carries explicit gateStates
+        // (which may include manual edits) and is restored verbatim.
+        if (p.gateStepCount == 0) {
+            // Bjorklund distribution, mirroring regenerateGateStates / createEuclidean.
+            const uint8_t steps = gate.steps < MAX_GRID_STEPS ? gate.steps : MAX_GRID_STEPS;
+            for (uint8_t j = 0; j < MAX_GRID_STEPS; ++j) gate.gateStates[j] = 0;
+            if (gate.pulses >= gate.steps) {
+                for (uint8_t j = 0; j < steps; ++j) gate.gateStates[j] = 1;
+            } else if (gate.pulses > 0) {
+                int bucket = 0;
+                for (uint8_t j = 0; j < gate.steps; ++j) {
+                    bucket += gate.pulses;
+                    if (bucket >= gate.steps) {
+                        bucket -= gate.steps;
+                        const uint8_t pos = (j + gate.rotation) % gate.steps;
+                        if (pos < MAX_GRID_STEPS) gate.gateStates[pos] = 1;
+                    }
+                }
+            }
+        } else {
+            for (uint8_t j = 0; j < p.gateStepCount && j < MAX_GRID_STEPS; ++j) {
+                gate.gateStates[j] = p.gateStates[j];
+            }
         }
         for (uint8_t j = 0; j < p.genStepProbCount && j < MAX_GRID_STEPS; ++j) {
             gate.stepProbability[j] = p.genStepProbability[j];
