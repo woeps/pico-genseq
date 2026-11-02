@@ -61,7 +61,45 @@ Full history + the broader bisection live in `DEBUG-core1-boot.md` next to this 
    **`add_alarm_in_us(400, …)`** timer; plus the LED-matrix refresh, FRAM reads,
    and the `restoreSequencerFromState` FIFO burst all begin here.
 
-## Recommended next steps (in order)
+## UPDATE 2026-11-02 — TRIGGER BISECTED to FRAM `load()` SPI reads (commit `4b0cddd`)
+
+Added OFF-by-default isolation knobs and bisected the trigger with the self-reset
+loop (core1 survives = `g_core1LoopCount` climbs, `g_core1FaultHit=0`):
+
+| Build knob | What it removes | core1 result |
+|---|---|---|
+| `GENSEQ_CORE1_BOOT_TRACE_NO_DMA` | WS2812 DMA/PIO/IRQ + `add_alarm_in_us` | **still faults** ~14832 → DMA/alarm NOT it |
+| `GENSEQ_CORE1_BOOT_TRACE_NO_RESTORE` | `restoreSequencerFromState` FIFO burst | **still faults** ~14860 — BUT core0 now boots to `H:pong` (the burst only decided whether core0 wedged in `multicore_fifo_push_blocking`) |
+| `GENSEQ_CORE1_BOOT_TRACE_NO_FRAM` | `framSpi->init()` + `recordStore->load()` | **ALIVE**, 1M+ loops → FRAM is the trigger |
+| `GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD` | only the `load()` read transfers (keeps `init()`) | **ALIVE**, 1M+ loops → it's the **SPI READ TRAFFIC**, not the `spi_init` bring-up |
+
+**Conclusion:** core0's FRAM **`recordStore->load()` blocking SPI1 read transfers**
+(GP10-13, `spi_read_blocking`/`spi_write_read_blocking`) **asynchronously fault
+core1** ~15k idle-loops in. The FRAM driver (`Mb85rsFramSpi.h`) has **no DMA, no
+IRQ** — just `spi_init` + blocking transfers. core1's idle `update()` path touches
+no timer/SPI/spinlock (pure arithmetic: `g_soundingNotes = soundingCount()` then
+`if(!playing) return`), so the fault is **externally imposed on core1**, not in
+core1's own code. Faulting PC is **unrecoverable** (genuine stacking fault: frame
+at FaultSP `0x20040f70` is all-zero; my core1 HardFault handler fires but the HW
+never stacked a frame). Recurring non-code words on core1's stack top:
+`0x03021e00`, `0x28070302`, `0x64000000` (look like packed FRAM/command data).
+
+### Where to dig next (fresh session)
+1. **Why do SPI1 blocking reads on core0 fault core1?** The driver is clean, so
+   suspect a lower layer: a shared **hardware spinlock** (SDK `spi_*` / `sleep_*` /
+   the default alarm pool take `PICO_SPINLOCK_ID_*`), a **clock/PLL/RESETS**
+   perturbation, or a **bus-fabric / SIO** interaction. Note the fault needs the
+   bare core0 UI `sleep_ms(1)` loop running *too* (NO_UI alone = core1 fine), so it
+   may be FRAM-reads **plus** `sleep_ms` timer/alarm activity together.
+2. Try: replace `recordStore->load()`'s `spi_read_blocking` with a hand-rolled
+   polled SPI read (no SDK blocking helper) — does it still fault? Isolates the SDK
+   helper vs raw SPI.
+3. Try: a single FRAM read vs the full load loop — does one transfer fault core1,
+   or only sustained traffic? (Add a knob that does N reads.)
+4. The faulting PC is lost to the stacking fault — stop chasing it; reason from the
+   trigger instead.
+
+## Recommended next steps (ORIGINAL — superseded by the UPDATE above for step 1)
 
 1. **Bisect within `createUITask`**: disable just the WS2812 DMA + alarm setup
    (keep the rest of the UI) and self-reset-test — does core1 survive? That
