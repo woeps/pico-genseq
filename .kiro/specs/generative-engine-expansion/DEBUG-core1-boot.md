@@ -59,10 +59,29 @@ Repo: `/home/chris/Projects/pico/pico-genseq`, branch `agents`.
 >   M2→M3 diff of per-core-init / global-ctor-bearing files.
 >
 > ### Bench method correction (IMPORTANT)
-> Target is powered THROUGH the picoprobe, so "power-cycle" = **replug the
+> Target is powered THROUGH the picoprobe, so a manual "power-cycle" = **replug the
 > picoprobe USB**, and SWD `dap0` will NOT connect right after a replug until the
 > rail settles. Use `adapter speed 2000` + a `sleep 2` before `init` (baked into
 > the flash helper). `reset run` is still forbidden on this multidrop target.
+>
+> **HANDS-OFF RESET — CONFIRMED WORKING (no manual power-cycle needed).** Reboot
+> the chip cold-equivalent over SWD via the WATCHDOG registers (this is NOT
+> `reset run`; it re-runs boot2 + firmware like a real power-cycle). Sequence,
+> after `init; halt`:
+> ```
+> mww 0x40010008 0x0001ffff   # PSM_WDSEL: watchdog resets the full power-on state machine
+> mww 0x4005801c 0x00000000   # WATCHDOG_SCRATCH4: normal boot vector (no magic re-entry)
+> mww 0x40058004 0x00000001   # WATCHDOG_LOAD: 1-tick timeout
+> mww 0x40058000 0x80000000   # WATCHDOG_CTRL: TRIGGER immediate reset
+> exit
+> ```
+> A trailing OpenOCD `Failed to write memory at 0xffffffff` is EXPECTED/harmless
+> (the target resets out from under OpenOCD after the trigger). Verified 2026-11-02:
+> M2 came up to banner + `H:pong` with no human at the bench. A bare
+> `WATCHDOG_CTRL=0x80000000` TRIGGER ALONE is NOT enough — it reboots into a
+> half-initialised dark/silent state; the PSM_WDSEL full-reset mask is what makes
+> it clean. This supersedes every "ask the user to power-cycle" instruction
+> elsewhere in this doc: the flow is flash → self-reset → probe, fully agent-driven.
 
 ## Status going in
 
@@ -102,8 +121,10 @@ Repo: `/home/chris/Projects/pico/pico-genseq`, branch `agents`.
 
 ## Bisection plan
 
-1. Power-cycle (board is on M2 now) → confirm LED on. Build+flash latest M3,
-   power-cycle, confirm LED dark + core1 fault (reproduce).
+1. Self-reset (board is on M2 now) → confirm LED on + `H:pong`. Build+flash latest
+   M3, self-reset (watchdog sequence above), confirm LED dark + core1 fault
+   (reproduce). Loop flash → self-reset → probe entirely agent-driven; no manual
+   power-cycle needed.
 2. Revert suspect #1 first: make `Sequencer` use a **fixed-capacity array** for
    `patternRng` (or `reserve(PATTERN_CAPACITY)` in the ctor) so `addPattern` does
    no reallocation, and confirm core1 boots.
@@ -123,9 +144,13 @@ Repo: `/home/chris/Projects/pico/pico-genseq`, branch `agents`.
   fails with a ROM/flash-erase error, the target is wedged — ensure `reset halt`
   ran first, retry.
 - **Do NOT** boot via OpenOCD `reset run` — this multidrop RP2040 frequently faults
-  on SWD-driven reset. Ask the USER to physically power-cycle for a clean boot,
-  then **stay off SWD** while testing serial (SWD init/halt disturbs the running
-  firmware).
+  on SWD-driven reset. **Reboot hands-off via the WATCHDOG registers instead**
+  (see "HANDS-OFF RESET — CONFIRMED WORKING" in SESSION FINDINGS above):
+  `init; halt; mww 0x40010008 0x0001ffff; mww 0x4005801c 0; mww 0x40058004 1;
+  mww 0x40058000 0x80000000; exit`. This re-runs boot2 + firmware like a real
+  power-cycle, needs no human, and releases SWD cleanly. A manual power-cycle
+  (replug the picoprobe USB) is only a fallback. After reset, **stay off SWD**
+  while testing serial (SWD init/halt disturbs the running firmware).
 - Test host-control with no OpenOCD running: pyserial, open `/dev/ttyACM0` @115200,
   send `b'H:ping\n'`, expect `H:pong`. `H:key <name>` synthesizes keys through the
   real reducer; `H:view 3` = PitchSet.
