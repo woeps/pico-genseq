@@ -189,7 +189,17 @@ private:
         for (uint8_t slot = 0; slot < 2; ++slot) {
             SlotHeader hdr;
             if (!readSlotHeader(slot, hdr) || hdr.committed != 1) continue;
-            PersistableConfig probe{};
+            // core1 boot-fault fix (BUG B part 2): PersistableConfig is ~2 KB.
+            // A per-slot stack-local `probe{}` here put ~2 KB on core0's 2 KB
+            // stack during boot load(), overflowing DOWN past __StackBottom
+            // (0x20041800) into core1's adjacent stack region (0x20040800-
+            // 0x20041000) and corrupting core1's live stack -> core1 faulted
+            // asynchronously (unstackable frame = its stack was stomped). This is
+            // the SAME overflow class as the UIController::initialize fix (BUG A);
+            // the load path's probe was the remaining instance. load() is
+            // boot-only and not re-entrant, so a single shared static probe keeps
+            // the 2 KB object OFF core0's stack entirely.
+            static PersistableConfig probe{};
             if (readRecord(slot, probe) != LoadStatus::OK) continue;  // CRC/format bad
             if (!best.valid || hdr.generation > best.generation) {
                 best.valid = true;
