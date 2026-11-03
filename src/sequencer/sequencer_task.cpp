@@ -65,8 +65,22 @@ volatile uint32_t g_core1ApplyBranch = 0;
 volatile uint32_t g_core1ApplyCount  = 0;
 volatile uint32_t g_core1ApplyParam  = 0;
 
+// BUG B part 2: FINE-GRAINED "PC-class" region code. core1 writes g_core1Region
+// at many points through its idle loop; the HardFault handler FREEZES the value
+// into g_core1FaultRegion so the region core1 was executing AT the fault instant
+// survives the double-fault lockup (the stacked PC does not). g_core1RegionMax =
+// furthest region reached. Region codes (see BB_REGION below + callees):
+//  10 loop-top  11 pre-receive  12 post-receive  13 pre-processCmd
+//  14 post-processCmd  15 pre-update  16 post-update (loop bottom)
+//  20 receiveCommandInto entry (pre clear/ROM-memset)  21 post clear()  22 post rvalid-check
+//  30 update() entry  31 update() after soundingCount() (pre !playing return)
+volatile uint32_t g_core1Region      = 0;
+volatile uint32_t g_core1FaultRegion = 0xFFFFFFFFu;
+volatile uint32_t g_core1RegionMax   = 0;
+
 // C worker: given the exact exception-frame SP, snapshot R0 and the stacked PC.
 extern "C" __attribute__((used)) void core1BootTraceFaultCapture(uint32_t sp, uint32_t lr) {
+    g_core1FaultRegion = g_core1Region;  // FREEZE the region at the fault instant
     const uint32_t* frame = reinterpret_cast<const uint32_t*>(sp);
     g_core1FaultLR = lr;
     g_core1FaultSP = sp;
@@ -104,6 +118,12 @@ extern "C" __attribute__((naked, used)) void core1BootTraceHardFault() {
 }
 #endif  // GENSEQ_CORE1_BOOT_TRACE
 
+#if GENSEQ_CORE1_BOOT_TRACE
+#define BB_REGION(n) do { g_core1Region = (n); if ((n) > g_core1RegionMax) g_core1RegionMax = (n); } while (0)
+#else
+#define BB_REGION(n) do {} while (0)
+#endif
+
 // Sequencer task for the second core
 static void sequencer_task() {
     // NOTE: we deliberately do NOT use multicore_lockout_victim_init() here.
@@ -130,20 +150,27 @@ static void sequencer_task() {
             // off) until released, so this core never fetches from flash
             // (XIP) mid-erase/program (Req 4.4, 4.5).
             corePauseCheck();
+            BB_REGION(10);
 
 #if GENSEQ_CORE1_BOOT_TRACE
             g_core1Stage = 2; ++g_core1LoopCount;
 #endif
+            BB_REGION(11);
             commands::CommandMessage msg = commands::receiveCommandInto(commandSnapshot);
+            BB_REGION(12);
 #if GENSEQ_CORE1_BOOT_TRACE
             g_core1Stage = 3; g_core1LastCmd = static_cast<uint32_t>(msg.cmd);
             g_core1Stage = 4;
 #endif
+            BB_REGION(13);
             globalSequencer->processCommand(msg, commandSnapshot);
+            BB_REGION(14);
 #if GENSEQ_CORE1_BOOT_TRACE
             g_core1Stage = 5;
 #endif
+            BB_REGION(15);
             globalSequencer->update();
+            BB_REGION(16);
 #if GENSEQ_CORE1_BOOT_TRACE
             g_core1Stage = 6;
 #endif

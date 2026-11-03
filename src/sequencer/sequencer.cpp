@@ -97,6 +97,8 @@ void Sequencer::update() {
         // object = its vptr). A corrupt/null vptr here is the call-through-0 cause.
         g_core1OutputVtbl = *reinterpret_cast<const volatile uint32_t*>(&output);
         g_core1ClockVtbl  = *reinterpret_cast<const volatile uint32_t*>(&clock);
+        extern volatile uint32_t g_core1Region, g_core1RegionMax;
+        g_core1Region = 30; if (30 > g_core1RegionMax) g_core1RegionMax = 30;  // entered update()
     }
 #endif
 
@@ -105,6 +107,10 @@ void Sequencer::update() {
     // freezing at the last played value. Single aligned 32-bit store, read
     // lock-free by core0 (task 12.4 literal stuck-note metric).
     g_soundingNotes = noteLifecycle.soundingCount();
+#if GENSEQ_CORE1_BOOT_TRACE
+    { extern volatile uint32_t g_core1Region, g_core1RegionMax;
+      g_core1Region = 31; if (31 > g_core1RegionMax) g_core1RegionMax = 31; }  // after soundingCount(), pre !playing return
+#endif
 
     if (!playing) return;
 

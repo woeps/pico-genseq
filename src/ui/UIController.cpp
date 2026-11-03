@@ -11,6 +11,7 @@
 #include "../instrumentation/PerformanceTrace.h"
 #include "pico/time.h"
 #include "hardware/gpio.h"
+#include "hardware/spi.h"
 #include <cstdio>
 
 // Temporary BUG B part 2 isolation knobs (OFF by default).
@@ -30,6 +31,27 @@
 // arm and catch the boot->fault transition live. 0 = no delay.
 #ifndef GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS
 #define GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS 0
+#endif
+// Bench test: replace the FRAM read with a sustained no-SPI core0 busy-loop, to
+// test whether the core1 fault is SPI1-specific or any sustained core0 activity.
+#ifndef GENSEQ_CORE1_BOOT_TRACE_BUSY_NOSPI
+#define GENSEQ_CORE1_BOOT_TRACE_BUSY_NOSPI 0
+#endif
+// Bench test: core0 tight-loops reading the SPI1 DATA register (no FRAM protocol).
+#ifndef GENSEQ_CORE1_BOOT_TRACE_SPI1_DR_SPIN
+#define GENSEQ_CORE1_BOOT_TRACE_SPI1_DR_SPIN 0
+#endif
+// Bench test: core0 does a pure SPI1 TX-only write (clocks the engine, no RX read).
+#ifndef GENSEQ_CORE1_BOOT_TRACE_SPI1_TX
+#define GENSEQ_CORE1_BOOT_TRACE_SPI1_TX 0
+#endif
+// Bench test: core0 does a pure SPI1 READ (RX path), no FRAM protocol.
+#ifndef GENSEQ_CORE1_BOOT_TRACE_SPI1_RX
+#define GENSEQ_CORE1_BOOT_TRACE_SPI1_RX 0
+#endif
+// Bench test: real framStore->read() pattern (CS framing + device MISO), no RecordStore parse.
+#ifndef GENSEQ_CORE1_BOOT_TRACE_FRAM_READ_ONLY
+#define GENSEQ_CORE1_BOOT_TRACE_FRAM_READ_ONLY 0
 #endif
 #ifndef GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD
 #define GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD 0
@@ -186,7 +208,74 @@ void UIController::initialize()
 #if GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN >= 0
     gpio_put(GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN, 1);  // marker HIGH: FRAM read begins
 #endif
+#if GENSEQ_CORE1_BOOT_TRACE_FRAM_READ_ONLY
+    // BUG B part 2 test: exercise the REAL FRAM transfer pattern -- framStore->read()
+    // does select()(CS low) + write header (opcode+addr) + clocked read with the
+    // real device driving MISO + deselect()(CS high), repeated -- but WITHOUT the
+    // RecordStore parse/CRC. If core1 faults here -> the real framed FRAM transfer
+    // (CS toggling + real MISO data) is the corruptor, not RecordStore logic.
+    {
+        static uint8_t buf[512];
+        for (int r = 0; r < 16; ++r) {
+            framStore->read(0, buf, sizeof(buf));  // real CS-framed SPI read, device responds
+        }
+    }
+    const persistence::LoadStatus status = persistence::LoadStatus::ABSENT;
+#elif GENSEQ_CORE1_BOOT_TRACE_SPI1_RX
+    // BUG B part 2 test: core0 does a pure SPI1 READ (spi_read_blocking) of dummy
+    // bytes -- the RX path (the SDK read writes repeated_tx AND reads the RX FIFO
+    // in a tight bidirectional poll), but NO FRAM protocol / CS toggling. If core1
+    // faults here -> the RX-read path is the corruptor independent of FRAM.
+    {
+        static uint8_t rxbuf[4096];
+        spi_read_blocking(spi1, 0x00, rxbuf, sizeof(rxbuf));
+    }
+    const persistence::LoadStatus status = persistence::LoadStatus::ABSENT;
+#elif GENSEQ_CORE1_BOOT_TRACE_SPI1_TX
+    // BUG B part 2 test: core0 does a pure SPI1 WRITE (TX-only) of dummy bytes --
+    // this CLOCKS SCK/MOSI and runs the SPI serial engine + FIFO, but does NOT
+    // read RX. framSpi->init() above brought SPI1 up. If core1 faults here -> the
+    // active SPI engine clocking/FIFO churn is the corruptor; if it survives ->
+    // the fault is specific to the RX/read path (spi_read_blocking).
+    {
+        static uint8_t dummy[4096];
+        spi_write_blocking(spi1, dummy, sizeof(dummy));
+    }
+    const persistence::LoadStatus status = persistence::LoadStatus::ABSENT;
+#elif GENSEQ_CORE1_BOOT_TRACE_SPI1_DR_SPIN
+    // BUG B part 2 test: core0 hammers the SPI1 DATA register (0x4003c008) in a
+    // tight loop -- the SPI1 peripheral/APB access, WITHOUT the FRAM protocol or
+    // a real transfer. framSpi->init() above already brought SPI1 up. If core1
+    // faults here -> it is SPI1 register/APB access specifically, not the FRAM
+    // transfer logic. (A DR read with no TX returns stale/empty but is a valid
+    // APB read; this is a probe, not a functional transfer.)
+    {
+        volatile uint32_t acc = 0;
+        volatile uint32_t* const SPI1_DR = reinterpret_cast<volatile uint32_t*>(0x4003c008u);
+        for (volatile uint32_t i = 0; i < 400000u; ++i) {
+            acc ^= *SPI1_DR;   // SPI1 APB read
+        }
+        (void)acc;
+    }
+    const persistence::LoadStatus status = persistence::LoadStatus::ABSENT;
+#elif GENSEQ_CORE1_BOOT_TRACE_BUSY_NOSPI
+    // BUG B part 2 test: substitute a sustained core0 BUSY-LOOP with NO SPI for
+    // the FRAM read, same marker window, ~15 ms of pure RAM/register churn. If
+    // core1 STILL faults during this window -> it is NOT SPI1-specific, it is any
+    // sustained core0 activity colliding (cross-core bus). If core1 SURVIVES ->
+    // the fault is genuinely tied to the SPI1 peripheral read.
+    {
+        volatile uint32_t acc = 0;
+        for (volatile uint32_t i = 0; i < 1500000u; ++i) {
+            acc += i;                                   // RAM/reg churn
+            acc ^= *reinterpret_cast<volatile uint32_t*>(0xd0000004);  // SIO GPIO_IN read (benign MMIO)
+        }
+        (void)acc;
+    }
+    const persistence::LoadStatus status = persistence::LoadStatus::ABSENT;
+#else
     const persistence::LoadStatus status = recordStore->load(cfg);
+#endif
 #if GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN >= 0
     gpio_put(GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN, 0);
 #endif

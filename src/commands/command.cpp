@@ -3,6 +3,14 @@
 #include "pico/multicore.h"
 #include "../sequencer/PatternSnapshot.h"
 
+#if GENSEQ_CORE1_BOOT_TRACE
+// BUG B part 2 PC-class region breadcrumb, defined in sequencer_task.cpp.
+namespace sequencer {
+extern volatile uint32_t g_core1Region;
+extern volatile uint32_t g_core1RegionMax;
+}  // namespace sequencer
+#endif
+
 namespace commands {
 
     // Function to send a command to the sequencer core
@@ -205,8 +213,20 @@ namespace commands {
         // in the reused `snapshot` instead of the heap-backed vector members. The
         // returned message carries only scalar fields; its vectors stay empty.
         commands::CommandMessage msg;
+#if GENSEQ_CORE1_BOOT_TRACE
+        ::sequencer::g_core1Region = 20;
+        if (20 > ::sequencer::g_core1RegionMax) ::sequencer::g_core1RegionMax = 20;
+#endif
         snapshot.clear();
-        if (!multicore_fifo_rvalid()) return msg;
+#if GENSEQ_CORE1_BOOT_TRACE
+        ::sequencer::g_core1Region = 21;
+        if (21 > ::sequencer::g_core1RegionMax) ::sequencer::g_core1RegionMax = 21;
+#endif
+        if (!multicore_fifo_rvalid()) return msg;  // idle NOOP path returns here
+#if GENSEQ_CORE1_BOOT_TRACE
+        ::sequencer::g_core1Region = 22;
+        if (22 > ::sequencer::g_core1RegionMax) ::sequencer::g_core1RegionMax = 22;
+#endif
 
         const uint32_t raw_cmd = multicore_fifo_pop_blocking();
         msg.cmd = static_cast<commands::Command>(raw_cmd & 0xFF);

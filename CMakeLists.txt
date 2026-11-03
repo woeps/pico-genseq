@@ -164,8 +164,26 @@ set(GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN -1 CACHE STRING
     "GPIO driven high during the core0 FRAM read (BUG B part 2 bench marker)")
 set(GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS 0 CACHE STRING
     "Delay (ms) before the FRAM read so an analyzer can arm (BUG B part 2)")
+# Test: replace the FRAM read with a no-SPI core0 busy-loop (SPI1-specific vs any
+# sustained core0 activity).
+option(GENSEQ_CORE1_BOOT_TRACE_BUSY_NOSPI
+       "Substitute a no-SPI core0 busy-loop for the FRAM read (BUG B part 2 test)" OFF)
+
+option(GENSEQ_CORE1_BOOT_TRACE_SPI1_DR_SPIN
+       "core0 tight-loops reading SPI1 DR, no FRAM protocol (BUG B part 2 test)" OFF)
+option(GENSEQ_CORE1_BOOT_TRACE_SPI1_TX
+       "core0 pure SPI1 TX-only write, no RX (BUG B part 2 test)" OFF)
+option(GENSEQ_CORE1_BOOT_TRACE_SPI1_RX
+       "core0 pure SPI1 read (RX path), no FRAM protocol (BUG B part 2 test)" OFF)
+option(GENSEQ_CORE1_BOOT_TRACE_FRAM_READ_ONLY
+       "core0 real framStore->read() loop, no RecordStore parse (BUG B part 2 test)" OFF)
 
 target_compile_definitions(genseq PRIVATE
+    GENSEQ_CORE1_BOOT_TRACE_BUSY_NOSPI=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_BUSY_NOSPI}>
+    GENSEQ_CORE1_BOOT_TRACE_SPI1_DR_SPIN=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_SPI1_DR_SPIN}>
+    GENSEQ_CORE1_BOOT_TRACE_SPI1_TX=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_SPI1_TX}>
+    GENSEQ_CORE1_BOOT_TRACE_SPI1_RX=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_SPI1_RX}>
+    GENSEQ_CORE1_BOOT_TRACE_FRAM_READ_ONLY=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_FRAM_READ_ONLY}>
     GENSEQ_CORE1_BOOT_TRACE=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE}>
     GENSEQ_CORE1_BOOT_TRACE_NO_UI=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_UI}>
     GENSEQ_CORE1_BOOT_TRACE_NO_DMA=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_DMA}>
