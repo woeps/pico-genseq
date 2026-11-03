@@ -137,6 +137,39 @@ Diffed M2 (`ff900c9`) → M3 (`cae2666`) on core1's exact idle path and tested o
   is executing.** core1 is faulted **externally** by core0's FRAM-read activity at
   that instant; it is not core1's own operation that trips it.
 
+## ✅ RESOLVED (2026-11-03) — ROOT CAUSE FOUND & FIXED (commit 049201c)
+
+**BUG B part 2 was a second core0→core1 stack overflow, in the boot LOAD path.**
+
+`RecordStore::selectNewest()` held a per-slot `PersistableConfig probe{}` (~2 KB)
+as a **core0 stack local**. During the boot `recordStore->load()` (deep path) it
+overflowed core0's 2 KB stack DOWN past `__StackBottom` (`0x20041800`) into
+**core1's adjacent stack** (`0x20040800`-`0x20041000`), stomping core1's live
+stack → core1 took an **asynchronous HardFault with an unstackable frame** (its
+own stack was corrupted, which is exactly why no stacked PC was ever recoverable).
+
+This is the **same overflow class as BUG A** (`UIController::initialize`'s by-value
+locals); the load path's `probe{}` was the remaining instance. The earlier
+`readRecord` `std::vector`→static fix removed only the heap alloc, not this stack
+object. **Fix:** make `probe` a `static` (load() is boot-only, non-re-entrant).
+
+**Hardware-verified (clean production build, power-cycled):** full M3 boots
+`H:pong`, restores a 3-pattern config correctly (`H:dump`: `patternCount=3`,
+`activePatterns=0x0007`, `bpm=140`), core1 loops freely (loopCount past 2M, no
+fault), stable across repeated resets. Host suite 41/41.
+
+**Why it masqueraded as "SPI1 / RX / FRAM-read-timed":** `load()` was the only
+path that BOTH ran the 2 KB `probe{}` AND took long enough (the SPI reads, ~15 ms)
+for core1 to be mid-execution when core0 smashed its stack. The bisection proved
+no isolated SDK primitive faults core1 (busy-loop, bare SPI1 DR read, TX-only,
+RX-only, and even real `framStore->read()` all survive) — only the full `load()`
+did, which pinned it to the surrounding software, i.e. `selectNewest`'s stack.
+
+**Bench reproduction lesson:** symptom drift after many SWD/watchdog cycles was
+stale soft state; a cold POWER-CYCLE restored the true fault every time.
+
+---
+
 ## UPDATE 4 (2026-11-02) — BENCH CAPTURE: power REFUTED, fault proven locked to the FRAM read
 
 Wired a BS05U mixed-signal analyzer (L0=GP7 FRAM-read marker, L1=GP6 fault marker,
