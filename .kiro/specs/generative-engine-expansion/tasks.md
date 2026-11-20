@@ -214,7 +214,19 @@ part of this plan.
     - Store commands, seeds, firmware revision, analyzer setup, and captures as milestone evidence
     - _Requirements: 4.3, 6.2, 10.5, 10.6_
 
-## Open hardware issue (blocks 11.2/11.3) — core1 fails to launch at boot
+## RESOLVED hardware issue (was blocking 11.2/11.3) — core1 boot fault
+
+**Resolved on branch `bisect/core1-boot-fault`.** Root cause was two core0 stack
+overflows into core1's adjacent stack (not a launch/FIFO/engine bug), plus a
+core1 static-init hang: `UIController::initialize` by-value locals (BUG A),
+`RecordStore::selectNewest`'s ~2 KB `probe{}` local (commit 049201c), and the
+function-local-static `commandSnapshot` guard (f4c9054). A dual-core stack guard
+(7f0cfae) now makes a recurrence loud. Full M3 boots, restores a 3-pattern
+config, host 41/41. 11.2/11.3 are unblocked. Full story:
+`BUG-B-part2-handoff.md` / `DEBUG-core1-boot.md`. The text below is the original
+(superseded) investigation, kept for history.
+
+## (Superseded) Open hardware issue — core1 fails to launch at boot
 
 On the RP2040 bench, the M3 firmware boots core0 fully (UART prints through
 "Entering Main View", so UIController::initialize + the FRAM load + the
