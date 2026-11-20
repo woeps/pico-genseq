@@ -542,7 +542,9 @@ void Sequencer::setPatternGateSetFromSnapshot(size_t patternIndex,
     if (patternIndex >= patterns.size()) return;
     std::vector<bool> gates(snap.gateCount());
     for (uint16_t i = 0; i < snap.gateCount(); ++i) gates[i] = snap.gate(i);
-    patterns[patternIndex].setGateSet(common::GateSet(gates));
+    common::GateSet next(gates);
+    if (playing) next.continueFrom(patterns[patternIndex].getGateSet());  // keep phase
+    patterns[patternIndex].setGateSet(next);
 }
 
 void Sequencer::setPatternPitchSetFromSnapshot(size_t patternIndex,
@@ -679,7 +681,9 @@ void Sequencer::setPatternGateSet(size_t patternIndex,
     // using its original lifecycle and the replacement controls the NEXT note
     // (task 2.5, Req 5.7). An empty gate set simply produces no further edges.
     if (patternIndex < patterns.size()) {
-        patterns[patternIndex].setGateSet(common::GateSet(gates));
+        common::GateSet next(gates);
+        if (playing) next.continueFrom(patterns[patternIndex].getGateSet());  // keep phase
+        patterns[patternIndex].setGateSet(next);
     }
 }
 

@@ -32,6 +32,13 @@ namespace common {
 
         void reset();
 
+        // Take over the playback phase of the gate set this one replaces while
+        // playing: keep the position (wrapped to the new length) and derive the
+        // pending flank from the gate that actually sounded last, so a mid-play
+        // edit neither restarts at step 0 nor fires a spurious onset. A replaced
+        // set still in its fresh reset() state keeps the normal start flank.
+        void continueFrom(const GateSet& previous);
+
         /// Create a gate set based on the Euclidean algorithm (Bjorklund's algorithm)
         ///
         /// \param steps The total number of steps in the pattern

@@ -239,6 +239,31 @@ void test_seeded_random_order_replays() {
     check(a != other, "a different seed yields a different RANDOM pitch order (R4.1)");
 }
 
+// Bench report 2026-11-20: toggling one step in the GateSet grid while playing
+// retriggered a note at once. PATTERN_GATE_SET rebuilt the GateSet at position 0
+// with a fresh RISING flank. Replacing the gate set mid-play must keep the phase:
+// no note until the next real onset, and the newly toggled step sounds in place.
+void test_gate_replace_keeps_phase() {
+    Harness h;
+    h.setPitch({60});
+    h.setVelocity({100});
+    h.setGate({true, false, false, false, true, false, false, false});
+    h.play();
+    h.tick(1);  // pos 0 onset
+    h.tick(2);  // pos 1 release
+    h.out.clear();
+    // Toggle tick 6 on (a later step) while playing, as the grid editor does.
+    h.setGate({true, false, false, false, true, false, true, false});
+    h.tick(3);
+    h.tick(4);
+    check(noteOnPitches(h.out.record()).empty(),
+          "replacing the gate set mid-play fires no immediate note (phase kept)");
+    h.out.clear();
+    for (uint64_t n = 5; n <= 8; ++n) h.tick(n);
+    check(noteOnPitches(h.out.record()).size() == 2,
+          "after the replace, pos 4 and the newly toggled pos 6 sound in place");
+}
+
 }  // namespace
 
 int main() {
@@ -247,6 +272,7 @@ int main() {
     test_scale_skip_and_nearest();
     test_humanization_bounds();
     test_seeded_random_order_replays();
+    test_gate_replace_keeps_phase();
 
     if (failures == 0) {
         std::printf("example_emission_lens: all checks passed\n");
