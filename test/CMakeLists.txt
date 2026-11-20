@@ -628,6 +628,14 @@ target_include_directories(genseq_example_sequencer_integration PRIVATE ${EMISSI
 target_link_libraries(genseq_example_sequencer_integration PRIVATE genseq_emission)
 add_test(NAME genseq_example_sequencer_integration COMMAND genseq_example_sequencer_integration)
 
+# Golden MIDI stream (separate-velocity-set-gate-set-and-note-set task 1.1): fingerprint of the
+# per-pattern-sets emission, which the set-library refactor must reproduce (Req 9.1).
+set(EXAMPLE_GOLDEN_STREAM_SRC "${TEST_DIR}/example_golden_stream.cpp")
+add_executable(genseq_example_golden_stream "${EXAMPLE_GOLDEN_STREAM_SRC}")
+target_include_directories(genseq_example_golden_stream PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_golden_stream PRIVATE genseq_emission)
+add_test(NAME genseq_example_golden_stream COMMAND genseq_example_golden_stream)
+
 # ---------------------------------------------------------------------------
 # Example test: allocation-free core1 command path (task 6.4).
 #
@@ -931,6 +939,7 @@ if(RAPIDCHECK_AVAILABLE)
     # exclude them so the property-test executable has a single main().
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_DESTRUCTION_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_LAUNCH_GUARD_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_GOLDEN_STREAM_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${SMOKE_HOST_COMPILATION_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_HEADER_LAYOUT_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_OUTCOME_MAPPING_SRC}")
