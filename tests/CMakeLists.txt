@@ -14,6 +14,7 @@ add_executable(genseq_tests
     test_decoder.cpp
     test_patternsview.cpp
     test_setdetailviews.cpp
+    test_setlibrary_reducer.cpp
     stubs/command_stub.cpp
     stubs/hardware_stub.cpp
     ${SRC}/common/gate_set.cpp

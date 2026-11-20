@@ -15,6 +15,10 @@ void sendPatternGenParams(const UIState& state, uint8_t patternIndex);
 void previewGateGenParams(const UIState& s);
 void previewPitchGenParams(const UIState& s);
 void previewVelocityGenParams(const UIState& s);
+void sendPitchSetConfig(uint8_t patternIndex, const PitchSetConfig& config);
+void sendVelocitySetConfig(uint8_t patternIndex, const VelocitySetConfig& config);
+void sendGenParamsFrom(uint8_t patternIndex, const PitchSetConfig& pitch,
+                       const GateSetConfig& gate, const VelocitySetConfig& vel);
 
 constexpr GateSetProperty EUCLIDEAN_PROPERTIES[] = {
     GateSetProperty::ALGORITHM,
@@ -119,12 +123,82 @@ void clampEuclidean(GateSetConfig& config) {
     config.rotation = std::min(config.rotation, static_cast<uint8_t>(config.steps - 1));
 }
 
+// --- Set-library fan-out ----------------------------------------------------
+// core1 keeps one material copy per pattern, so an edit to a set is sent to every
+// pattern that references it. When more than one command is sent they are framed
+// in one BATCH_BEGIN/BATCH_END so core1 never ticks with some users updated and
+// others not (R8.2).
+class BatchScope {
+public:
+    explicit BatchScope(uint16_t commandCount) {
+        if (commandCount > 1 && commandCount <= commands::MAX_BATCH_COMMANDS) {
+            commands::sendCommand(commands::Command::BATCH_BEGIN,
+                                  static_cast<uint8_t>(commandCount));
+            open_ = true;
+        }
+    }
+    ~BatchScope() {
+        if (open_) commands::sendCommand(commands::Command::BATCH_END);
+    }
+    BatchScope(const BatchScope&) = delete;
+    BatchScope& operator=(const BatchScope&) = delete;
+
+private:
+    bool open_ = false;
+};
+
+bool slotOccupied(const UIState& s, SetType type, uint8_t slot) {
+    return slot < SET_LIBRARY_SIZE && ((occupiedMask(s, type) >> slot) & 1u);
+}
+
+// Generation Parameters for every user pattern of the slot. A non-null draft pointer
+// replaces that stream's committed config (live preview); null uses the committed one.
+void sendGenParamsToUsers(const UIState& s, SetType type, uint8_t slot,
+                          const GateSetConfig* gateDraft, const PitchSetConfig* pitchDraft,
+                          const VelocitySetConfig* velocityDraft) {
+    const uint16_t users = usersOf(s, type, slot);
+    for (uint8_t p = 0; p < s.patternCount; ++p) {
+        if (!((users >> p) & 1u)) continue;
+        sendGenParamsFrom(p, pitchDraft ? *pitchDraft : s.pitchSetOf(p),
+                          gateDraft ? *gateDraft : s.gateSetOf(p),
+                          velocityDraft ? *velocityDraft : s.velocitySetOf(p));
+    }
+}
+
+void sendGateToUsers(const UIState& s, uint8_t slot, const GateSetConfig& config) {
+    const uint16_t users = usersOf(s, SetType::GATE, slot);
+    for (uint8_t p = 0; p < s.patternCount; ++p) {
+        if ((users >> p) & 1u) sendGateSet(p, config);
+    }
+}
+
+void sendPitchToUsers(const UIState& s, uint8_t slot, const PitchSetConfig& config) {
+    const uint16_t users = usersOf(s, SetType::NOTE, slot);
+    for (uint8_t p = 0; p < s.patternCount; ++p) {
+        if ((users >> p) & 1u) sendPitchSetConfig(p, config);
+    }
+}
+
+void sendVelocityToUsers(const UIState& s, uint8_t slot, const VelocitySetConfig& config) {
+    const uint16_t users = usersOf(s, SetType::VELOCITY, slot);
+    for (uint8_t p = 0; p < s.patternCount; ++p) {
+        if ((users >> p) & 1u) sendVelocitySetConfig(p, config);
+    }
+}
+
+uint16_t userCount(const UIState& s, SetType type, uint8_t slot) {
+    return popcount16(usersOf(s, type, slot));
+}
+
 void restoreGateSetDraft(UIState& state) {
-    if (!state.gateSetDirty || state.selectedPattern >= state.patternCount) return;
-    state.gateSetDraft = state.gateSetOf(state.selectedPattern);
+    const uint8_t slot = state.selectedGateSlot;
+    if (!state.gateSetDirty || !slotOccupied(state, SetType::GATE, slot)) return;
+    state.gateSetDraft = state.gateLib.slots[slot];
     state.gateSetDirty = false;
-    sendGateSet(state.selectedPattern, state.gateSetDraft);
-    sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
+    BatchScope batch(2 * userCount(state, SetType::GATE, slot));
+    sendGateToUsers(state, slot, state.gateSetDraft);
+    // drop the previewed draft gen-params
+    sendGenParamsToUsers(state, SetType::GATE, slot, nullptr, nullptr, nullptr);
 }
 
 void sendPitchSetConfig(uint8_t patternIndex, const PitchSetConfig& config) {
@@ -136,13 +210,6 @@ void sendPitchSetConfig(uint8_t patternIndex, const PitchSetConfig& config) {
     // not here — this function sends only the pitch set itself.
 }
 
-void restorePitchSetDraft(UIState& state) {
-    if (!state.pitchSetDirty || state.selectedPattern >= state.patternCount) return;
-    state.pitchSetDraft = state.pitchSetOf(state.selectedPattern);
-    state.pitchSetDirty = false;
-    sendPitchSetConfig(state.selectedPattern, state.pitchSetDraft);
-    sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
-}
 
 void sendVelocitySetConfig(uint8_t patternIndex, const VelocitySetConfig& config) {
     std::vector<uint8_t> velocities(config.velocities.begin(),
@@ -192,27 +259,39 @@ void sendPatternGenParams(const UIState& state, uint8_t patternIndex) {
 // they change, exactly like gate/pitch/velocity material edits already do; ENTER
 // keeps them, ESC sends the committed values back.
 void previewGateGenParams(const UIState& s) {
-    if (s.selectedPattern >= s.patternCount) return;
-    sendGenParamsFrom(s.selectedPattern, s.pitchSetOf(s.selectedPattern), s.gateSetDraft,
-                      s.velocitySetOf(s.selectedPattern));
+    const uint8_t slot = s.selectedGateSlot;
+    BatchScope batch(userCount(s, SetType::GATE, slot));
+    sendGenParamsToUsers(s, SetType::GATE, slot, &s.gateSetDraft, nullptr, nullptr);
 }
 void previewPitchGenParams(const UIState& s) {
-    if (s.selectedPattern >= s.patternCount) return;
-    sendGenParamsFrom(s.selectedPattern, s.pitchSetDraft, s.gateSetOf(s.selectedPattern),
-                      s.velocitySetOf(s.selectedPattern));
+    const uint8_t slot = s.selectedNoteSlot;
+    BatchScope batch(userCount(s, SetType::NOTE, slot));
+    sendGenParamsToUsers(s, SetType::NOTE, slot, nullptr, &s.pitchSetDraft, nullptr);
 }
 void previewVelocityGenParams(const UIState& s) {
-    if (s.selectedPattern >= s.patternCount) return;
-    sendGenParamsFrom(s.selectedPattern, s.pitchSetOf(s.selectedPattern),
-                      s.gateSetOf(s.selectedPattern), s.velocitySetDraft);
+    const uint8_t slot = s.selectedVelocitySlot;
+    BatchScope batch(userCount(s, SetType::VELOCITY, slot));
+    sendGenParamsToUsers(s, SetType::VELOCITY, slot, nullptr, nullptr, &s.velocitySetDraft);
+}
+
+void restorePitchSetDraft(UIState& state) {
+    const uint8_t slot = state.selectedNoteSlot;
+    if (!state.pitchSetDirty || !slotOccupied(state, SetType::NOTE, slot)) return;
+    state.pitchSetDraft = state.noteLib.slots[slot];
+    state.pitchSetDirty = false;
+    BatchScope batch(2 * userCount(state, SetType::NOTE, slot));
+    sendPitchToUsers(state, slot, state.pitchSetDraft);
+    sendGenParamsToUsers(state, SetType::NOTE, slot, nullptr, nullptr, nullptr);
 }
 
 void restoreVelocitySetDraft(UIState& state) {
-    if (!state.velocitySetDirty || state.selectedPattern >= state.patternCount) return;
-    state.velocitySetDraft = state.velocitySetOf(state.selectedPattern);
+    const uint8_t slot = state.selectedVelocitySlot;
+    if (!state.velocitySetDirty || !slotOccupied(state, SetType::VELOCITY, slot)) return;
+    state.velocitySetDraft = state.velocityLib.slots[slot];
     state.velocitySetDirty = false;
-    sendVelocitySetConfig(state.selectedPattern, state.velocitySetDraft);
-    sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
+    BatchScope batch(2 * userCount(state, SetType::VELOCITY, slot));
+    sendVelocityToUsers(state, slot, state.velocitySetDraft);
+    sendGenParamsToUsers(state, SetType::VELOCITY, slot, nullptr, nullptr, nullptr);
 }
 
 }
@@ -249,8 +328,8 @@ void setCurrentView(UIState& state, ViewId viewId) {
 }
 
 void beginGateSetEdit(UIState& state) {
-    if (state.selectedPattern >= state.patternCount) return;
-    state.gateSetDraft = state.gateSetOf(state.selectedPattern);
+    if (!slotOccupied(state, SetType::GATE, state.selectedGateSlot)) return;
+    state.gateSetDraft = state.gateLib.slots[state.selectedGateSlot];
     // Seed the per-step gate states from the generator if they were never set
     // (all-zero but the generator would produce pulses) — e.g. a config created
     // before the R9 grid existed, or a fresh default. A config with manual edits
@@ -307,7 +386,7 @@ void moveGateSetProperty(UIState& state, int direction) {
 }
 
 void adjustGateSetValue(UIState& state, int delta, bool coarse) {
-    if (state.selectedPattern >= state.patternCount || delta == 0) return;
+    if (!slotOccupied(state, SetType::GATE, state.selectedGateSlot) || delta == 0) return;
     // Coarse step multiplies the step by 10 for numeric fields. NOTE_LENGTH is
     // an enum stepped one position at a time, so it ignores the coarse flag.
     const int step = coarse && state.selectedGateSetProperty != GateSetProperty::NOTE_LENGTH
@@ -379,14 +458,15 @@ void adjustGateSetValue(UIState& state, int delta, bool coarse) {
 
     if (next == state.gateSetDraft) return;
     state.gateSetDraft = next;
-    state.gateSetDirty = next != state.gateSetOf(state.selectedPattern);
+    state.gateSetDirty = next != state.gateLib.slots[state.selectedGateSlot];
     const GateSetProperty prop = state.selectedGateSetProperty;
     // Probability edits (per-Pattern PRB, per-step grid probability) do not change
     // the gate array. Resending it would rebuild core1's GateSet at step 0 and
     // fire that step's note on every scrub (bench report 2026-11-20), so only a
     // gate-structure change sends the array.
     if (prop != GateSetProperty::PROBABILITY && prop != GateSetProperty::STEP_GRID) {
-        sendGateSet(state.selectedPattern, next);
+        BatchScope batch(userCount(state, SetType::GATE, state.selectedGateSlot));
+        sendGateToUsers(state, state.selectedGateSlot, next);
     }
     // Fields that feed the gen-params (probabilities; STEPS bounds the per-step
     // array; NOTE_LENGTH sets stepLength) preview live instead of on ENTER only.
@@ -400,24 +480,27 @@ void adjustGateSetValue(UIState& state, int delta, bool coarse) {
 // layered on top of the generator seed. Routed through the same draft/dirty/send
 // path as every other GateSet edit.
 void toggleGateStep(UIState& state) {
-    if (state.selectedPattern >= state.patternCount) return;
+    if (!slotOccupied(state, SetType::GATE, state.selectedGateSlot)) return;
     if (state.selectedGateSetProperty != GateSetProperty::STEP_GRID) return;
     const uint8_t s = state.selectedGateStep;
     if (s >= MAX_GRID_STEPS) return;
     GateSetConfig next = state.gateSetDraft;
     next.gateStates[s] = next.gateStates[s] ? 0 : 1;
     state.gateSetDraft = next;
-    state.gateSetDirty = next != state.gateSetOf(state.selectedPattern);
-    sendGateSet(state.selectedPattern, next);
+    state.gateSetDirty = next != state.gateLib.slots[state.selectedGateSlot];
+    BatchScope batch(userCount(state, SetType::GATE, state.selectedGateSlot));
+    sendGateToUsers(state, state.selectedGateSlot, next);
 }
 
 void commitGateSetEdit(UIState& state) {
-    if (state.selectedPattern >= state.patternCount) return;
-    state.gateSetOf(state.selectedPattern) = state.gateSetDraft;
+    const uint8_t slot = state.selectedGateSlot;
+    if (!slotOccupied(state, SetType::GATE, slot)) return;
+    state.gateLib.slots[slot] = state.gateSetDraft;
     state.gateSetDirty = false;
-    // task 10.4: transmit the pattern's full gen-params to core1 on commit (gate
-    // carries per-Pattern/per-step probability + stepLength).
-    sendPatternGenParams(state, state.selectedPattern);
+    // task 10.4: transmit the full gen-params of every pattern using this set on commit
+    // (gate carries per-Pattern/per-step probability + stepLength).
+    BatchScope batch(userCount(state, SetType::GATE, slot));
+    sendGenParamsToUsers(state, SetType::GATE, slot, nullptr, nullptr, nullptr);
 }
 
 void undoGateSetEdit(UIState& state) {
@@ -429,8 +512,8 @@ void syncGateSet(const UIState& state, uint8_t index) {
 }
 
 void beginPitchSetEdit(UIState& state) {
-    if (state.selectedPattern >= state.patternCount) return;
-    state.pitchSetDraft = state.pitchSetOf(state.selectedPattern);
+    if (!slotOccupied(state, SetType::NOTE, state.selectedNoteSlot)) return;
+    state.pitchSetDraft = state.noteLib.slots[state.selectedNoteSlot];
     state.selectedPitchSetField = PITCH_SET_FIELD_COUNT;
     state.pitchSetDirty = false;
 }
@@ -444,7 +527,7 @@ void movePitchSetField(UIState& state, int direction) {
 }
 
 void adjustPitchSetValue(UIState& state, int delta, bool coarse) {
-    if (state.selectedPattern >= state.patternCount || delta == 0) return;
+    if (!slotOccupied(state, SetType::NOTE, state.selectedNoteSlot) || delta == 0) return;
     PitchSetConfig next = state.pitchSetDraft;
 
     if (state.selectedPitchSetField == PITCH_SET_FIELD_SCALE) {
@@ -491,28 +574,27 @@ void adjustPitchSetValue(UIState& state, int delta, bool coarse) {
 
     if (next == state.pitchSetDraft) return;
     state.pitchSetDraft = next;
-    state.pitchSetDirty = next != state.pitchSetOf(state.selectedPattern);
+    state.pitchSetDirty = next != state.noteLib.slots[state.selectedNoteSlot];
     if (state.selectedPitchSetField <= PITCH_SET_FIELD_QUANTIZE) {
         previewPitchGenParams(state);  // scale/root/quantize: audible immediately
     } else {
-        sendPitchSetConfig(state.selectedPattern, next);
+        BatchScope batch(userCount(state, SetType::NOTE, state.selectedNoteSlot));
+        sendPitchToUsers(state, state.selectedNoteSlot, next);
     }
 }
 
 void commitPitchSetEdit(UIState& state) {
-    if (state.selectedPattern >= state.patternCount) return;
-    state.pitchSetOf(state.selectedPattern) = state.pitchSetDraft;
+    const uint8_t slot = state.selectedNoteSlot;
+    if (!slotOccupied(state, SetType::NOTE, slot)) return;
+    state.noteLib.slots[slot] = state.pitchSetDraft;
     state.pitchSetDirty = false;
     // task 10.4: pitch carries the scale constraint; transmit gen-params on commit.
-    sendPatternGenParams(state, state.selectedPattern);
+    BatchScope batch(userCount(state, SetType::NOTE, slot));
+    sendGenParamsToUsers(state, SetType::NOTE, slot, nullptr, nullptr, nullptr);
 }
 
 void undoPitchSetEdit(UIState& state) {
-    if (!state.pitchSetDirty || state.selectedPattern >= state.patternCount) return;
-    state.pitchSetDraft = state.pitchSetOf(state.selectedPattern);
-    state.pitchSetDirty = false;
-    sendPitchSetConfig(state.selectedPattern, state.pitchSetDraft);
-    sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
+    restorePitchSetDraft(state);
 }
 
 void syncPitchSet(const UIState& state, uint8_t index) {
@@ -520,8 +602,8 @@ void syncPitchSet(const UIState& state, uint8_t index) {
 }
 
 void beginVelocitySetEdit(UIState& state) {
-    if (state.selectedPattern >= state.patternCount) return;
-    state.velocitySetDraft = state.velocitySetOf(state.selectedPattern);
+    if (!slotOccupied(state, SetType::VELOCITY, state.selectedVelocitySlot)) return;
+    state.velocitySetDraft = state.velocityLib.slots[state.selectedVelocitySlot];
     state.selectedVelocitySetField = VELOCITY_SET_FIELD_COUNT;
     state.velocitySetDirty = false;
 }
@@ -535,7 +617,7 @@ void moveVelocitySetField(UIState& state, int direction) {
 }
 
 void adjustVelocitySetValue(UIState& state, int delta, bool coarse) {
-    if (state.selectedPattern >= state.patternCount || delta == 0) return;
+    if (!slotOccupied(state, SetType::VELOCITY, state.selectedVelocitySlot) || delta == 0) return;
     VelocitySetConfig next = state.velocitySetDraft;
 
     if (state.selectedVelocitySetField == VELOCITY_SET_FIELD_HUMANIZE) {
@@ -591,20 +673,23 @@ void adjustVelocitySetValue(UIState& state, int delta, bool coarse) {
 
     if (next == state.velocitySetDraft) return;
     state.velocitySetDraft = next;
-    state.velocitySetDirty = next != state.velocitySetOf(state.selectedPattern);
+    state.velocitySetDirty = next != state.velocityLib.slots[state.selectedVelocitySlot];
     if (state.selectedVelocitySetField <= VELOCITY_SET_FIELD_COUPLING) {
         previewVelocityGenParams(state);  // humanize/seed/coupling: audible immediately
     } else {
-        sendVelocitySetConfig(state.selectedPattern, next);
+        BatchScope batch(userCount(state, SetType::VELOCITY, state.selectedVelocitySlot));
+        sendVelocityToUsers(state, state.selectedVelocitySlot, next);
     }
 }
 
 void commitVelocitySetEdit(UIState& state) {
-    if (state.selectedPattern >= state.patternCount) return;
-    state.velocitySetOf(state.selectedPattern) = state.velocitySetDraft;
+    const uint8_t slot = state.selectedVelocitySlot;
+    if (!slotOccupied(state, SetType::VELOCITY, slot)) return;
+    state.velocityLib.slots[slot] = state.velocitySetDraft;
     state.velocitySetDirty = false;
     // task 10.4: velocity carries humanize/seed/coupling; transmit on commit.
-    sendPatternGenParams(state, state.selectedPattern);
+    BatchScope batch(userCount(state, SetType::VELOCITY, slot));
+    sendGenParamsToUsers(state, SetType::VELOCITY, slot, nullptr, nullptr, nullptr);
 }
 
 void undoVelocitySetEdit(UIState& state) {
@@ -637,6 +722,9 @@ void addPattern(UIState& state) {
     syncGateSet(state, newPattern);
     syncPitchSet(state, newPattern);
     syncVelocitySet(state, newPattern);
+    // The new pattern may reference sets carrying non-default gen-params (scale, humanize,
+    // probability); core1 starts it on defaults, so send the referenced ones (R9.3).
+    sendPatternGenParams(state, newPattern);
 }
 
 void removePattern(UIState& state, uint8_t index) {
@@ -666,6 +754,133 @@ void togglePatternActive(UIState& state, uint8_t index) {
     } else {
         commands::sendCommand(commands::Command::PATTERN_DEACTIVATE, index);
     }
+}
+
+namespace {
+
+uint8_t& selectedSlotRef(UIState& s, SetType type) {
+    switch (type) {
+        case SetType::GATE: return s.selectedGateSlot;
+        case SetType::NOTE: return s.selectedNoteSlot;
+        default:            return s.selectedVelocitySlot;
+    }
+}
+
+bool draftDirty(const UIState& s, SetType type) {
+    switch (type) {
+        case SetType::GATE: return s.gateSetDirty;
+        case SetType::NOTE: return s.pitchSetDirty;
+        default:            return s.velocitySetDirty;
+    }
+}
+
+void discardDraft(UIState& s, SetType type) {
+    switch (type) {
+        case SetType::GATE:     restoreGateSetDraft(s); break;
+        case SetType::NOTE:     restorePitchSetDraft(s); break;
+        default:                restoreVelocitySetDraft(s); break;
+    }
+}
+
+void beginEdit(UIState& s, SetType type) {
+    switch (type) {
+        case SetType::GATE:     beginGateSetEdit(s); break;
+        case SetType::NOTE:     beginPitchSetEdit(s); break;
+        default:                beginVelocitySetEdit(s); break;
+    }
+}
+
+}  // namespace
+
+void selectSlotsOfSelectedPattern(UIState& state) {
+    if (state.selectedPattern >= state.patternCount) return;
+    const PatternRefs& refs = state.patternRefs[state.selectedPattern];
+    state.selectedGateSlot = refs.gate;
+    state.selectedNoteSlot = refs.note;
+    state.selectedVelocitySlot = refs.velocity;
+}
+
+void selectSetSlot(UIState& state, SetType type, uint8_t slot) {
+    if (!slotOccupied(state, type, slot)) return;
+    discardDraft(state, type);  // R4.6: leaving a slot drops its uncommitted draft
+    selectedSlotRef(state, type) = slot;
+    beginEdit(state, type);
+    state.setNotice = SetNotice::NONE;
+}
+
+void stepSetSlot(UIState& state, SetType type, int direction) {
+    selectSetSlot(state, type, nextOccupied(state, type, selectedSlotRef(state, type), direction));
+}
+
+void createSetInView(UIState& state, SetType type) {
+    uint8_t slot = 0;
+    // Check before discarding so a refused create keeps the draft.
+    if (occupiedMask(state, type) == 0xFFFF) {
+        state.setNotice = SetNotice::LIBRARY_FULL;
+        return;
+    }
+    discardDraft(state, type);
+    if (!createSet(state, type, slot)) return;
+    selectedSlotRef(state, type) = slot;
+    beginEdit(state, type);
+    state.setNotice = SetNotice::NONE;
+}
+
+void copySetInView(UIState& state, SetType type) {
+    uint8_t slot = 0;
+    const uint8_t src = selectedSlotRef(state, type);
+    if (occupiedMask(state, type) == 0xFFFF) {
+        state.setNotice = SetNotice::LIBRARY_FULL;
+        return;
+    }
+    // Copy the committed set; an uncommitted draft is discarded first (R4.6).
+    discardDraft(state, type);
+    if (!copySet(state, type, src, slot)) return;
+    selectedSlotRef(state, type) = slot;
+    beginEdit(state, type);
+    state.setNotice = SetNotice::NONE;
+}
+
+void deleteSetInView(UIState& state, SetType type) {
+    const uint8_t slot = selectedSlotRef(state, type);
+    if (!slotOccupied(state, type, slot)) return;
+    if (usersOf(state, type, slot) != 0) {
+        state.setNotice = SetNotice::IN_USE;
+        return;
+    }
+    if (popcount16(occupiedMask(state, type)) <= 1) {
+        state.setNotice = SetNotice::LAST_SET;
+        return;
+    }
+    const uint8_t target = nextOccupied(state, type, slot, +1);
+    discardDraft(state, type);  // no users, so nothing is sent
+    if (!deleteSet(state, type, slot)) return;
+    selectedSlotRef(state, type) = target;
+    beginEdit(state, type);
+    state.setNotice = SetNotice::NONE;
+}
+
+void assignSetRef(UIState& state, uint8_t pattern, SetType type, uint8_t slot) {
+    if (pattern >= state.patternCount) return;
+    if (!assignRef(state, pattern, type, slot)) {
+        return;  // free or out-of-range slot: the previous reference is kept (R2.3)
+    }
+    // One atomic update for this pattern: the new set's material plus its gen-params, which
+    // combine all three of its sets (R5.3, R8.3).
+    BatchScope batch(2);
+    switch (type) {
+        case SetType::GATE:     sendGateSet(pattern, state.gateSetOf(pattern)); break;
+        case SetType::NOTE:     sendPitchSetConfig(pattern, state.pitchSetOf(pattern)); break;
+        default:                sendVelocitySetConfig(pattern, state.velocitySetOf(pattern)); break;
+    }
+    sendPatternGenParams(state, pattern);
+}
+
+void stepSetRef(UIState& state, uint8_t pattern, SetType type, int direction) {
+    if (pattern >= state.patternCount) return;
+    const PatternRefs& r = state.patternRefs[pattern];
+    const uint8_t cur = type == SetType::GATE ? r.gate : type == SetType::NOTE ? r.note : r.velocity;
+    assignSetRef(state, pattern, type, nextOccupied(state, type, cur, direction));
 }
 
 void restoreSequencerFromState(const UIState& state) {

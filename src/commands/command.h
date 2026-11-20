@@ -55,10 +55,6 @@ namespace commands {
 
     // Function to send a command to the sequencer core
     void sendCommand(Command cmd, uint8_t param1 = 0, uint8_t param2 = 0);
-    // Frame the next `commandCount` commands as one atomic update (see Command::BATCH_BEGIN).
-    // Counts are clamped to 1..MAX_BATCH_COMMANDS.
-    void sendBatchBegin(uint8_t commandCount);
-    void sendBatchEnd();
     void sendGateSet(uint8_t patternIndex, const std::vector<bool>& gates);
     void sendPitchSet(uint8_t patternIndex, uint8_t count,
                       common::PlayingOrder order, const std::vector<uint8_t>& pitches);

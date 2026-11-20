@@ -77,7 +77,11 @@ void PatternsView::handleEvent(state::UIState& state, const events::Event& event
             if (!isPressed) break;
             if (!isPattern) {
                 state::addPattern(newState);
-            } else if (state.selectedPatternSet == state::PatternSet::GATE) {
+                break;
+            }
+            // Open the set the selected pattern references (R4.2).
+            state::selectSlotsOfSelectedPattern(newState);
+            if (state.selectedPatternSet == state::PatternSet::GATE) {
                 state::beginGateSetEdit(newState);
                 state::setCurrentView(newState, state::ViewId::GATE_SET);
             } else if (state.selectedPatternSet == state::PatternSet::PITCH) {

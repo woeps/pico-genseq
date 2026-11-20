@@ -45,6 +45,26 @@ void togglePatternActive(UIState& state, uint8_t index);
 // default), syncs every pattern's gate/pitch/velocity sets, applies the active
 // mask via PATTERN_ACTIVATE / PATTERN_DEACTIVATE, and sets the BPM. Pulls the
 // SDK (commands::) so it is firmware-only, not host-compilable.
+// --- Set libraries (separate-velocity-set-gate-set-and-note-set) -------------
+// Point the three set views at the sets the selected pattern references (R4.2). Call when
+// entering a set view from the PatternsView, before the matching begin*Edit.
+void selectSlotsOfSelectedPattern(UIState& state);
+// Switch a set view to `slot` of its library: an uncommitted draft is discarded (and the
+// committed set re-sent to its users), then the slot's draft is begun. No-op on a free slot.
+void selectSetSlot(UIState& state, SetType type, uint8_t slot);
+// Step the selected slot to the previous/next occupied slot (wraps).
+void stepSetSlot(UIState& state, SetType type, int direction);
+// Library actions for the set views. A refused action leaves the libraries untouched and
+// sets state.setNotice (LIBRARY_FULL / IN_USE / LAST_SET).
+void createSetInView(UIState& state, SetType type);
+void copySetInView(UIState& state, SetType type);
+void deleteSetInView(UIState& state, SetType type);
+// Change which set a pattern references. Rejects a free/out-of-range slot (reference kept).
+// Sends the new set and the pattern's gen-params to core1 as one batch.
+void assignSetRef(UIState& state, uint8_t pattern, SetType type, uint8_t slot);
+// Step a pattern's reference to the previous/next occupied slot of the library (wraps).
+void stepSetRef(UIState& state, uint8_t pattern, SetType type, int direction);
+
 void restoreSequencerFromState(const UIState& state);
 
 } // namespace ui::state

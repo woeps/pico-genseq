@@ -25,9 +25,6 @@ void sendCommand(Command cmd, uint8_t param1, uint8_t param2) {
     testing::sentCommands().push_back(msg);
 }
 
-void sendBatchBegin(uint8_t commandCount) { sendCommand(Command::BATCH_BEGIN, commandCount); }
-void sendBatchEnd() { sendCommand(Command::BATCH_END); }
-
 void sendGateSet(uint8_t patternIndex, const std::vector<bool>& gates) {
     CommandMessage msg;
     msg.cmd = Command::PATTERN_GATE_SET;
