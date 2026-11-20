@@ -315,6 +315,7 @@ void setValue(UIState& state, int value) {
 }
 
 void setCurrentView(UIState& state, ViewId viewId) {
+    state.gotoPicker.active = false;  // a view change always closes the go-to picker
     if (state.currentView == ViewId::GATE_SET && viewId != ViewId::GATE_SET) {
         restoreGateSetDraft(state);
     }
@@ -883,6 +884,64 @@ void stepSetRef(UIState& state, uint8_t pattern, SetType type, int direction) {
     assignSetRef(state, pattern, type, nextOccupied(state, type, cur, direction));
 }
 
+namespace {
+
+void jumpToPattern(UIState& state, uint8_t pattern) {
+    state.gotoPicker.active = false;
+    state.selectedPattern = pattern;
+    // Leaving a set view discards its uncommitted draft (setCurrentView restores it).
+    setCurrentView(state, ViewId::PATTERNS);
+}
+
+}  // namespace
+
+void openGotoPattern(UIState& state, SetType type) {
+    uint8_t slot = state.selectedGateSlot;
+    if (type == SetType::NOTE) slot = state.selectedNoteSlot;
+    else if (type == SetType::VELOCITY) slot = state.selectedVelocitySlot;
+
+    const uint16_t users = usersOf(state, type, slot);
+    state.setNotice = SetNotice::NONE;
+    if (users == 0) {
+        state.setNotice = SetNotice::UNUSED;  // R10.6
+        return;
+    }
+    if (popcount16(users) == 1) {
+        for (uint8_t p = 0; p < MAX_PATTERNS; ++p) {
+            if ((users >> p) & 1u) { jumpToPattern(state, p); return; }  // R10.7
+        }
+    }
+    uint8_t cursor = state.selectedPattern;
+    if (!((users >> cursor) & 1u)) {
+        cursor = 0;
+        while (!((users >> cursor) & 1u)) ++cursor;  // lowest candidate (users != 0)
+    }
+    state.gotoPicker.active = true;
+    state.gotoPicker.type = type;
+    state.gotoPicker.candidates = users;
+    state.gotoPicker.cursor = cursor;
+}
+
+void gotoPickerMove(UIState& state, int direction) {
+    GotoPicker& g = state.gotoPicker;
+    if (!g.active || g.candidates == 0) return;
+    const int step = direction < 0 ? -1 : 1;
+    int p = g.cursor;
+    for (uint8_t i = 0; i < MAX_PATTERNS; ++i) {
+        p = (p + step + MAX_PATTERNS) % MAX_PATTERNS;
+        if ((g.candidates >> p) & 1u) { g.cursor = static_cast<uint8_t>(p); return; }
+    }
+}
+
+void gotoPickerConfirm(UIState& state) {
+    if (!state.gotoPicker.active) return;
+    jumpToPattern(state, state.gotoPicker.cursor);
+}
+
+void gotoPickerCancel(UIState& state) {
+    state.gotoPicker.active = false;
+}
+
 void restoreSequencerFromState(const UIState& state) {
     // core1 launches with a single default pattern (index 0). Grow its pattern
     // vector to match the restored count using the same command the UI uses
@@ -982,6 +1041,34 @@ void reduce(UIState& state, const events::Event& event, ui::IView* activeView) {
             applyGlobal(state, event.data.key.id);
         }
         return;    // consumed either way - never reaches a view
+    }
+
+    // While the go-to picker is open it owns the keyboard: move, confirm, cancel; every other
+    // key is consumed so the set underneath cannot change (R10, design section 4).
+    if (state.gotoPicker.active) {
+        const bool pressed = event.type == events::EventType::KEY_PRESSED;
+        const bool movable = pressed || event.type == events::EventType::KEY_HELD;
+        switch (combo(event.data.key.id, event.data.key.mods)) {
+            case combo(KeyId::LEFT):
+            case combo(KeyId::UP):    if (movable) gotoPickerMove(state, -1); break;
+            case combo(KeyId::RIGHT):
+            case combo(KeyId::DOWN):  if (movable) gotoPickerMove(state, +1); break;
+            case combo(KeyId::ENTER): if (pressed) gotoPickerConfirm(state); break;
+            case combo(KeyId::ESCAPE): if (pressed) gotoPickerCancel(state); break;
+            default: break;
+        }
+        return;
+    }
+
+    // Ctrl+G in a set view: go to a pattern that uses the selected set (R10.1).
+    if (event.type == events::EventType::KEY_PRESSED &&
+        combo(event.data.key.id, event.data.key.mods) == combo(KeyId::G, mod::CTRL)) {
+        switch (state.currentView) {
+            case ViewId::GATE_SET:     openGotoPattern(state, SetType::GATE); return;
+            case ViewId::PITCH_SET:    openGotoPattern(state, SetType::NOTE); return;
+            case ViewId::VELOCITY_SET: openGotoPattern(state, SetType::VELOCITY); return;
+            default: break;
+        }
     }
 
     if (activeView) {

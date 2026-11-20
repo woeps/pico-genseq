@@ -1,5 +1,6 @@
 // separate-velocity-set-gate-set-and-note-set task 4.5 -- reducer fan-out and library actions.
 #include "framework.h"
+#include "helpers.h"
 #include "stubs/command_stub.h"
 #include "ui/state/Reducer.h"
 #include "ui/state/SetLibrary.h"
@@ -241,4 +242,157 @@ TEST(add_pattern_sends_gen_params_for_its_referenced_sets) {
     state::UIState s;
     state::addPattern(s);
     CHECK_EQ(commands::testing::countOf(Command::GEN_PARAMS_SET), 1);
+}
+
+// --- Go to pattern (task 5) ---------------------------------------------------
+
+namespace {
+
+ui::events::Event key(ui::KeyId id, uint8_t mods = ui::mod::NONE) {
+    return ui::events::Event::keyPressed(id, mods, 0);
+}
+
+// Patterns 0..3; 0, 1 and 3 share gate slot 0, pattern 2 uses gate slot 1.
+state::UIState gotoState() {
+    state::UIState s;
+    s.patternCount = 4;
+    uint8_t slot = 0;
+    state::createSet(s, state::SetType::GATE, slot);
+    s.patternRefs[2].gate = 1;
+    s.currentView = state::ViewId::GATE_SET;
+    s.selectedGateSlot = 0;
+    state::beginGateSetEdit(s);
+    return s;
+}
+
+}  // namespace
+
+TEST(goto_with_one_user_jumps_straight_to_that_pattern) {
+    state::UIState s = gotoState();
+    s.selectedGateSlot = 1;  // only pattern 2
+    state::beginGateSetEdit(s);
+    s = test::reduced(s, key(KeyId::G, mod::CTRL), nullptr);
+    CHECK(s.currentView == state::ViewId::PATTERNS);
+    CHECK_EQ(s.selectedPattern, 2);
+    CHECK(!s.gotoPicker.active);
+}
+
+TEST(goto_with_no_users_shows_unused_and_stays) {
+    state::UIState s = gotoState();
+    uint8_t slot = 0;
+    state::createSet(s, state::SetType::GATE, slot);  // slot 2, unused
+    s.selectedGateSlot = slot;
+    state::beginGateSetEdit(s);
+    s = test::reduced(s, key(KeyId::G, mod::CTRL), nullptr);
+    CHECK(s.currentView == state::ViewId::GATE_SET);
+    CHECK(s.setNotice == state::SetNotice::UNUSED);
+    CHECK(!s.gotoPicker.active);
+}
+
+TEST(goto_with_several_users_opens_picker_on_the_current_pattern_if_it_is_a_user) {
+    state::UIState s = gotoState();
+    s.selectedPattern = 3;
+    s = test::reduced(s, key(KeyId::G, mod::CTRL), nullptr);
+    CHECK(s.gotoPicker.active);
+    CHECK_EQ(s.gotoPicker.candidates, 0b1011);
+    CHECK_EQ(s.gotoPicker.cursor, 3);
+    CHECK(s.currentView == state::ViewId::GATE_SET);
+}
+
+TEST(goto_picker_starts_on_lowest_user_when_current_pattern_is_not_a_user) {
+    state::UIState s = gotoState();
+    s.selectedPattern = 2;  // uses slot 1, not slot 0
+    s = test::reduced(s, key(KeyId::G, mod::CTRL), nullptr);
+    CHECK(s.gotoPicker.active);
+    CHECK_EQ(s.gotoPicker.cursor, 0);
+}
+
+TEST(goto_picker_moves_over_candidates_with_wrap_and_confirms) {
+    state::UIState s = gotoState();
+    s.selectedPattern = 0;
+    s = test::reduced(s, key(KeyId::G, mod::CTRL), nullptr);
+    s = test::reduced(s, key(KeyId::RIGHT), nullptr);
+    CHECK_EQ(s.gotoPicker.cursor, 1);
+    s = test::reduced(s, key(KeyId::RIGHT), nullptr);
+    CHECK_EQ(s.gotoPicker.cursor, 3);  // pattern 2 is not a user
+    s = test::reduced(s, key(KeyId::RIGHT), nullptr);
+    CHECK_EQ(s.gotoPicker.cursor, 0);  // wraps
+    s = test::reduced(s, key(KeyId::LEFT), nullptr);
+    CHECK_EQ(s.gotoPicker.cursor, 3);
+
+    s = test::reduced(s, key(KeyId::ENTER), nullptr);
+    CHECK(s.currentView == state::ViewId::PATTERNS);
+    CHECK_EQ(s.selectedPattern, 3);
+    CHECK(!s.gotoPicker.active);
+}
+
+TEST(goto_cancel_keeps_slot_draft_and_view) {
+    state::UIState s = gotoState();
+    s.selectedGateSetProperty = state::GateSetProperty::PULSES;
+    state::adjustGateSetValue(s, 1);
+    CHECK(s.gateSetDirty);
+    const state::GateSetConfig draft = s.gateSetDraft;
+    s = test::reduced(s, key(KeyId::G, mod::CTRL), nullptr);
+    CHECK(s.gotoPicker.active);
+    s = test::reduced(s, key(KeyId::ESCAPE), nullptr);
+    CHECK(!s.gotoPicker.active);
+    CHECK(s.currentView == state::ViewId::GATE_SET);
+    CHECK_EQ(s.selectedGateSlot, 0);
+    CHECK(s.gateSetDirty);
+    CHECK(s.gateSetDraft == draft);
+}
+
+TEST(goto_confirm_discards_the_uncommitted_draft) {
+    state::UIState s = gotoState();
+    s.selectedGateSetProperty = state::GateSetProperty::PULSES;
+    state::adjustGateSetValue(s, 1);
+    const uint8_t committedPulses = s.gateLib.slots[0].pulses;
+    s = test::reduced(s, key(KeyId::G, mod::CTRL), nullptr);
+    s = test::reduced(s, key(KeyId::ENTER), nullptr);
+    CHECK(s.currentView == state::ViewId::PATTERNS);
+    CHECK(!s.gateSetDirty);
+    CHECK_EQ(s.gateLib.slots[0].pulses, committedPulses);
+    CHECK_EQ(s.gateSetDraft.pulses, committedPulses);
+}
+
+TEST(goto_picker_consumes_editing_keys) {
+    state::UIState s = gotoState();
+    s.selectedGateSetProperty = state::GateSetProperty::PULSES;
+    s = test::reduced(s, key(KeyId::G, mod::CTRL), nullptr);
+    const state::GateSetConfig before = s.gateSetDraft;
+    s = test::reduced(s, key(KeyId::UP, mod::SHIFT), nullptr);
+    s = test::reduced(s, key(KeyId::S), nullptr);
+    CHECK(s.gateSetDraft == before);
+    CHECK(s.gotoPicker.active);
+}
+
+TEST(goto_picker_closes_on_function_key_view_switch) {
+    state::UIState s = gotoState();
+    s = test::reduced(s, key(KeyId::G, mod::CTRL), nullptr);
+    CHECK(s.gotoPicker.active);
+    s = test::reduced(s, key(KeyId::F3), nullptr);
+    CHECK(!s.gotoPicker.active);
+    CHECK(s.currentView == state::ViewId::PATTERNS);
+}
+
+TEST(ctrl_g_outside_set_views_does_nothing) {
+    state::UIState s = gotoState();
+    s.currentView = state::ViewId::PATTERNS;
+    s = test::reduced(s, key(KeyId::G, mod::CTRL), nullptr);
+    CHECK(!s.gotoPicker.active);
+    CHECK(s.currentView == state::ViewId::PATTERNS);
+}
+
+TEST(goto_works_from_note_and_velocity_views) {
+    state::UIState s = gotoState();
+    s.currentView = state::ViewId::PITCH_SET;
+    s.selectedNoteSlot = 0;
+    s = test::reduced(s, key(KeyId::G, mod::CTRL), nullptr);
+    CHECK(s.gotoPicker.active);
+    CHECK(s.gotoPicker.type == state::SetType::NOTE);
+    s = test::reduced(s, key(KeyId::ESCAPE), nullptr);
+
+    s.currentView = state::ViewId::VELOCITY_SET;
+    s = test::reduced(s, key(KeyId::G, mod::CTRL), nullptr);
+    CHECK(s.gotoPicker.type == state::SetType::VELOCITY);
 }

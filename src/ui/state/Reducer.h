@@ -65,6 +65,20 @@ void assignSetRef(UIState& state, uint8_t pattern, SetType type, uint8_t slot);
 // Step a pattern's reference to the previous/next occupied slot of the library (wraps).
 void stepSetRef(UIState& state, uint8_t pattern, SetType type, int direction);
 
+// --- Go to pattern (Requirement 10) -------------------------------------------
+// From a set view: jump to a pattern that references the selected set. 0 users -> notice
+// UNUSED; 1 user -> jump straight there; several -> open the picker (state.gotoPicker).
+// reduce() routes Ctrl+G here while a set view is active, and while the picker is open
+// consumes every key except the global ones (see gotoPickerHandleKey).
+void openGotoPattern(UIState& state, SetType type);
+// Move the picker cursor to the previous/next candidate pattern (ascending, wraps).
+void gotoPickerMove(UIState& state, int direction);
+// Select the highlighted pattern and switch to the PatternsView; an uncommitted draft is
+// discarded (R10.3, R10.5).
+void gotoPickerConfirm(UIState& state);
+// Close the picker; slot, draft and view are unchanged (R10.4).
+void gotoPickerCancel(UIState& state);
+
 void restoreSequencerFromState(const UIState& state);
 
 } // namespace ui::state
