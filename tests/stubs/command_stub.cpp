@@ -10,6 +10,11 @@ std::vector<CommandMessage>& sentCommands() {
     return v;
 }
 void reset() { sentCommands().clear(); }
+size_t countOf(Command cmd) {
+    size_t n = 0;
+    for (const auto& m : sentCommands()) if (m.cmd == cmd) ++n;
+    return n;
+}
 } // namespace testing
 
 void sendCommand(Command cmd, uint8_t param1, uint8_t param2) {
@@ -40,6 +45,26 @@ void sendPitchSet(uint8_t patternIndex, uint8_t count,
     msg.pitchCount = std::min(msg.pitchCount, MAX_PITCH_SET_LENGTH);
     msg.pitchOrder = order;
     msg.pitches.assign(pitches.begin(), pitches.begin() + msg.pitchCount);
+    testing::sentCommands().push_back(msg);
+}
+
+void sendVelocitySet(uint8_t patternIndex, uint8_t count,
+                     common::PlayingOrder order, const std::vector<uint8_t>& velocities) {
+    CommandMessage msg;
+    msg.cmd = Command::PATTERN_VELOCITY_SET;
+    msg.param1 = patternIndex;
+    msg.velocityCount = static_cast<uint8_t>(
+        std::min(static_cast<size_t>(count), velocities.size()));
+    msg.velocityCount = std::min(msg.velocityCount, MAX_PITCH_SET_LENGTH);
+    msg.velocityOrder = order;
+    msg.velocities.assign(velocities.begin(), velocities.begin() + msg.velocityCount);
+    testing::sentCommands().push_back(msg);
+}
+
+void sendGenParams(uint8_t patternIndex, const common::GenerationParameters&) {
+    CommandMessage msg;
+    msg.cmd = Command::GEN_PARAMS_SET;
+    msg.param1 = patternIndex;
     testing::sentCommands().push_back(msg);
 }
 

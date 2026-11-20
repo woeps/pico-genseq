@@ -1,4 +1,5 @@
 #include "framework.h"
+#include "helpers.h"
 #include "stubs/command_stub.h"
 #include "stubs/hardware_stub.h"
 #include "ui/views/GateSetView.h"
@@ -21,8 +22,8 @@ template <typename View>
 void checkEscapeReturnsToPatterns(View& view, state::ViewId detailView) {
     state::UIState s;
     s.currentView = detailView;
-    CHECK(view.handleEvent(s, press(KeyId::ESCAPE)).currentView == state::ViewId::PATTERNS);
-    CHECK(view.handleEvent(s, press(KeyId::ENTER)).currentView == detailView);
+    CHECK(test::handle(view, s, press(KeyId::ESCAPE)).currentView == state::ViewId::PATTERNS);
+    CHECK(test::handle(view, s, press(KeyId::ENTER)).currentView == detailView);
 }
 
 }
@@ -35,20 +36,24 @@ TEST(gatesetview_starts_on_euclidean_algorithm_and_navigates_properties) {
 
     hardware::testing::resetMatrix();
     view.render(s);
-    CHECK_STREQ(hardware::testing::lastLabel(), "EUC");
+    CHECK_STREQ(hardware::testing::lastLabel(), "Alg");
+    CHECK_STREQ(hardware::testing::lastValueText(), "euc");
 
-    s = view.handleEvent(s, press(KeyId::RIGHT));
+    s = test::handle(view, s, press(KeyId::RIGHT));
     CHECK(s.selectedGateSetProperty == state::GateSetProperty::STEPS);
-    s = view.handleEvent(s, press(KeyId::RIGHT));
+    s = test::handle(view, s, press(KeyId::RIGHT));
     CHECK(s.selectedGateSetProperty == state::GateSetProperty::PULSES);
-    s = view.handleEvent(s, press(KeyId::RIGHT));
+    s = test::handle(view, s, press(KeyId::RIGHT));
     CHECK(s.selectedGateSetProperty == state::GateSetProperty::ROTATION);
-    s = view.handleEvent(s, press(KeyId::RIGHT));
+    s = test::handle(view, s, press(KeyId::RIGHT));
     CHECK(s.selectedGateSetProperty == state::GateSetProperty::NOTE_LENGTH);
-    s = view.handleEvent(s, press(KeyId::RIGHT));
+    s = test::handle(view, s, press(KeyId::RIGHT));
     CHECK(s.selectedGateSetProperty == state::GateSetProperty::LENGTH);
-    CHECK(view.handleEvent(s, press(KeyId::RIGHT)).selectedGateSetProperty == state::GateSetProperty::LENGTH);
-    CHECK(view.handleEvent(s, press(KeyId::LEFT)).selectedGateSetProperty == state::GateSetProperty::NOTE_LENGTH);
+    CHECK(test::handle(view, s, press(KeyId::RIGHT)).selectedGateSetProperty == state::GateSetProperty::PROBABILITY);
+    CHECK(test::handle(view, s, press(KeyId::LEFT)).selectedGateSetProperty == state::GateSetProperty::NOTE_LENGTH);
+    s = test::handle(view, s, press(KeyId::RIGHT));
+    s = test::handle(view, s, press(KeyId::RIGHT));
+    CHECK(s.selectedGateSetProperty == state::GateSetProperty::STEP_GRID);
 }
 
 TEST(gatesetview_edits_and_renders_musical_note_length) {
@@ -59,10 +64,10 @@ TEST(gatesetview_edits_and_renders_musical_note_length) {
     s.selectedGateSetProperty = state::GateSetProperty::NOTE_LENGTH;
     commands::testing::reset();
 
-    s = view.handleEvent(s, press(KeyId::UP));
+    s = test::handle(view, s, press(KeyId::UP));
     CHECK(s.gateSetDraft.noteLength == state::NoteLength::EIGHTH);
     CHECK(s.gateSetDirty);
-    CHECK_EQ(commands::testing::sentCommands().size(), 1);
+    CHECK_EQ(commands::testing::countOf(commands::Command::PATTERN_GATE_SET), 1);
     if (!commands::testing::sentCommands().empty()) {
         CHECK_EQ(commands::testing::sentCommands()[0].gateCount, 192);
     }
@@ -80,10 +85,10 @@ TEST(gatesetview_edits_send_live_preview_and_render_dirty_value) {
     s.selectedGateSetProperty = state::GateSetProperty::STEPS;
     commands::testing::reset();
 
-    const auto next = view.handleEvent(s, events::Event::keyHeld(KeyId::UP, mod::NONE, 0));
+    const auto next = test::handle(view, s, events::Event::keyHeld(KeyId::UP, mod::NONE, 0));
     CHECK_EQ(next.gateSetDraft.steps, 17);
     CHECK(next.gateSetDirty);
-    CHECK_EQ(commands::testing::sentCommands().size(), 1);
+    CHECK_EQ(commands::testing::countOf(commands::Command::PATTERN_GATE_SET), 1);
     if (!commands::testing::sentCommands().empty()) {
         const auto& command = commands::testing::sentCommands()[0];
         CHECK(command.cmd == commands::Command::PATTERN_GATE_SET);
@@ -104,20 +109,20 @@ TEST(gatesetview_enter_commits_and_escape_undoes_then_exits) {
     state::UIState s;
     s.currentView = state::ViewId::GATE_SET;
     s.selectedGateSetProperty = state::GateSetProperty::PULSES;
-    s = view.handleEvent(s, press(KeyId::UP));
+    s = test::handle(view, s, press(KeyId::UP));
     commands::testing::reset();
 
-    auto undone = view.handleEvent(s, press(KeyId::ESCAPE));
+    auto undone = test::handle(view, s, press(KeyId::ESCAPE));
     CHECK(undone.currentView == state::ViewId::GATE_SET);
     CHECK(!undone.gateSetDirty);
     CHECK_EQ(undone.gateSetDraft.pulses, 4);
-    CHECK_EQ(commands::testing::sentCommands().size(), 1);
-    CHECK(view.handleEvent(undone, press(KeyId::ESCAPE)).currentView == state::ViewId::PATTERNS);
+    CHECK_EQ(commands::testing::countOf(commands::Command::PATTERN_GATE_SET), 1);
+    CHECK(test::handle(view, undone, press(KeyId::ESCAPE)).currentView == state::ViewId::PATTERNS);
 
-    s = view.handleEvent(s, press(KeyId::ENTER));
+    s = test::handle(view, s, press(KeyId::ENTER));
     CHECK(!s.gateSetDirty);
     CHECK_EQ(s.gateSetOf(0).pulses, 5);
-    CHECK(view.handleEvent(s, press(KeyId::ESCAPE)).currentView == state::ViewId::PATTERNS);
+    CHECK(test::handle(view, s, press(KeyId::ESCAPE)).currentView == state::ViewId::PATTERNS);
 }
 
 TEST(gatesetview_clamps_dependent_euclidean_values) {
@@ -129,7 +134,7 @@ TEST(gatesetview_clamps_dependent_euclidean_values) {
                       state::NoteLength::SIXTEENTH, 50};
     s.selectedGateSetProperty = state::GateSetProperty::STEPS;
 
-    const auto next = view.handleEvent(s, press(KeyId::DOWN));
+    const auto next = test::handle(view, s, press(KeyId::DOWN));
     CHECK_EQ(next.gateSetDraft.steps, 15);
     CHECK_EQ(next.gateSetDraft.pulses, 15);
     CHECK_EQ(next.gateSetDraft.rotation, 14);
@@ -145,23 +150,23 @@ TEST(gatesetview_obeys_euclidean_field_bounds) {
     commands::testing::reset();
 
     s.selectedGateSetProperty = state::GateSetProperty::STEPS;
-    CHECK_EQ(view.handleEvent(s, press(KeyId::UP)).gateSetDraft.steps, 64);
+    CHECK_EQ(test::handle(view, s, press(KeyId::UP)).gateSetDraft.steps, 64);
     s.selectedGateSetProperty = state::GateSetProperty::PULSES;
-    CHECK_EQ(view.handleEvent(s, press(KeyId::DOWN)).gateSetDraft.pulses, 0);
+    CHECK_EQ(test::handle(view, s, press(KeyId::DOWN)).gateSetDraft.pulses, 0);
     s.selectedGateSetProperty = state::GateSetProperty::ROTATION;
-    CHECK_EQ(view.handleEvent(s, press(KeyId::DOWN)).gateSetDraft.rotation, 0);
+    CHECK_EQ(test::handle(view, s, press(KeyId::DOWN)).gateSetDraft.rotation, 0);
     s.selectedGateSetProperty = state::GateSetProperty::NOTE_LENGTH;
-    CHECK(view.handleEvent(s, press(KeyId::UP)).gateSetDraft.noteLength == state::NoteLength::WHOLE);
+    CHECK(test::handle(view, s, press(KeyId::UP)).gateSetDraft.noteLength == state::NoteLength::WHOLE);
     s.selectedGateSetProperty = state::GateSetProperty::LENGTH;
-    CHECK_EQ(view.handleEvent(s, press(KeyId::UP)).gateSetDraft.gateLength, 100);
+    CHECK_EQ(test::handle(view, s, press(KeyId::UP)).gateSetDraft.gateLength, 100);
     s.gateSetDraft.noteLength = state::NoteLength::THIRTY_SECOND;
     s.selectedGateSetProperty = state::GateSetProperty::NOTE_LENGTH;
-    CHECK(view.handleEvent(s, press(KeyId::DOWN)).gateSetDraft.noteLength == state::NoteLength::THIRTY_SECOND);
+    CHECK(test::handle(view, s, press(KeyId::DOWN)).gateSetDraft.noteLength == state::NoteLength::THIRTY_SECOND);
     s.gateSetDraft.gateLength = 0;
     s.selectedGateSetProperty = state::GateSetProperty::LENGTH;
-    CHECK_EQ(view.handleEvent(s, press(KeyId::DOWN)).gateSetDraft.gateLength, 0);
+    CHECK_EQ(test::handle(view, s, press(KeyId::DOWN)).gateSetDraft.gateLength, 0);
     s.selectedGateSetProperty = state::GateSetProperty::ALGORITHM;
-    CHECK(view.handleEvent(s, press(KeyId::UP)).gateSetDraft.algorithm == state::GateAlgorithm::EUCLIDEAN);
+    CHECK(test::handle(view, s, press(KeyId::UP)).gateSetDraft.algorithm == state::GateAlgorithm::EUCLIDEAN);
     CHECK_EQ(commands::testing::sentCommands().size(), 0);
 }
 
@@ -170,11 +175,17 @@ TEST(gatesetview_clears_dirty_when_edited_back_to_committed_value) {
     GateSetView view{matrix};
     state::UIState s;
     s.currentView = state::ViewId::GATE_SET;
+    // Entering the view seeds the DRAFT's per-step gate states; commit them once so the
+    // committed config matches what the generator produces (a never-committed default has
+    // all-zero gateStates, which no edited draft can ever equal).
+    state::beginGateSetEdit(s);
+    state::commitGateSetEdit(s);
+    state::beginGateSetEdit(s);
     s.selectedGateSetProperty = state::GateSetProperty::PULSES;
 
-    s = view.handleEvent(s, press(KeyId::UP));
+    s = test::handle(view, s, press(KeyId::UP));
     CHECK(s.gateSetDirty);
-    s = view.handleEvent(s, press(KeyId::DOWN));
+    s = test::handle(view, s, press(KeyId::DOWN));
     CHECK(!s.gateSetDirty);
     CHECK_EQ(s.gateSetDraft.pulses, 4);
 }
@@ -198,31 +209,36 @@ TEST(pitchsetview_navigates_through_count_order_and_pitches) {
     s.currentView = state::ViewId::PITCH_SET;
     s.selectedPitchSetField = state::PITCH_SET_FIELD_COUNT;
 
-    s = view.handleEvent(s, press(KeyId::RIGHT));
+    s = test::handle(view, s, press(KeyId::RIGHT));
     CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_ORDER);
-    s = view.handleEvent(s, press(KeyId::RIGHT));
+    s = test::handle(view, s, press(KeyId::RIGHT));
     CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_PITCH_BASE + 0);
-    s = view.handleEvent(s, press(KeyId::RIGHT));
+    s = test::handle(view, s, press(KeyId::RIGHT));
     CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_PITCH_BASE + 1);
-    s = view.handleEvent(s, press(KeyId::RIGHT));
+    s = test::handle(view, s, press(KeyId::RIGHT));
     CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_PITCH_BASE + 2);
-    s = view.handleEvent(s, press(KeyId::RIGHT));
+    s = test::handle(view, s, press(KeyId::RIGHT));
     CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_PITCH_BASE + 3);
     // clamp at last pitch
-    CHECK_EQ(view.handleEvent(s, press(KeyId::RIGHT)).selectedPitchSetField,
+    CHECK_EQ(test::handle(view, s, press(KeyId::RIGHT)).selectedPitchSetField,
              state::PITCH_SET_FIELD_PITCH_BASE + 3);
     // go back
-    s = view.handleEvent(s, press(KeyId::LEFT));
+    s = test::handle(view, s, press(KeyId::LEFT));
     CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_PITCH_BASE + 2);
-    s = view.handleEvent(s, press(KeyId::LEFT));
-    s = view.handleEvent(s, press(KeyId::LEFT));
-    s = view.handleEvent(s, press(KeyId::LEFT));
+    s = test::handle(view, s, press(KeyId::LEFT));
+    s = test::handle(view, s, press(KeyId::LEFT));
+    s = test::handle(view, s, press(KeyId::LEFT));
     CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_ORDER);
-    s = view.handleEvent(s, press(KeyId::LEFT));
+    s = test::handle(view, s, press(KeyId::LEFT));
     CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_COUNT);
-    // clamp at count
-    CHECK_EQ(view.handleEvent(s, press(KeyId::LEFT)).selectedPitchSetField,
-             state::PITCH_SET_FIELD_COUNT);
+    // the scale controls sit to the left of COUNT; navigation clamps at SCALE
+    s = test::handle(view, s, press(KeyId::LEFT));
+    CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_QUANTIZE);
+    s = test::handle(view, s, press(KeyId::LEFT));
+    s = test::handle(view, s, press(KeyId::LEFT));
+    CHECK_EQ(s.selectedPitchSetField, state::PITCH_SET_FIELD_SCALE);
+    CHECK_EQ(test::handle(view, s, press(KeyId::LEFT)).selectedPitchSetField,
+             state::PITCH_SET_FIELD_SCALE);
 }
 
 TEST(pitchsetview_edits_count_and_duplicates_last_pitch) {
@@ -233,7 +249,7 @@ TEST(pitchsetview_edits_count_and_duplicates_last_pitch) {
     s.selectedPitchSetField = state::PITCH_SET_FIELD_COUNT;
     commands::testing::reset();
 
-    s = view.handleEvent(s, press(KeyId::UP));
+    s = test::handle(view, s, press(KeyId::UP));
     CHECK_EQ(s.pitchSetDraft.count, 5);
     CHECK_EQ(s.pitchSetDraft.pitches[4], 72);  // duplicated last pitch (72)
     CHECK(s.pitchSetDirty);
@@ -247,7 +263,7 @@ TEST(pitchsetview_edits_count_and_duplicates_last_pitch) {
     }
 
     // shrink back
-    s = view.handleEvent(s, press(KeyId::DOWN));
+    s = test::handle(view, s, press(KeyId::DOWN));
     CHECK_EQ(s.pitchSetDraft.count, 4);
     CHECK(!s.pitchSetDirty);
 }
@@ -260,10 +276,10 @@ TEST(pitchsetview_clamps_count_to_1_and_16) {
     s.selectedPitchSetField = state::PITCH_SET_FIELD_COUNT;
     s.pitchSetDraft.count = 1;
 
-    CHECK_EQ(view.handleEvent(s, press(KeyId::DOWN)).pitchSetDraft.count, 1);
+    CHECK_EQ(test::handle(view, s, press(KeyId::DOWN)).pitchSetDraft.count, 1);
 
     s.pitchSetDraft.count = 16;
-    CHECK_EQ(view.handleEvent(s, press(KeyId::UP)).pitchSetDraft.count, 16);
+    CHECK_EQ(test::handle(view, s, press(KeyId::UP)).pitchSetDraft.count, 16);
 }
 
 TEST(pitchsetview_edits_order_and_renders_label) {
@@ -274,26 +290,26 @@ TEST(pitchsetview_edits_order_and_renders_label) {
     s.selectedPitchSetField = state::PITCH_SET_FIELD_ORDER;
     commands::testing::reset();
 
-    s = view.handleEvent(s, press(KeyId::UP));
+    s = test::handle(view, s, press(KeyId::UP));
     CHECK(s.pitchSetDraft.order == common::PlayingOrder::BACKWARDS);
     CHECK(s.pitchSetDirty);
     CHECK_EQ(commands::testing::sentCommands().size(), 1);
 
-    s = view.handleEvent(s, press(KeyId::UP));
+    s = test::handle(view, s, press(KeyId::UP));
     CHECK(s.pitchSetDraft.order == common::PlayingOrder::PENDULUM);
 
-    s = view.handleEvent(s, press(KeyId::UP));
+    s = test::handle(view, s, press(KeyId::UP));
     CHECK(s.pitchSetDraft.order == common::PlayingOrder::RANDOM);
 
     // clamp at RANDOM
-    CHECK(view.handleEvent(s, press(KeyId::UP)).pitchSetDraft.order == common::PlayingOrder::RANDOM);
+    CHECK(test::handle(view, s, press(KeyId::UP)).pitchSetDraft.order == common::PlayingOrder::RANDOM);
 
-    s = view.handleEvent(s, press(KeyId::DOWN));
+    s = test::handle(view, s, press(KeyId::DOWN));
     CHECK(s.pitchSetDraft.order == common::PlayingOrder::PENDULUM);
 
     hardware::testing::resetMatrix();
     view.render(s);
-    CHECK_STREQ(hardware::testing::lastLabel(), "Pnd");
+    CHECK_STREQ(hardware::testing::lastValueText(), "Pnd");
 }
 
 TEST(pitchsetview_edits_pitch_and_renders_note_name) {
@@ -304,7 +320,7 @@ TEST(pitchsetview_edits_pitch_and_renders_note_name) {
     s.selectedPitchSetField = state::PITCH_SET_FIELD_PITCH_BASE;
     commands::testing::reset();
 
-    s = view.handleEvent(s, press(KeyId::UP));
+    s = test::handle(view, s, press(KeyId::UP));
     CHECK_EQ(s.pitchSetDraft.pitches[0], 61);
     CHECK(s.pitchSetDirty);
     CHECK_EQ(commands::testing::sentCommands().size(), 1);
@@ -370,10 +386,10 @@ TEST(pitchsetview_clamps_pitch_to_0_and_127) {
     s.selectedPitchSetField = state::PITCH_SET_FIELD_PITCH_BASE;
 
     s.pitchSetDraft.pitches[0] = 0;
-    CHECK_EQ(view.handleEvent(s, press(KeyId::DOWN)).pitchSetDraft.pitches[0], 0);
+    CHECK_EQ(test::handle(view, s, press(KeyId::DOWN)).pitchSetDraft.pitches[0], 0);
 
     s.pitchSetDraft.pitches[0] = 127;
-    CHECK_EQ(view.handleEvent(s, press(KeyId::UP)).pitchSetDraft.pitches[0], 127);
+    CHECK_EQ(test::handle(view, s, press(KeyId::UP)).pitchSetDraft.pitches[0], 127);
 }
 
 TEST(pitchsetview_enter_commits_and_escape_undoes_then_exits) {
@@ -382,22 +398,22 @@ TEST(pitchsetview_enter_commits_and_escape_undoes_then_exits) {
     state::UIState s;
     s.currentView = state::ViewId::PITCH_SET;
     s.selectedPitchSetField = state::PITCH_SET_FIELD_PITCH_BASE;
-    s = view.handleEvent(s, press(KeyId::UP));
+    s = test::handle(view, s, press(KeyId::UP));
     CHECK(s.pitchSetDirty);
     commands::testing::reset();
 
-    auto undone = view.handleEvent(s, press(KeyId::ESCAPE));
+    auto undone = test::handle(view, s, press(KeyId::ESCAPE));
     CHECK(undone.currentView == state::ViewId::PITCH_SET);
     CHECK(!undone.pitchSetDirty);
     CHECK_EQ(undone.pitchSetDraft.pitches[0], 60);
-    CHECK_EQ(commands::testing::sentCommands().size(), 1);
-    CHECK(view.handleEvent(undone, press(KeyId::ESCAPE)).currentView == state::ViewId::PATTERNS);
+    CHECK_EQ(commands::testing::countOf(commands::Command::PATTERN_PITCH_SET), 1);
+    CHECK(test::handle(view, undone, press(KeyId::ESCAPE)).currentView == state::ViewId::PATTERNS);
 
     // commit path
-    s = view.handleEvent(s, press(KeyId::ENTER));
+    s = test::handle(view, s, press(KeyId::ENTER));
     CHECK(!s.pitchSetDirty);
     CHECK_EQ(s.pitchSetOf(0).pitches[0], 61);
-    CHECK(view.handleEvent(s, press(KeyId::ESCAPE)).currentView == state::ViewId::PATTERNS);
+    CHECK(test::handle(view, s, press(KeyId::ESCAPE)).currentView == state::ViewId::PATTERNS);
 }
 
 TEST(pitchsetview_clears_dirty_when_edited_back_to_committed_value) {
@@ -407,9 +423,9 @@ TEST(pitchsetview_clears_dirty_when_edited_back_to_committed_value) {
     s.currentView = state::ViewId::PITCH_SET;
     s.selectedPitchSetField = state::PITCH_SET_FIELD_PITCH_BASE;
 
-    s = view.handleEvent(s, press(KeyId::UP));
+    s = test::handle(view, s, press(KeyId::UP));
     CHECK(s.pitchSetDirty);
-    s = view.handleEvent(s, press(KeyId::DOWN));
+    s = test::handle(view, s, press(KeyId::DOWN));
     CHECK(!s.pitchSetDirty);
     CHECK_EQ(s.pitchSetDraft.pitches[0], 60);
 }
@@ -432,7 +448,7 @@ TEST(velocitysetview_renders_title_and_escape_returns_to_patterns) {
     VelocitySetView view{matrix};
     hardware::testing::resetMatrix();
     view.render(state::UIState{});
-    CHECK_STREQ(hardware::testing::lastLabel(), "VEL");
+    CHECK_STREQ(hardware::testing::lastLabel(), "Cnt");
     checkEscapeReturnsToPatterns(view, state::ViewId::VELOCITY_SET);
 }
 

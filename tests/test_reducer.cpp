@@ -1,6 +1,8 @@
 #include "framework.h"
+#include "helpers.h"
 #include "stubs/command_stub.h"
 #include "ui/state/Reducer.h"
+#include "ui/state/SetLibrary.h"
 #include "ui/state/UIState.h"
 #include "ui/views/IView.h"
 #include "ui/Event.h"
@@ -15,12 +17,10 @@ public:
     int eventsSeen = 0;
     KeyId lastKey = KeyId::NONE;
 
-    state::UIState handleEvent(const state::UIState& state, const events::Event& event) override {
+    void handleEvent(state::UIState& state, const events::Event& event) override {
         ++eventsSeen;
         lastKey = event.data.key.id;
-        state::UIState next = state;
-        next.value = 42;            // sentinel: the view ran
-        return next;
+        state.value = 42;           // sentinel: the view ran
     }
 
     void render(const state::UIState&) override {}
@@ -36,21 +36,21 @@ TEST(reduce_f1_switches_to_init_view) {
     FakeView view;
     state::UIState s;
     s.currentView = state::ViewId::SETTINGS;
-    const auto next = state::reduce(s, press(KeyId::F1), &view);
+    const auto next = test::reduced(s, press(KeyId::F1), &view);
     CHECK(next.currentView == state::ViewId::INIT);
     CHECK_EQ(view.eventsSeen, 0);
 }
 
 TEST(reduce_f2_switches_to_settings_view) {
     FakeView view;
-    const auto next = state::reduce(state::UIState{}, press(KeyId::F2), &view);
+    const auto next = test::reduced(state::UIState{}, press(KeyId::F2), &view);
     CHECK(next.currentView == state::ViewId::SETTINGS);
     CHECK_EQ(view.eventsSeen, 0);
 }
 
 TEST(reduce_f3_switches_to_patterns_view) {
     FakeView view;
-    const auto next = state::reduce(state::UIState{}, press(KeyId::F3), &view);
+    const auto next = test::reduced(state::UIState{}, press(KeyId::F3), &view);
     CHECK(next.currentView == state::ViewId::PATTERNS);
     CHECK_EQ(view.eventsSeen, 0);
 }
@@ -61,7 +61,7 @@ TEST(reduce_consumes_unbound_function_keys_without_effect) {
     s.currentView = state::ViewId::SETTINGS;
     for (uint8_t usage = static_cast<uint8_t>(KeyId::F4);
          usage <= static_cast<uint8_t>(KeyId::F12); ++usage) {
-        const auto next = state::reduce(s, press(static_cast<KeyId>(usage)), &view);
+        const auto next = test::reduced(s, press(static_cast<KeyId>(usage)), &view);
         CHECK(next.currentView == state::ViewId::SETTINGS);
     }
     CHECK_EQ(view.eventsSeen, 0);
@@ -71,7 +71,7 @@ TEST(reduce_reserves_function_keys_regardless_of_modifiers) {
     FakeView view;
     state::UIState s;
     s.currentView = state::ViewId::SETTINGS;
-    const auto next = state::reduce(s, press(KeyId::F1, mod::SHIFT), &view);
+    const auto next = test::reduced(s, press(KeyId::F1, mod::SHIFT), &view);
     CHECK(next.currentView == state::ViewId::SETTINGS);   // modified: consumed, no effect
     CHECK_EQ(view.eventsSeen, 0);                          // and never reaches the view
 }
@@ -82,10 +82,10 @@ TEST(reduce_space_toggles_playing_and_sends_commands) {
 
     state::UIState stopped;
     stopped.playing = false;
-    const auto started = state::reduce(stopped, press(KeyId::SPACE), &view);
+    const auto started = test::reduced(stopped, press(KeyId::SPACE), &view);
     CHECK(started.playing);
 
-    const auto stoppedAgain = state::reduce(started, press(KeyId::SPACE), &view);
+    const auto stoppedAgain = test::reduced(started, press(KeyId::SPACE), &view);
     CHECK(!stoppedAgain.playing);
 
     auto& cmds = commands::testing::sentCommands();
@@ -102,10 +102,10 @@ TEST(reduce_absorbs_release_and_repeat_of_reserved_keys) {
     state::UIState s;
     s.playing = false;
 
-    const auto afterRelease = state::reduce(s, events::Event::keyReleased(KeyId::SPACE, mod::NONE, 0), &view);
+    const auto afterRelease = test::reduced(s, events::Event::keyReleased(KeyId::SPACE, mod::NONE, 0), &view);
     CHECK(!afterRelease.playing);
 
-    const auto afterHeld = state::reduce(s, events::Event::keyHeld(KeyId::SPACE, mod::NONE, 0), &view);
+    const auto afterHeld = test::reduced(s, events::Event::keyHeld(KeyId::SPACE, mod::NONE, 0), &view);
     CHECK(!afterHeld.playing);
 
     CHECK_EQ(view.eventsSeen, 0);
@@ -113,7 +113,7 @@ TEST(reduce_absorbs_release_and_repeat_of_reserved_keys) {
 
 TEST(reduce_delegates_unreserved_keys_to_the_active_view) {
     FakeView view;
-    const auto next = state::reduce(state::UIState{}, press(KeyId::UP), &view);
+    const auto next = test::reduced(state::UIState{}, press(KeyId::UP), &view);
     CHECK_EQ(next.value, 42);
     CHECK_EQ(view.eventsSeen, 1);
     CHECK(view.lastKey == KeyId::UP);
@@ -122,7 +122,7 @@ TEST(reduce_delegates_unreserved_keys_to_the_active_view) {
 TEST(reduce_returns_state_unchanged_without_an_active_view) {
     state::UIState s;
     s.value = 7;
-    const auto next = state::reduce(s, press(KeyId::UP), nullptr);
+    const auto next = test::reduced(s, press(KeyId::UP), nullptr);
     CHECK_EQ(next.value, 7);
 }
 
@@ -180,39 +180,49 @@ TEST(remove_pattern_shifts_a_later_selection_with_compacted_indices) {
     CHECK_EQ(s.selectedPattern, 3);
 }
 
-TEST(add_pattern_initializes_and_sends_default_gate_set) {
+TEST(add_pattern_references_lowest_occupied_sets_and_sends_them) {
     commands::testing::reset();
     state::UIState s;
     s.patternCount = 2;
-    s.gateSetOf(2).steps = 7;
+    s.gateSetOf(0).steps = 7;  // pattern 0 and the new pattern share gate slot 0
 
     state::addPattern(s);
 
-    CHECK_EQ(s.gateSetOf(2).steps, 16);
-    CHECK_EQ(commands::testing::sentCommands().size(), 3);
-    if (commands::testing::sentCommands().size() >= 3) {
-        CHECK(commands::testing::sentCommands()[0].cmd == commands::Command::PATTERN_ADD);
-        CHECK(commands::testing::sentCommands()[1].cmd == commands::Command::PATTERN_GATE_SET);
-        CHECK_EQ(commands::testing::sentCommands()[1].param1, 2);
-        CHECK_EQ(commands::testing::sentCommands()[1].gateCount, 96);
-        CHECK(commands::testing::sentCommands()[2].cmd == commands::Command::PATTERN_PITCH_SET);
-        CHECK_EQ(commands::testing::sentCommands()[2].param1, 2);
-        CHECK_EQ(commands::testing::sentCommands()[2].pitchCount, 4);
+    CHECK_EQ(s.patternCount, 3);
+    CHECK_EQ(s.patternRefs[2].gate, 0);
+    CHECK_EQ(s.gateSetOf(2).steps, 7);  // a new pattern shares the lowest occupied set
+    CHECK_EQ(commands::testing::countOf(commands::Command::PATTERN_ADD), 1);
+    auto& cmds = commands::testing::sentCommands();
+    CHECK(!cmds.empty() && cmds[0].cmd == commands::Command::PATTERN_ADD);
+    bool sawGate = false;
+    for (const auto& c : cmds) {
+        if (c.cmd == commands::Command::PATTERN_GATE_SET) {
+            sawGate = true;
+            CHECK_EQ(c.param1, 2);
+        }
     }
+    CHECK(sawGate);
 }
 
-TEST(remove_pattern_compacts_gate_set_configs) {
+TEST(remove_pattern_compacts_references_and_keeps_sets) {
     state::UIState s;
     s.patternCount = 3;
-    s.gateSetOf(0).steps = 8;
-    s.gateSetOf(1).steps = 12;
-    s.gateSetOf(2).steps = 24;
+    uint8_t slot = 0;
+    state::createSet(s, state::SetType::GATE, slot);
+    state::createSet(s, state::SetType::GATE, slot);
+    s.patternRefs[0].gate = 0;
+    s.patternRefs[1].gate = 1;
+    s.patternRefs[2].gate = 2;
+    s.gateLib.slots[1].steps = 12;
+    s.gateLib.slots[2].steps = 24;
 
     state::removePattern(s, 1);
 
-    CHECK_EQ(s.gateSetOf(0).steps, 8);
+    CHECK_EQ(s.patternRefs[0].gate, 0);
+    CHECK_EQ(s.patternRefs[1].gate, 2);
     CHECK_EQ(s.gateSetOf(1).steps, 24);
-    CHECK_EQ(s.gateSetOf(2).steps, 16);
+    CHECK_EQ(s.gateLib.slots[1].steps, 12);  // orphaned set kept
+    CHECK_EQ(s.gateLib.occupied, 0x0007);
 }
 
 TEST(sync_gate_set_supports_long_musical_cycles) {
@@ -237,15 +247,12 @@ TEST(leaving_dirty_gate_set_view_restores_committed_preview) {
     s.gateSetDraft.steps = 20;
     s.gateSetDirty = true;
 
-    const auto next = state::reduce(s, press(KeyId::F1), nullptr);
+    const auto next = test::reduced(s, press(KeyId::F1), nullptr);
 
     CHECK(next.currentView == state::ViewId::INIT);
     CHECK(!next.gateSetDirty);
     CHECK_EQ(next.gateSetDraft.steps, 16);
-    CHECK_EQ(commands::testing::sentCommands().size(), 1);
-    if (!commands::testing::sentCommands().empty()) {
-        CHECK(commands::testing::sentCommands()[0].cmd == commands::Command::PATTERN_GATE_SET);
-    }
+    CHECK_EQ(commands::testing::countOf(commands::Command::PATTERN_GATE_SET), 1);
 }
 
 TEST(leaving_dirty_pitch_set_view_restores_committed_preview) {
@@ -255,18 +262,15 @@ TEST(leaving_dirty_pitch_set_view_restores_committed_preview) {
     s.pitchSetDraft.pitches[0] = 99;
     s.pitchSetDirty = true;
 
-    const auto next = state::reduce(s, press(KeyId::F1), nullptr);
+    const auto next = test::reduced(s, press(KeyId::F1), nullptr);
 
     CHECK(next.currentView == state::ViewId::INIT);
     CHECK(!next.pitchSetDirty);
     CHECK_EQ(next.pitchSetDraft.pitches[0], 60);
-    CHECK_EQ(commands::testing::sentCommands().size(), 1);
-    if (!commands::testing::sentCommands().empty()) {
-        CHECK(commands::testing::sentCommands()[0].cmd == commands::Command::PATTERN_PITCH_SET);
-    }
+    CHECK_EQ(commands::testing::countOf(commands::Command::PATTERN_PITCH_SET), 1);
 }
 
-TEST(add_pattern_initializes_and_sends_default_pitch_set) {
+TEST(add_pattern_sends_referenced_pitch_set) {
     commands::testing::reset();
     state::UIState s;
     s.patternCount = 2;
@@ -275,10 +279,8 @@ TEST(add_pattern_initializes_and_sends_default_pitch_set) {
 
     CHECK_EQ(s.pitchSetOf(2).count, 4);
     CHECK_EQ(s.pitchSetOf(2).pitches[0], 60);
-    auto& cmds = commands::testing::sentCommands();
-    // PATTERN_ADD, PATTERN_GATE_SET, PATTERN_PITCH_SET
     bool hasPitchSet = false;
-    for (const auto& c : cmds) {
+    for (const auto& c : commands::testing::sentCommands()) {
         if (c.cmd == commands::Command::PATTERN_PITCH_SET) {
             hasPitchSet = true;
             CHECK_EQ(c.param1, 2);
@@ -287,20 +289,6 @@ TEST(add_pattern_initializes_and_sends_default_pitch_set) {
         }
     }
     CHECK(hasPitchSet);
-}
-
-TEST(remove_pattern_compacts_pitch_set_configs) {
-    state::UIState s;
-    s.patternCount = 3;
-    s.pitchSetOf(0).pitches[0] = 60;
-    s.pitchSetOf(1).pitches[0] = 62;
-    s.pitchSetOf(2).pitches[0] = 64;
-
-    state::removePattern(s, 1);
-
-    CHECK_EQ(s.pitchSetOf(0).pitches[0], 60);
-    CHECK_EQ(s.pitchSetOf(1).pitches[0], 64);
-    CHECK_EQ(s.pitchSetOf(2).pitches[0], 60);  // reset to default
 }
 
 TEST(sync_pitch_set_sends_configured_pitches) {

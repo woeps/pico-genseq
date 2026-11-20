@@ -1,4 +1,5 @@
 #include "framework.h"
+#include "helpers.h"
 #include "stubs/command_stub.h"
 #include "stubs/hardware_stub.h"
 #include "ui/views/PatternsView.h"
@@ -24,17 +25,17 @@ TEST(patternsview_plain_arrows_select_sets_spatially) {
     Fixture f;
     state::UIState s;
 
-    auto pitch = f.view.handleEvent(s, press(KeyId::RIGHT));
+    auto pitch = test::handle(f.view, s, press(KeyId::RIGHT));
     CHECK(pitch.selectedPatternSet == state::PatternSet::PITCH);
-    CHECK(f.view.handleEvent(pitch, press(KeyId::DOWN)).selectedPatternSet == state::PatternSet::PITCH);
+    CHECK(test::handle(f.view, pitch, press(KeyId::DOWN)).selectedPatternSet == state::PatternSet::PITCH);
 
-    auto gate = f.view.handleEvent(pitch, press(KeyId::LEFT));
+    auto gate = test::handle(f.view, pitch, press(KeyId::LEFT));
     CHECK(gate.selectedPatternSet == state::PatternSet::GATE);
 
-    auto velocity = f.view.handleEvent(gate, press(KeyId::DOWN));
+    auto velocity = test::handle(f.view, gate, press(KeyId::DOWN));
     CHECK(velocity.selectedPatternSet == state::PatternSet::VELOCITY);
-    CHECK(f.view.handleEvent(velocity, press(KeyId::RIGHT)).selectedPatternSet == state::PatternSet::VELOCITY);
-    CHECK(f.view.handleEvent(velocity, press(KeyId::UP)).selectedPatternSet == state::PatternSet::GATE);
+    CHECK(test::handle(f.view, velocity, press(KeyId::RIGHT)).selectedPatternSet == state::PatternSet::VELOCITY);
+    CHECK(test::handle(f.view, velocity, press(KeyId::UP)).selectedPatternSet == state::PatternSet::GATE);
 }
 
 TEST(patternsview_ctrl_arrows_navigate_pattern_grid) {
@@ -43,10 +44,10 @@ TEST(patternsview_ctrl_arrows_navigate_pattern_grid) {
     s.patternCount = 8;
     s.selectedPattern = 6;
 
-    CHECK_EQ(f.view.handleEvent(s, press(KeyId::UP, mod::CTRL)).selectedPattern, 1);
-    CHECK_EQ(f.view.handleEvent(s, press(KeyId::DOWN, mod::CTRL)).selectedPattern, 8);
-    CHECK_EQ(f.view.handleEvent(s, press(KeyId::LEFT, mod::CTRL)).selectedPattern, 5);
-    CHECK_EQ(f.view.handleEvent(s, press(KeyId::RIGHT, mod::CTRL)).selectedPattern, 7);
+    CHECK_EQ(test::handle(f.view, s, press(KeyId::UP, mod::CTRL)).selectedPattern, 1);
+    CHECK_EQ(test::handle(f.view, s, press(KeyId::DOWN, mod::CTRL)).selectedPattern, 8);
+    CHECK_EQ(test::handle(f.view, s, press(KeyId::LEFT, mod::CTRL)).selectedPattern, 5);
+    CHECK_EQ(test::handle(f.view, s, press(KeyId::RIGHT, mod::CTRL)).selectedPattern, 7);
 }
 
 TEST(patternsview_ctrl_navigation_obeys_bounds_and_full_capacity) {
@@ -55,12 +56,12 @@ TEST(patternsview_ctrl_navigation_obeys_bounds_and_full_capacity) {
     s.patternCount = 15;
     s.selectedPattern = 14;
 
-    CHECK_EQ(f.view.handleEvent(s, press(KeyId::RIGHT, mod::CTRL)).selectedPattern, 14);
-    CHECK_EQ(f.view.handleEvent(s, press(KeyId::DOWN, mod::CTRL)).selectedPattern, 14);
+    CHECK_EQ(test::handle(f.view, s, press(KeyId::RIGHT, mod::CTRL)).selectedPattern, 14);
+    CHECK_EQ(test::handle(f.view, s, press(KeyId::DOWN, mod::CTRL)).selectedPattern, 14);
 
     s.selectedPattern = 0;
-    CHECK_EQ(f.view.handleEvent(s, press(KeyId::LEFT, mod::CTRL)).selectedPattern, 0);
-    CHECK_EQ(f.view.handleEvent(s, press(KeyId::UP, mod::CTRL)).selectedPattern, 0);
+    CHECK_EQ(test::handle(f.view, s, press(KeyId::LEFT, mod::CTRL)).selectedPattern, 0);
+    CHECK_EQ(test::handle(f.view, s, press(KeyId::UP, mod::CTRL)).selectedPattern, 0);
 }
 
 TEST(patternsview_enter_routes_selected_set_to_its_detail_view) {
@@ -71,7 +72,7 @@ TEST(patternsview_enter_routes_selected_set_to_its_detail_view) {
     s.gateSetOf(0).steps = 23;
     s.gateSetDraft.steps = 7;
     s.gateSetDirty = true;
-    const auto gate = f.view.handleEvent(s, press(KeyId::ENTER));
+    const auto gate = test::handle(f.view, s, press(KeyId::ENTER));
     CHECK(gate.currentView == state::ViewId::GATE_SET);
     CHECK_EQ(gate.gateSetDraft.steps, 23);
     CHECK(gate.selectedGateSetProperty == state::GateSetProperty::ALGORITHM);
@@ -80,13 +81,13 @@ TEST(patternsview_enter_routes_selected_set_to_its_detail_view) {
     s.pitchSetOf(0).pitches[0] = 77;
     s.pitchSetDraft.pitches[0] = 50;
     s.pitchSetDirty = true;
-    const auto pitch = f.view.handleEvent(s, press(KeyId::ENTER));
+    const auto pitch = test::handle(f.view, s, press(KeyId::ENTER));
     CHECK(pitch.currentView == state::ViewId::PITCH_SET);
     CHECK_EQ(pitch.pitchSetDraft.pitches[0], 77);
     CHECK_EQ(pitch.selectedPitchSetField, state::PITCH_SET_FIELD_COUNT);
     CHECK(!pitch.pitchSetDirty);
     s.selectedPatternSet = state::PatternSet::VELOCITY;
-    CHECK(f.view.handleEvent(s, press(KeyId::ENTER)).currentView == state::ViewId::VELOCITY_SET);
+    CHECK(test::handle(f.view, s, press(KeyId::ENTER)).currentView == state::ViewId::VELOCITY_SET);
 }
 
 TEST(patternsview_enter_adds_when_add_slot_is_selected) {
@@ -95,7 +96,7 @@ TEST(patternsview_enter_adds_when_add_slot_is_selected) {
     s.patternCount = 3;
     s.selectedPattern = 3;
 
-    const auto next = f.view.handleEvent(s, press(KeyId::ENTER));
+    const auto next = test::handle(f.view, s, press(KeyId::ENTER));
 
     CHECK_EQ(next.patternCount, 4);
     CHECK_EQ(next.selectedPattern, 3);
@@ -110,7 +111,7 @@ TEST(patternsview_delete_removes_selected_real_pattern) {
     s.activePatterns = 0b111;
     s.selectedPattern = 1;
 
-    const auto next = f.view.handleEvent(s, press(KeyId::DELETE_KEY));
+    const auto next = test::handle(f.view, s, press(KeyId::DELETE_KEY));
 
     CHECK_EQ(next.patternCount, 2);
     CHECK_EQ(next.selectedPattern, 1);
@@ -124,11 +125,11 @@ TEST(patternsview_delete_ignores_add_slot_and_key_repeat) {
     s.patternCount = 3;
     s.selectedPattern = 3;
 
-    CHECK_EQ(f.view.handleEvent(s, press(KeyId::DELETE_KEY)).patternCount, 3);
+    CHECK_EQ(test::handle(f.view, s, press(KeyId::DELETE_KEY)).patternCount, 3);
 
     s.selectedPattern = 1;
     const auto held = events::Event::keyHeld(KeyId::DELETE_KEY, mod::NONE, 0);
-    CHECK_EQ(f.view.handleEvent(s, held).patternCount, 3);
+    CHECK_EQ(test::handle(f.view, s, held).patternCount, 3);
     CHECK_EQ(commands::testing::sentCommands().size(), 0);
 }
 
@@ -138,8 +139,8 @@ TEST(patternsview_plain_arrows_do_not_select_sets_on_add_slot) {
     s.patternCount = 2;
     s.selectedPattern = 2;
 
-    CHECK(f.view.handleEvent(s, press(KeyId::RIGHT)).selectedPatternSet == state::PatternSet::GATE);
-    CHECK(f.view.handleEvent(s, press(KeyId::DOWN)).selectedPatternSet == state::PatternSet::GATE);
+    CHECK(test::handle(f.view, s, press(KeyId::RIGHT)).selectedPatternSet == state::PatternSet::GATE);
+    CHECK(test::handle(f.view, s, press(KeyId::DOWN)).selectedPatternSet == state::PatternSet::GATE);
 }
 
 TEST(patternsview_renders_all_four_pixels_but_highlights_only_selected_sets) {
