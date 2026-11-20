@@ -220,7 +220,15 @@ LoadStatus deserialize(const uint8_t* bytes, std::size_t len,
     //    guarded via ReadCursor; a payload that claims more bytes than
     //    payloadLength provides is treated as TRUNCATED.
     ReadCursor cur(payload, payloadLength);
-    PersistableConfig local{};
+    // STACK DISCIPLINE (core1 boot-fault class): PersistableConfig is ~2 KB and
+    // core0's whole stack is 2 KB. A stack-local staging copy here made this
+    // frame 2216 B (-fstack-usage), overflowing core0 into core1's adjacent
+    // stack on every boot load. Stage into a static instead (deserialize is only
+    // ever called from the single-threaded core0 load path, never re-entrantly),
+    // reset from a static default so no 2 KB temporary is built on the stack.
+    static const PersistableConfig kDefault{};
+    static PersistableConfig local;
+    local = kDefault;
 
     const uint8_t rawPatternCount = cur.u8();
     local.bpm = cur.u16LE();

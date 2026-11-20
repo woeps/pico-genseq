@@ -380,15 +380,16 @@ void UIController::drainSaveRequest()
     // Step 1: map the (consistent, single-threaded) live state to the durable
     // config in the off-stack member. The UI loop is single-threaded, so the
     // live reference is never torn (Req 2.1, 2.2).
-    framConfig_ = state::toPersistableConfig(state::getStateManager().getState());
+    state::toPersistableConfig(state::getStateManager().getState(), framConfig_);  // in place, no 2 KB stack temp
 
     // Step 2: clear saveRequested so the same request is not re-run next tick
-    // even if the save fails (Req 1.4). Confined to its own scope.
-    {
-        state::UIState next = state::getStateManager().getState();
-        next.saveRequested = false;
-        state::getStateManager().setState(next);
-    }
+    // even if the save fails (Req 1.4). Mutated IN PLACE: UIState is ~1.4 KB in
+    // M3 (not the ~700 B this comment once assumed), and the two by-value copies
+    // this function used to hold were merged into one 3640 B frame
+    // (-fstack-usage) -- bigger than core0's whole 2 KB stack -- which overflowed
+    // into core1's stack during a save and locked core1 up.
+    state::getStateManager().mutableState().saveRequested = false;
+    state::getStateManager().notifyStateChanged();
 
     // Step 3: the A/B transactional commit onto the FRAM backend (task 10.2).
     // Writes the slot NOT holding the newest valid record so an interrupted
@@ -424,11 +425,8 @@ void UIController::drainSaveRequest()
     // Step 4: latch the banner into state. Re-read current state (a listener may
     // have changed it during the save) in its own scope so no earlier copy is
     // still alive here.
-    {
-        state::UIState afterSave = state::getStateManager().getState();
-        afterSave.saveBanner = banner;
-        state::getStateManager().setState(afterSave);
-    }
+    state::getStateManager().mutableState().saveBanner = banner;  // in place, no 1.4 KB copy
+    state::getStateManager().notifyStateChanged();
 
     bannerActive = true;
     bannerSetMs = to_ms_since_boot(get_absolute_time());
@@ -478,9 +476,9 @@ void UIController::updateSaveBanner()
         // persists until the next view change (which clears via onEnter()).
         ledMatrix->clear();
 
-        state::UIState cleared = state;
-        cleared.saveBanner = state::SaveBanner::NONE;
-        state::getStateManager().setState(cleared);
+        // In place: a by-value UIState copy here made this frame 1456 B.
+        state::getStateManager().mutableState().saveBanner = state::SaveBanner::NONE;
+        state::getStateManager().notifyStateChanged();
         return;
     }
 

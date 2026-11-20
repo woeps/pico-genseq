@@ -17,8 +17,9 @@ constexpr uint8_t DEFAULT_MIDI_CLOCK_ENABLED = 1;
 
 } // namespace
 
-persistence::PersistableConfig toPersistableConfig(const UIState& state) {
-    persistence::PersistableConfig cfg{};
+void toPersistableConfig(const UIState& state, persistence::PersistableConfig& cfg) {
+    static const persistence::PersistableConfig kDefault{};
+    cfg = kDefault;  // reset in place: no 2 KB temporary on the caller's stack
 
     uint8_t count = state.patternCount;
     if (count > persistence::MAX_PATTERNS) count = persistence::MAX_PATTERNS;
@@ -85,6 +86,11 @@ persistence::PersistableConfig toPersistableConfig(const UIState& state) {
         p.midiChannel = DEFAULT_MIDI_CHANNEL;
     }
 
+}
+
+persistence::PersistableConfig toPersistableConfig(const UIState& state) {
+    persistence::PersistableConfig cfg{};
+    toPersistableConfig(state, cfg);
     return cfg;
 }
 

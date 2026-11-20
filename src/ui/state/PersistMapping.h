@@ -18,6 +18,12 @@ namespace ui::state {
 // persistence::MAX_PATTERNS. Transient draft/dirty/selection fields are ignored.
 persistence::PersistableConfig toPersistableConfig(const UIState& state);
 
+// In-place variant: fills `out` (reset to defaults first) without building a
+// ~2 KB PersistableConfig temporary on the caller's stack. Use this on core0's
+// 2 KB stack (e.g. the save path), where the by-value form above overflows into
+// core1's adjacent stack.
+void toPersistableConfig(const UIState& state, persistence::PersistableConfig& out);
+
 // Inverse mapping: populate a UIState from a loaded PersistableConfig. Rebuilds
 // patternCount, bpm, the activePatterns bitmask, and the per-pattern gate/pitch/
 // velocity configs. Draft/dirty/selection fields are left at their defaults.
