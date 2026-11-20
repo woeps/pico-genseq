@@ -19,7 +19,7 @@ the easiest way to read pitches and velocities exactly.
 | Delete | PATTERNS | delete the selected pattern |
 | Left / Right | editor | move between fields |
 | Up / Down (Shift = coarse) | editor | change the field |
-| Enter | editor | **commit** (generation parameters reach the sequencer only on commit) |
+| Enter | editor | **commit** (every change is audible immediately as a preview; Enter keeps it) |
 | Esc | editor | undo the uncommitted draft; Esc again leaves to PATTERNS |
 
 Display: top-left label (yellow) names the field, value in red. Pixel (15,0)
@@ -46,7 +46,9 @@ GATE Prb 50, VELOCITY Hmn 20, Sed 7.** Step 1 tests clearing those back to defau
 
 ## 2. Step probability, per pattern (R2)
 
-1. GATE editor -> `Prb`. Set `50`, `Enter`.
+1. GATE editor -> `Prb`. While playing, press `Down` a few times.
+- [ ] No extra note fires on each key press (fixed 2026-11-20), and the thinning is audible
+  **before** Enter. `Esc` returns to 100 audibly. Set `50`, `Enter`.
 - [ ] Playing: about half the onsets are missing, irregularly. No hanging notes.
 2. Set `0`, `Enter`. - [ ] Silence (clock keeps running).
 3. Set `100`, `Enter`. - [ ] Every onset sounds again.

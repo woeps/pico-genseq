@@ -28,9 +28,10 @@ namespace commands {
 // restore test can assert the loaded Generation Parameters reach the engine.
 struct SentGenParams { uint8_t pattern; common::GenerationParameters params; };
 std::vector<SentGenParams> g_sentGenParams;
+int g_gateSetSends = 0;  // PATTERN_GATE_SET count: each one restarts the gate at step 0 on core1
 
 void sendCommand(Command, uint8_t, uint8_t) {}
-void sendGateSet(uint8_t, const std::vector<bool>&) {}
+void sendGateSet(uint8_t, const std::vector<bool>&) { ++g_gateSetSends; }
 void sendPitchSet(uint8_t, uint8_t, common::PlayingOrder, const std::vector<uint8_t>&) {}
 void sendVelocitySet(uint8_t, uint8_t, common::PlayingOrder, const std::vector<uint8_t>&) {}
 void sendGenParams(uint8_t p, const common::GenerationParameters& gp) {
@@ -205,6 +206,83 @@ static void test_restore_sends_genparams() {
     check(saw1, "restore sends pattern 1's loaded gen-params (coupling) to core1");
 }
 
+// Bench report 2026-11-20: scrubbing PRB in the GateSet editor fired a note on
+// every change (the gate array was resent, restarting the gate at step 0) and the
+// new probability was only audible after ENTER (gen-params sent on commit only).
+// A probability-only edit must NOT resend the gate array, must preview the draft
+// gen-params immediately, and ESC must send the committed values back.
+static void test_gate_probability_preview() {
+    UIState s;
+    s.patternCount = 1;
+    s.selectedPattern = 0;
+    beginGateSetEdit(s);
+
+    s.selectedGateSetProperty = GateSetProperty::PROBABILITY;
+    commands::g_gateSetSends = 0;
+    commands::g_sentGenParams.clear();
+    adjustGateSetValue(s, -50, false);
+    check(commands::g_gateSetSends == 0, "PRB change does not resend the gate array");
+    check(!commands::g_sentGenParams.empty() &&
+              commands::g_sentGenParams.back().params.patternProbability == 50,
+          "PRB change previews the draft probability (50) immediately");
+
+    s.selectedGateSetProperty = GateSetProperty::STEP_GRID;
+    s.selectedGateStep = 1;
+    commands::g_gateSetSends = 0;
+    commands::g_sentGenParams.clear();
+    adjustGateSetValue(s, 1, false);  // INHERIT -> 0 %
+    check(commands::g_gateSetSends == 0, "per-step probability change does not resend gates");
+    check(!commands::g_sentGenParams.empty() &&
+              commands::g_sentGenParams.back().params.stepProbability[1] == 0,
+          "per-step probability change previews immediately");
+
+    s.selectedGateSetProperty = GateSetProperty::PULSES;
+    commands::g_gateSetSends = 0;
+    adjustGateSetValue(s, 1, false);
+    check(commands::g_gateSetSends == 1, "a gate-structure change still sends the gate array");
+
+    commands::g_sentGenParams.clear();
+    undoGateSetEdit(s);
+    check(!commands::g_sentGenParams.empty() &&
+              commands::g_sentGenParams.back().params.patternProbability == 100 &&
+              commands::g_sentGenParams.back().params.stepProbability[1] == common::STEP_PROB_INHERIT,
+          "ESC sends the committed gen-params back (probability 100, step INHERIT)");
+}
+
+// Same live-preview contract for the PitchSet scale fields and the VelocitySet
+// humanize/seed/coupling fields.
+static void test_pitch_velocity_genparam_preview() {
+    UIState s;
+    s.patternCount = 1;
+    s.selectedPattern = 0;
+
+    beginPitchSetEdit(s);
+    s.selectedPitchSetField = PITCH_SET_FIELD_SCALE;
+    commands::g_sentGenParams.clear();
+    adjustPitchSetValue(s, 1, false);
+    check(!commands::g_sentGenParams.empty() &&
+              commands::g_sentGenParams.back().params.scale == common::ScaleId::MAJOR,
+          "SCALE change previews immediately");
+    commands::g_sentGenParams.clear();
+    undoPitchSetEdit(s);
+    check(!commands::g_sentGenParams.empty() &&
+              commands::g_sentGenParams.back().params.scale == common::ScaleId::CHROMATIC,
+          "pitch ESC sends the committed scale back");
+
+    beginVelocitySetEdit(s);
+    s.selectedVelocitySetField = VELOCITY_SET_FIELD_HUMANIZE;
+    commands::g_sentGenParams.clear();
+    adjustVelocitySetValue(s, 20, false);
+    check(!commands::g_sentGenParams.empty() &&
+              commands::g_sentGenParams.back().params.humanizeRange == 20,
+          "HUMANIZE change previews immediately");
+    commands::g_sentGenParams.clear();
+    undoVelocitySetEdit(s);
+    check(!commands::g_sentGenParams.empty() &&
+              commands::g_sentGenParams.back().params.humanizeRange == 0,
+          "velocity ESC sends the committed humanize back");
+}
+
 int main() {
     test_humanize_field();
     test_seed_field();
@@ -213,6 +291,8 @@ int main() {
     test_r10_control_map();
     test_persist_roundtrip();
     test_restore_sends_genparams();
+    test_gate_probability_preview();
+    test_pitch_velocity_genparam_preview();
 
     if (failures == 0) {
         std::printf("example_velocity_genparams_view: all checks passed\n");

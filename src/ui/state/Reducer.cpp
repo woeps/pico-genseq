@@ -9,6 +9,12 @@ namespace ui::state {
 
 namespace {
 
+// Gen-params senders (defined further down, used by the restore helpers).
+void sendPatternGenParams(const UIState& state, uint8_t patternIndex);
+void previewGateGenParams(const UIState& s);
+void previewPitchGenParams(const UIState& s);
+void previewVelocityGenParams(const UIState& s);
+
 constexpr GateSetProperty EUCLIDEAN_PROPERTIES[] = {
     GateSetProperty::ALGORITHM,
     GateSetProperty::STEPS,
@@ -117,6 +123,7 @@ void restoreGateSetDraft(UIState& state) {
     state.gateSetDraft = state.gateSetConfigs[state.selectedPattern];
     state.gateSetDirty = false;
     sendGateSet(state.selectedPattern, state.gateSetDraft);
+    sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
 }
 
 void sendPitchSetConfig(uint8_t patternIndex, const PitchSetConfig& config) {
@@ -133,6 +140,7 @@ void restorePitchSetDraft(UIState& state) {
     state.pitchSetDraft = state.pitchSetConfigs[state.selectedPattern];
     state.pitchSetDirty = false;
     sendPitchSetConfig(state.selectedPattern, state.pitchSetDraft);
+    sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
 }
 
 void sendVelocitySetConfig(uint8_t patternIndex, const VelocitySetConfig& config) {
@@ -148,14 +156,8 @@ void sendVelocitySetConfig(uint8_t patternIndex, const VelocitySetConfig& config
 // humanize/seed/coupling in VelocitySet) and transmit them to core1 as one
 // GEN_PARAMS_SET command. Called after any gen-param edit so the engine's view
 // stays in sync with Working State through the real cross-core path.
-void sendPatternGenParams(const UIState& state, uint8_t patternIndex) {
-    if (patternIndex >= state.patternCount) return;
-    // Called on COMMIT (from commit*Edit), so every stream's config is current:
-    // read the committed per-stream configs and assemble the full gen-params.
-    const PitchSetConfig& pitch = state.pitchSetConfigs[patternIndex];
-    const GateSetConfig& gate = state.gateSetConfigs[patternIndex];
-    const VelocitySetConfig& vel = state.velocitySetConfigs[patternIndex];
-
+void sendGenParamsFrom(uint8_t patternIndex, const PitchSetConfig& pitch,
+                       const GateSetConfig& gate, const VelocitySetConfig& vel) {
     common::GenerationParameters gp;
     gp.scale = pitch.scale;
     gp.scaleRoot = pitch.scaleRoot;
@@ -176,11 +178,40 @@ void sendPatternGenParams(const UIState& state, uint8_t patternIndex) {
     commands::sendGenParams(patternIndex, gp);
 }
 
+// Committed gen-params (commit, ESC/undo, leaving an editor, boot restore).
+void sendPatternGenParams(const UIState& state, uint8_t patternIndex) {
+    if (patternIndex >= state.patternCount) return;
+    sendGenParamsFrom(patternIndex, state.pitchSetConfigs[patternIndex],
+                      state.gateSetConfigs[patternIndex],
+                      state.velocitySetConfigs[patternIndex]);
+}
+
+// Live preview while editing: the one stream being edited contributes its DRAFT,
+// the other two their committed configs. Gen-param fields then sound as soon as
+// they change, exactly like gate/pitch/velocity material edits already do; ENTER
+// keeps them, ESC sends the committed values back.
+void previewGateGenParams(const UIState& s) {
+    if (s.selectedPattern >= s.patternCount) return;
+    sendGenParamsFrom(s.selectedPattern, s.pitchSetConfigs[s.selectedPattern], s.gateSetDraft,
+                      s.velocitySetConfigs[s.selectedPattern]);
+}
+void previewPitchGenParams(const UIState& s) {
+    if (s.selectedPattern >= s.patternCount) return;
+    sendGenParamsFrom(s.selectedPattern, s.pitchSetDraft, s.gateSetConfigs[s.selectedPattern],
+                      s.velocitySetConfigs[s.selectedPattern]);
+}
+void previewVelocityGenParams(const UIState& s) {
+    if (s.selectedPattern >= s.patternCount) return;
+    sendGenParamsFrom(s.selectedPattern, s.pitchSetConfigs[s.selectedPattern],
+                      s.gateSetConfigs[s.selectedPattern], s.velocitySetDraft);
+}
+
 void restoreVelocitySetDraft(UIState& state) {
     if (!state.velocitySetDirty || state.selectedPattern >= state.patternCount) return;
     state.velocitySetDraft = state.velocitySetConfigs[state.selectedPattern];
     state.velocitySetDirty = false;
     sendVelocitySetConfig(state.selectedPattern, state.velocitySetDraft);
+    sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
 }
 
 }
@@ -348,7 +379,20 @@ void adjustGateSetValue(UIState& state, int delta, bool coarse) {
     if (next == state.gateSetDraft) return;
     state.gateSetDraft = next;
     state.gateSetDirty = next != state.gateSetConfigs[state.selectedPattern];
-    sendGateSet(state.selectedPattern, next);
+    const GateSetProperty prop = state.selectedGateSetProperty;
+    // Probability edits (per-Pattern PRB, per-step grid probability) do not change
+    // the gate array. Resending it would rebuild core1's GateSet at step 0 and
+    // fire that step's note on every scrub (bench report 2026-11-20), so only a
+    // gate-structure change sends the array.
+    if (prop != GateSetProperty::PROBABILITY && prop != GateSetProperty::STEP_GRID) {
+        sendGateSet(state.selectedPattern, next);
+    }
+    // Fields that feed the gen-params (probabilities; STEPS bounds the per-step
+    // array; NOTE_LENGTH sets stepLength) preview live instead of on ENTER only.
+    if (prop == GateSetProperty::PROBABILITY || prop == GateSetProperty::STEP_GRID ||
+        prop == GateSetProperty::STEPS || prop == GateSetProperty::NOTE_LENGTH) {
+        previewGateGenParams(state);
+    }
 }
 
 // R9.2: toggle the SELECTED programmed step's gate on/off (manual editing),
@@ -447,7 +491,11 @@ void adjustPitchSetValue(UIState& state, int delta, bool coarse) {
     if (next == state.pitchSetDraft) return;
     state.pitchSetDraft = next;
     state.pitchSetDirty = next != state.pitchSetConfigs[state.selectedPattern];
-    sendPitchSetConfig(state.selectedPattern, next);
+    if (state.selectedPitchSetField <= PITCH_SET_FIELD_QUANTIZE) {
+        previewPitchGenParams(state);  // scale/root/quantize: audible immediately
+    } else {
+        sendPitchSetConfig(state.selectedPattern, next);
+    }
 }
 
 void commitPitchSetEdit(UIState& state) {
@@ -463,6 +511,7 @@ void undoPitchSetEdit(UIState& state) {
     state.pitchSetDraft = state.pitchSetConfigs[state.selectedPattern];
     state.pitchSetDirty = false;
     sendPitchSetConfig(state.selectedPattern, state.pitchSetDraft);
+    sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
 }
 
 void syncPitchSet(const UIState& state, uint8_t index) {
@@ -542,7 +591,11 @@ void adjustVelocitySetValue(UIState& state, int delta, bool coarse) {
     if (next == state.velocitySetDraft) return;
     state.velocitySetDraft = next;
     state.velocitySetDirty = next != state.velocitySetConfigs[state.selectedPattern];
-    sendVelocitySetConfig(state.selectedPattern, next);
+    if (state.selectedVelocitySetField <= VELOCITY_SET_FIELD_COUPLING) {
+        previewVelocityGenParams(state);  // humanize/seed/coupling: audible immediately
+    } else {
+        sendVelocitySetConfig(state.selectedPattern, next);
+    }
 }
 
 void commitVelocitySetEdit(UIState& state) {
