@@ -78,3 +78,12 @@
 80 49 00
 90 43 6b
 80 43 00
+
+# Step C, 2026-11-20T20:42Z: MANUAL cold power-cycle (USB unplug/replug), firmware 536a5af host-control build
+# command: python3 test/bench/determinism_11_3.py /dev/ttyACM0 --ref $KIROCREW_SCRATCH/determinism_11_3_ref.txt --after-power-cycle
+[11.3b] port=/dev/ttyACM0 secs=8.0 mode=after-power-cycle
+  loaded after power-cycle: prob=50 humanize=20 seedSet=1 seed=7 bpm=200
+  C (cold power-cycle + load): 58 events, 29 note-ons, velocities [80, 81, 82, 83, 84, 85, 86, 90]...
+  PASS  C == A over first 58 events
+
+11.3b DETERMINISM (power-cycle): PASS

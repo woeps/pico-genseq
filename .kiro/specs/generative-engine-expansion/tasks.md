@@ -217,7 +217,7 @@ part of this plan.
       Dual-core stack guard stayed 0. Firmware: HOST_CONTROL + PERFORMANCE_TRACE, tick=GP7,
       fault=GP6, TICK_WIDEN_US=200; BS05U L0=GP7. First run FAILED A/B: the save path's
       ~2 KB core0 frames overflowed into core1 (caught by the stack guard), fixed in 559cd55.
-  - [ ] 11.3 Prove per-feature live control and determinism on silicon
+  - [x] 11.3 Prove per-feature live control and determinism on silicon
     - Each parameter toggled via its R10 control applies at the boundary with no stuck note and
       within the UI responsiveness bound; a seeded Pattern reproduces the same decoded MIDI across a
       power-cycle + load
@@ -225,7 +225,7 @@ part of this plan.
     - _Requirements: 4.3, 6.2, 10.5, 10.6_
     - **11.3a live control — PASS** (commit 6119812): `test/bench/livecontrol_11_3.py --bpm 200`,
       evidence `test/bench/evidence_11_3a_livecontrol.log`.
-    - **11.3b determinism — PASS except the cold power-cycle step** (fix 7fa3b7d):
+    - **11.3b determinism — PASS** (fix 7fa3b7d, harness 536a5af):
       `test/bench/determinism_11_3.py /dev/ttyACM0 --secs 8`, evidence
       `test/bench/evidence_11_3b_determinism.log`. Pattern 0 alone, PROBABILITY 50, HUMANIZE 20,
       SEED 7 set through the R10 UI; decoded MIDI from the host-control MIDI tap. A == A2
@@ -233,7 +233,8 @@ part of this plan.
       The first silicon runs FAILED and exposed two bugs, both fixed in 7fa3b7d with host tests:
       boot restore never sent Generation Parameters to core1, and seeded RANDOM order was never
       re-routed to the Pattern RNG (task 4.2 had claimed it; 4.3 had no RANDOM-order test).
-      **Remaining:** `--after-power-cycle` capture C after a manual cold power-cycle.
+      **Cold power-cycle (2026-11-20):** after a manual USB unplug/replug the board loaded seed 7
+      from FRAM and capture C == A over 58 events (`--after-power-cycle`, same evidence log).
 
 ## RESOLVED hardware issue (was blocking 11.2/11.3) — core1 boot fault
 
