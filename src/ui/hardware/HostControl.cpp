@@ -284,6 +284,33 @@ void HostControl::emitDump() {
     printf("D:soundingNotes=%u\n", static_cast<unsigned>(sequencer::g_soundingNotes));
     printf("D:lastSaveUs=%u\n", static_cast<unsigned>(ui::g_lastSaveMicros));
     printf("D:maxUiGapUs=%u\n", static_cast<unsigned>(ui::g_maxUiGapMicros));
+    // Generation Parameters of the SELECTED pattern's COMMITTED configs (task
+    // 11.3 bench evidence: proves each R10 matrix-UI control actually set and
+    // cleared its parameter -- R10.6 demonstrated set-and-clear path).
+    {
+        const uint8_t p = s.selectedPattern < s.patternCount ? s.selectedPattern : 0;
+        const auto& g = s.gateSetConfigs[p];
+        const auto& pi = s.pitchSetConfigs[p];
+        const auto& v = s.velocitySetConfigs[p];
+        printf("D:genScale=%u\n", static_cast<unsigned>(pi.scale));
+        printf("D:genRoot=%u\n", static_cast<unsigned>(pi.scaleRoot));
+        printf("D:genQuantize=%u\n", static_cast<unsigned>(pi.quantize));
+        printf("D:genProb=%u\n", static_cast<unsigned>(g.patternProbability));
+        printf("D:genStepProb=");
+        for (uint8_t i = 0; i < ui::state::MAX_GRID_STEPS; ++i) {
+            printf("%02x", static_cast<unsigned>(g.stepProbability[i]));
+        }
+        printf("\n");
+        printf("D:genGates=");
+        for (uint8_t i = 0; i < ui::state::MAX_GRID_STEPS; ++i) {
+            printf("%u", g.gateStates[i] ? 1u : 0u);
+        }
+        printf("\n");
+        printf("D:genHumanize=%u\n", static_cast<unsigned>(v.humanizeRange));
+        printf("D:genSeedSet=%u\n", v.seedSet ? 1u : 0u);
+        printf("D:genSeed=%lu\n", static_cast<unsigned long>(v.seed));
+        printf("D:genCoupling=%u\n", static_cast<unsigned>(v.coupling));
+    }
     printf("D:end\n");
 }
 
