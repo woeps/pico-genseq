@@ -24,7 +24,7 @@ the easiest way to read pitches and velocities exactly.
 
 Display: yellow label at the top names the field; the value (number, note or text
 such as `maj`, `off`, `inh`) is centred below it. Pixel (15,0)
-green = uncommitted draft. To reach a set from anywhere: `F3`, `Left`, `Up`
+red = uncommitted draft. To reach a set from anywhere: `F3`, `Left`, `Up`
 selects GATE; then `Right` = PITCH or `Down` = VELOCITY.
 
 ## 0. Starting state

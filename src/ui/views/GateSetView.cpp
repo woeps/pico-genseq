@@ -110,8 +110,8 @@ void GateSetView::render(const state::UIState& state)
             ledMatrix.drawLabel(stepLabel, 0xFFFFEE00);
 
             const bool gateOn = (s < state::MAX_GRID_STEPS) && state.gateSetDraft.gateStates[s];
-            // Gate indicator pixel at (13,0): green on, dim red off.
-            ledMatrix.setPixel(13, 0, gateOn ? 0x0000FF00 : 0x00220000);
+            // Gate indicator pixel at (13,0): green on, dim red off (0x00GGRRBB).
+            ledMatrix.setPixel(13, 0, gateOn ? 0x00FF0000 : 0x00002200);
 
             const uint8_t prob = (s < state::MAX_GRID_STEPS)
                                      ? state.gateSetDraft.stepProbability[s]

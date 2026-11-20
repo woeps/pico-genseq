@@ -146,8 +146,8 @@ void PitchSetView::render(const state::UIState& state)
                 const uint16_t mask =
                     common::scale::membershipMask(draft.scale, draft.scaleRoot);
                 const bool inScale = common::scale::inScale(mask, draft.pitches[pitchIndex]);
-                // Green = in scale, red = out of scale.
-                ledMatrix.setPixel(14, 0, inScale ? 0x0000FF00 : 0x00FF0000);
+                // Green = in scale, red = out of scale (pixels are 0x00GGRRBB).
+                ledMatrix.setPixel(14, 0, inScale ? 0x00FF0000 : 0x0000FF00);
             }
         }
     }
