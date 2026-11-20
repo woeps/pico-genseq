@@ -174,7 +174,7 @@ part of this plan.
     - New target `example_gateset_grid_view.cpp`
     - _Requirements: 9.1–9.8, 10.1–10.5_
 
-- [ ] 10. VelocitySet humanize field and Pattern-scope seed/coupling controls
+- [x] 10. VelocitySet humanize field and Pattern-scope seed/coupling controls
   - [x] 10.1 Add the HUMANIZE field to the VelocitySet view
     - Adjust 0..N; clear-to-0; applies via the boundary path; action count ≤2
     - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
@@ -197,6 +197,12 @@ part of this plan.
     - Host test the encode→decode→apply round-trip; one consolidated transport change verified on
       silicon in 11.3
     - _Requirements: 6.2, 10.1, 10.5_
+    - **Done (ed18609); silicon-verified via 11.3 (2026-11-20).** Every R10 control reached core1
+      over the real FIFO path in `livecontrol_11_3.py` (11.3a) and `determinism_11_3.py` (11.3b).
+      11.3b found one route the transport had missed: the FRAM boot restore never sent
+      GEN_PARAMS_SET, so a loaded pattern ran with default parameters on core1. Fixed in 7fa3b7d
+      (`restoreSequencerFromState` calls `sendPatternGenParams` per pattern; host test
+      `test_restore_sends_genparams`). Host round-trip: `genseq_example_genparams_fifo`.
 
 - [ ] 11. Host suite and RP2040 bench acceptance gate
   - [ ] 11.1 Green the full host suite under sanitizers
