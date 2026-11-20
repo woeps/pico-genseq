@@ -4,6 +4,7 @@
 #include "PatternSnapshot.h"
 #include "pico/multicore.h"
 #include "core_pause.h"
+#include "stack_guard.h"
 #include "../commands/command.h"
 #include "../instrumentation/PerformanceTrace.h"
 
@@ -152,6 +153,15 @@ static void sequencer_task() {
             corePauseCheck();
             BB_REGION(10);
 
+            // Dual-core stack-overflow guard (BUG A / BUG B-pt2 class): cheap
+            // sentinel check of the inter-stack gap. If a core0 boot-path stack
+            // local ever overflows toward core1 again, this latches it LOUDLY
+            // (g_stackGuardTripped + fault pin) instead of silently corrupting
+            // core1. ~2 loads+compares; negligible on the idle path.
+            if (stackGuardCheck() != 0) {
+                instrumentation::PerformanceTrace::setFault(true);
+            }
+
 #if GENSEQ_CORE1_BOOT_TRACE
             g_core1Stage = 2; ++g_core1LoopCount;
 #endif
@@ -193,6 +203,10 @@ void createSequencerTask(uart_inst_t* uart, uint txPin, uint rxPin) {
         // Initialize traces exactly once immediately before launching core1.
         // Repeated factory calls must not drive live trace pins back to zero.
         instrumentation::PerformanceTrace::initialize();
+        // Seed the inter-stack gap canaries BEFORE launching core1, while both
+        // stacks are idle, so core1's per-loop stackGuardCheck() can catch any
+        // future core0 boot-path stack overflow toward core1 (BUG A / BUG B-pt2).
+        stackGuardInit();
         launched = true;
         multicore_launch_core1(sequencer_task);
     }
