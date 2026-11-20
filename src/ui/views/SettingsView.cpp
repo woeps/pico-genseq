@@ -35,7 +35,7 @@ void SettingsView::handleEvent(state::UIState& state, const events::Event& event
 
 void SettingsView::render(const state::UIState& state)
 {
-    ledMatrix.drawLabel("bPM", 0xFF00FF33);
+    ledMatrix.drawLabel("bPM", 0xFFFFEE00);
     ledMatrix.drawNumber(state.bpm, 0xFFFF0011);
 }
 

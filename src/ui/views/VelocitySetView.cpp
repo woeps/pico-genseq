@@ -73,19 +73,20 @@ void VelocitySetView::render(const state::UIState& state)
         if (draft.seedSet) {
             ledMatrix.drawNumber(static_cast<uint8_t>(draft.seed & 0xFF), 0xFFFF0011);
         } else {
-            // "no seed" distinct from seed 0: a dim marker instead of a number.
-            ledMatrix.setPixel(12, 0, 0x00222200);
+            // "no seed" is distinct from seed 0 ("000"): shown as "off".
+            ledMatrix.drawValueText("off", 0xFFFF0011);
         }
     } else if (field == state::VELOCITY_SET_FIELD_COUPLING) {
         ledMatrix.drawLabel("Cpl", 0xFFFFEE00);
-        ledMatrix.drawLabel(draft.coupling == common::CouplingMode::LOCKED ? "Lck" : "Ind",
-                            0xFFFF0011);
+        ledMatrix.drawValueText(draft.coupling == common::CouplingMode::LOCKED ? "Lck" : "Ind",
+                                0xFFFF0011);
     } else if (field == state::VELOCITY_SET_FIELD_COUNT) {
         ledMatrix.drawLabel("Cnt", 0xFFFFEE00);
         ledMatrix.drawNumber(draft.count, 0xFFFF0011);
     } else if (field == state::VELOCITY_SET_FIELD_ORDER) {
         const uint8_t orderIdx = static_cast<uint8_t>(draft.order);
-        ledMatrix.drawLabel(ORDER_LABELS[orderIdx], 0xFFFFEE00);
+        ledMatrix.drawLabel("Ord", 0xFFFFEE00);
+        ledMatrix.drawValueText(ORDER_LABELS[orderIdx], 0xFFFF0011);
     } else {
         const uint8_t velIndex = field - state::VELOCITY_SET_FIELD_VELOCITY_BASE;
         if (velIndex < draft.count) {

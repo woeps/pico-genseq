@@ -102,7 +102,7 @@ void PitchSetView::render(const state::UIState& state)
 
     if (field == state::PITCH_SET_FIELD_SCALE) {
         ledMatrix.drawLabel("Scl", 0xFFFFEE00);
-        ledMatrix.drawLabel(SCALE_LABELS[static_cast<uint8_t>(draft.scale)], 0xFFFF0011);
+        ledMatrix.drawValueText(SCALE_LABELS[static_cast<uint8_t>(draft.scale)], 0xFFFF0011);
     } else if (field == state::PITCH_SET_FIELD_ROOT) {
         ledMatrix.drawLabel("rut", 0xFFFFEE00);
         // Root pitch-class name (e.g. "c " / "c#").
@@ -111,13 +111,14 @@ void PitchSetView::render(const state::UIState& state)
         ledMatrix.drawNote(rootName, 0xFFFF0011);
     } else if (field == state::PITCH_SET_FIELD_QUANTIZE) {
         ledMatrix.drawLabel("qnt", 0xFFFFEE00);
-        ledMatrix.drawLabel(QUANTIZE_LABELS[static_cast<uint8_t>(draft.quantize)], 0xFFFF0011);
+        ledMatrix.drawValueText(QUANTIZE_LABELS[static_cast<uint8_t>(draft.quantize)], 0xFFFF0011);
     } else if (field == state::PITCH_SET_FIELD_COUNT) {
         ledMatrix.drawLabel("Cnt", 0xFFFFEE00);
         ledMatrix.drawNumber(draft.count, 0xFFFF0011);
     } else if (field == state::PITCH_SET_FIELD_ORDER) {
         const uint8_t orderIdx = static_cast<uint8_t>(draft.order);
-        ledMatrix.drawLabel(ORDER_LABELS[orderIdx], 0xFFFFEE00);
+        ledMatrix.drawLabel("Ord", 0xFFFFEE00);
+        ledMatrix.drawValueText(ORDER_LABELS[orderIdx], 0xFFFF0011);
     } else {
         const uint8_t pitchIndex = field - state::PITCH_SET_FIELD_PITCH_BASE;
         if (pitchIndex < draft.count) {

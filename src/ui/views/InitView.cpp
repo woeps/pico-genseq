@@ -46,8 +46,8 @@ void InitView::render(const state::UIState& state)
     }
 
                                                     //XXGGRRBB
-    ledMatrix.drawNumber(state.value, 0x0000FFFF);
-    ledMatrix.drawLabel("tst", 0x0000FF33);
+    ledMatrix.drawNumber(state.value, 0xFFFF0011);
+    ledMatrix.drawLabel("tst", 0xFFFFEE00);
 
 }
 

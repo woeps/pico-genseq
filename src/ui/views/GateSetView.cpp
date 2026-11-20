@@ -65,7 +65,8 @@ void GateSetView::render(const state::UIState& state)
     ledMatrix.clear();
     switch (state.selectedGateSetProperty) {
         case state::GateSetProperty::ALGORITHM:
-            ledMatrix.drawLabel("EUC", 0xFFFFEE00);
+            ledMatrix.drawLabel("Alg", 0xFFFFEE00);
+            ledMatrix.drawValueText("euc", 0xFFFF0011);
             break;
         case state::GateSetProperty::STEPS:
             ledMatrix.drawLabel("StP", 0xFFFFEE00);
@@ -116,9 +117,8 @@ void GateSetView::render(const state::UIState& state)
                                      ? state.gateSetDraft.stepProbability[s]
                                      : state::STEP_PROB_INHERIT;
             if (prob == state::STEP_PROB_INHERIT) {
-                // INHERIT rendered distinctly from an explicit value (R9.5): a dim
-                // marker pixel instead of a number.
-                ledMatrix.setPixel(12, 0, 0x00222200);
+                // INHERIT is distinct from an explicit 0 ("000"): shown as "inh".
+                ledMatrix.drawValueText("inh", 0xFFFF0011);
             } else {
                 ledMatrix.drawNumber(prob, 0xFFFF0011);
             }

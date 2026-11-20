@@ -22,7 +22,8 @@ the easiest way to read pitches and velocities exactly.
 | Enter | editor | **commit** (every change is audible immediately as a preview; Enter keeps it) |
 | Esc | editor | undo the uncommitted draft; Esc again leaves to PATTERNS |
 
-Display: top-left label (yellow) names the field, value in red. Pixel (15,0)
+Display: yellow label at the top names the field; the value (number, note or text
+such as `maj`, `off`, `inh`) is centred below it. Pixel (15,0)
 green = uncommitted draft. To reach a set from anywhere: `F3`, `Left`, `Up`
 selects GATE; then `Right` = PITCH or `Down` = VELOCITY.
 
@@ -37,9 +38,9 @@ GATE Prb 50, VELOCITY Hmn 20, Sed 7.** Step 1 tests clearing those back to defau
 
 1. VELOCITY editor (`F3 Left Up Down Enter`). Opens on `Cnt`.
 2. `Left` x3 -> `Hmn 20`. Hold `Down` to `0`.
-3. `Right` -> `Sed 7`. `Down` x8 -> number disappears, dim pixel at (12,0) = **no seed**.
+3. `Right` -> `Sed 7`. `Down` x8 -> value shows `off` = **no seed**.
 4. `Right` -> `Cpl Ind` (leave it). `Enter` to commit, `Esc`.
-5. GATE editor (`F3 Left Up Enter`). Opens on `EUC`. `Right` x6 -> `Prb 50`. `Shift+Up` x5 -> `100`. `Enter`, `Esc`.
+5. GATE editor (`F3 Left Up Enter`). Opens on `Alg euc`. `Right` x6 -> `Prb 50`. `Shift+Up` x5 -> `100`. `Enter`, `Esc`.
 6. F2: set BPM to 120.
 
 - [ ] While playing: 4 notes per bar on every 4th sixteenth, pitches C4 G4 A4 C5 repeating, velocities 100 80 60 80 repeating. This is the pre-M3 behaviour.
@@ -55,9 +56,9 @@ GATE Prb 50, VELOCITY Hmn 20, Sed 7.** Step 1 tests clearing those back to defau
 
 ## 3. Per-step gate + probability grid (R9)
 
-1. GATE editor, `Right` x7 -> `s0`: gate pixel (13,0) **green** (step 0 is on), dim yellow pixel (12,0) = INHERIT.
+1. GATE editor, `Right` x7 -> `s0`: gate pixel (13,0) **green** (step 0 is on), value `inh` = INHERIT.
 2. `Right` -> `s1`: gate pixel dim red (off). `Enter` toggles it -> green.
-3. Still on `s1`: `Up` -> `0`, `Up` again -> `10` ... -> `100`; `Down` below `0` returns to the INHERIT marker. Leave `s1` at `100`.
+3. Still on `s1`: `Up` -> `0`, `Up` again -> `10` ... -> `100`; `Down` below `0` returns to `inh`. Leave `s1` at `100`.
 4. Go to `s0` (`Left`), `Up` -> `0` (step 0 never sounds).
 5. `Left` back to `Prb` (Enter on the grid toggles, so commit from a non-grid field), `Enter`.
 
@@ -89,7 +90,7 @@ GATE Prb 50, VELOCITY Hmn 20, Sed 7.** Step 1 tests clearing those back to defau
 
 ## 6. Deterministic seed (R4)
 
-1. Set GATE `Prb 50` and VELOCITY `Hmn 20` (commit both). PITCH order `Rnd` (field `Fwd` -> `Up` x3), commit.
+1. Set GATE `Prb 50` and VELOCITY `Hmn 20` (commit both). PITCH order `Rnd` (field `Ord Fwd` -> `Up` x3 -> `Ord Rnd`), commit.
 2. VELOCITY `Sed`: `Up` from no-seed -> `0`, `Up` x7 -> `7`. `Enter`.
 3. Play ~2 bars, Stop. Play again, Stop. Compare the monitor output.
 - [ ] Both runs: **identical** sequence of which steps sound, their pitches, and velocities.
