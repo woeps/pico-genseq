@@ -105,9 +105,10 @@ void PitchSetView::render(const state::UIState& state)
         ledMatrix.drawValueText(SCALE_LABELS[static_cast<uint8_t>(draft.scale)], 0xFFFF0011);
     } else if (field == state::PITCH_SET_FIELD_ROOT) {
         ledMatrix.drawLabel("rut", 0xFFFFEE00);
-        // Root pitch-class name (e.g. "c " / "c#").
-        char rootName[4] = {ROOT_LETTERS[draft.scaleRoot],
-                            ROOT_SHARPS[draft.scaleRoot] ? '#' : ' ', '\0', '\0'};
+        // Root pitch class via drawNote's layout: [0] letter, [1] octave (none
+        // for a pitch class), [2] sharp marker -> the same sharp dot as pitches.
+        char rootName[4] = {ROOT_LETTERS[draft.scaleRoot], ' ',
+                            ROOT_SHARPS[draft.scaleRoot] ? '#' : ' ', ' '};
         ledMatrix.drawNote(rootName, 0xFFFF0011);
     } else if (field == state::PITCH_SET_FIELD_QUANTIZE) {
         ledMatrix.drawLabel("qnt", 0xFFFFEE00);
