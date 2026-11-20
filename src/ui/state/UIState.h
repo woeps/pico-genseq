@@ -191,6 +191,49 @@ constexpr size_t VIEW_COUNT = static_cast<size_t>(ViewId::COUNT);
 constexpr uint8_t MAX_PATTERNS = 15;
 static_assert(MAX_PATTERNS <= 16);
 
+// --- Set libraries (separate-velocity-set-gate-set-and-note-set) -----------
+// Each set type lives in its own fixed library of SET_LIBRARY_SIZE slots; a
+// pattern holds one slot reference per type. Library capacity must cover one set
+// per pattern so a legacy (per-pattern) save migrates without loss.
+constexpr uint8_t SET_LIBRARY_SIZE = 16;
+static_assert(SET_LIBRARY_SIZE >= MAX_PATTERNS);
+static_assert(SET_LIBRARY_SIZE <= 16, "occupancy is a uint16_t bitmask");
+
+enum class SetType : uint8_t {
+    GATE,
+    NOTE,      // user-facing name of PitchSet
+    VELOCITY,
+};
+
+// Transient refusal/feedback for set-library actions; NONE means no notice.
+enum class SetNotice : uint8_t {
+    NONE,
+    LIBRARY_FULL,
+    IN_USE,
+    LAST_SET,
+    UNUSED,
+};
+
+struct PatternRefs {
+    uint8_t gate = 0;
+    uint8_t note = 0;
+    uint8_t velocity = 0;
+};
+
+template <class Cfg>
+struct SetLibrary {
+    std::array<Cfg, SET_LIBRARY_SIZE> slots{};
+    uint16_t occupied = 0x0001;  // bit s set == slot s holds a set
+};
+
+// State of the "go to pattern" picker opened from a set view (Requirement 10).
+struct GotoPicker {
+    bool active = false;
+    SetType type = SetType::GATE;
+    uint16_t candidates = 0;  // bitmask of patterns that reference the set
+    uint8_t cursor = 0;       // currently highlighted pattern
+};
+
 struct UIState {
     ViewId currentView = ViewId::INIT;
     uint8_t bpm = 120;
@@ -200,18 +243,36 @@ struct UIState {
     uint16_t activePatterns = 0x0001;
     uint8_t selectedPattern = 0;
     PatternSet selectedPatternSet = PatternSet::GATE;
-    std::array<GateSetConfig, MAX_PATTERNS> gateSetConfigs{};
+    // Per-pattern set references (one slot per library) and the slot each set
+    // view is editing.
+    std::array<PatternRefs, MAX_PATTERNS> patternRefs{};
+    uint8_t selectedGateSlot = 0;
+    uint8_t selectedNoteSlot = 0;
+    uint8_t selectedVelocitySlot = 0;
+    SetNotice setNotice = SetNotice::NONE;
+    GotoPicker gotoPicker{};
+
+    // The set a pattern currently references (patternRefs always points at an
+    // occupied slot).
+    GateSetConfig& gateSetOf(uint8_t pattern) { return gateLib.slots[patternRefs[pattern].gate]; }
+    const GateSetConfig& gateSetOf(uint8_t pattern) const { return gateLib.slots[patternRefs[pattern].gate]; }
+    PitchSetConfig& pitchSetOf(uint8_t pattern) { return noteLib.slots[patternRefs[pattern].note]; }
+    const PitchSetConfig& pitchSetOf(uint8_t pattern) const { return noteLib.slots[patternRefs[pattern].note]; }
+    VelocitySetConfig& velocitySetOf(uint8_t pattern) { return velocityLib.slots[patternRefs[pattern].velocity]; }
+    const VelocitySetConfig& velocitySetOf(uint8_t pattern) const { return velocityLib.slots[patternRefs[pattern].velocity]; }
+
+    SetLibrary<GateSetConfig> gateLib{};
     GateSetConfig gateSetDraft{};
     GateSetProperty selectedGateSetProperty = GateSetProperty::ALGORITHM;
     // R9 grid: which programmed step (0..steps-1) is selected while the
     // STEP_GRID property is active.
     uint8_t selectedGateStep = 0;
     bool gateSetDirty = false;
-    std::array<PitchSetConfig, MAX_PATTERNS> pitchSetConfigs{};
+    SetLibrary<PitchSetConfig> noteLib{};
     PitchSetConfig pitchSetDraft{};
     uint8_t selectedPitchSetField = PITCH_SET_FIELD_COUNT;
     bool pitchSetDirty = false;
-    std::array<VelocitySetConfig, MAX_PATTERNS> velocitySetConfigs{};
+    SetLibrary<VelocitySetConfig> velocityLib{};
     VelocitySetConfig velocitySetDraft{};
     uint8_t selectedVelocitySetField = VELOCITY_SET_FIELD_COUNT;
     bool velocitySetDirty = false;

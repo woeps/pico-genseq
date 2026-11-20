@@ -42,8 +42,8 @@ void test_working_state_preserved() {
     UIState s;
     s.patternCount = 3;
     s.bpm = 140;
-    s.pitchSetConfigs[0].count = 5;
-    s.pitchSetConfigs[0].pitches[0] = 48;
+    s.pitchSetOf(0).count = 5;
+    s.pitchSetOf(0).pitches[0] = 48;
     s.activePatterns = 0x0007;
 
     // Latch the fault.
@@ -52,7 +52,7 @@ void test_working_state_preserved() {
 
     // Working State is untouched (Req 10.3).
     check(s.patternCount == 3 && s.bpm == 140, "transport/pattern count preserved under fault");
-    check(s.pitchSetConfigs[0].count == 5 && s.pitchSetConfigs[0].pitches[0] == 48,
+    check(s.pitchSetOf(0).count == 5 && s.pitchSetOf(0).pitches[0] == 48,
           "pattern configuration preserved under fault");
     check(s.activePatterns == 0x0007, "active-pattern mask preserved under fault");
 }

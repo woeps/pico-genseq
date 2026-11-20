@@ -246,8 +246,8 @@ void HostControl::dispatchLine(const char* raw) {
         }
         tapKey(KeyId::ENTER, ui::mod::NONE);  // commit the gate set
         printf("H:ok testload pulses=%u (verify via dump)\n",
-               static_cast<unsigned>(sm.getState().gateSetConfigs[
-                   sm.getState().selectedPattern].pulses));
+               static_cast<unsigned>(sm.getState().gateSetOf(
+                   sm.getState().selectedPattern).pulses));
         return;
     }
 
@@ -320,9 +320,9 @@ void HostControl::emitDump() {
     // cleared its parameter -- R10.6 demonstrated set-and-clear path).
     {
         const uint8_t p = s.selectedPattern < s.patternCount ? s.selectedPattern : 0;
-        const auto& g = s.gateSetConfigs[p];
-        const auto& pi = s.pitchSetConfigs[p];
-        const auto& v = s.velocitySetConfigs[p];
+        const auto& g = s.gateSetOf(p);
+        const auto& pi = s.pitchSetOf(p);
+        const auto& v = s.velocitySetOf(p);
         printf("D:genScale=%u\n", static_cast<unsigned>(pi.scale));
         printf("D:genRoot=%u\n", static_cast<unsigned>(pi.scaleRoot));
         printf("D:genQuantize=%u\n", static_cast<unsigned>(pi.quantize));

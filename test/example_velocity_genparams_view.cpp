@@ -168,7 +168,7 @@ void test_persist_roundtrip() {
     const persistence::PersistableConfig cfg = toPersistableConfig(s);
     UIState loaded;
     applyPersistableConfig(loaded, cfg);
-    const auto& v = loaded.velocitySetConfigs[0];
+    const auto& v = loaded.velocitySetOf(0);
     check(v.humanizeRange == 12, "humanize survives save/load");
     check(v.seedSet && v.seed == 7, "seed survives save/load");
     check(v.coupling == common::CouplingMode::LOCKED, "coupling survives save/load");
@@ -183,12 +183,12 @@ void test_persist_roundtrip() {
 static void test_restore_sends_genparams() {
     UIState s;
     s.patternCount = 2;
-    s.gateSetConfigs[0].patternProbability = 50;
-    s.pitchSetConfigs[0].scale = common::ScaleId::MAJOR;
-    s.velocitySetConfigs[0].humanizeRange = 20;
-    s.velocitySetConfigs[0].seedSet = true;
-    s.velocitySetConfigs[0].seed = 7;
-    s.velocitySetConfigs[1].coupling = common::CouplingMode::LOCKED;
+    s.gateSetOf(0).patternProbability = 50;
+    s.pitchSetOf(0).scale = common::ScaleId::MAJOR;
+    s.velocitySetOf(0).humanizeRange = 20;
+    s.velocitySetOf(0).seedSet = true;
+    s.velocitySetOf(0).seed = 7;
+    s.velocitySetOf(1).coupling = common::CouplingMode::LOCKED;
 
     commands::g_sentGenParams.clear();
     restoreSequencerFromState(s);

@@ -29,9 +29,9 @@ void toPersistableConfig(const UIState& state, persistence::PersistableConfig& c
 
     for (uint8_t i = 0; i < count; i++) {
         persistence::PatternConfig& p = cfg.patterns[i];
-        const GateSetConfig& gate = state.gateSetConfigs[i];
-        const PitchSetConfig& pitch = state.pitchSetConfigs[i];
-        const VelocitySetConfig& vel = state.velocitySetConfigs[i];
+        const GateSetConfig& gate = state.gateSetOf(i);
+        const PitchSetConfig& pitch = state.pitchSetOf(i);
+        const VelocitySetConfig& vel = state.velocitySetOf(i);
 
         p.active = static_cast<uint8_t>((state.activePatterns >> i) & 0x1);
 
@@ -111,6 +111,9 @@ void applyPersistableConfig(UIState& state,
 
         if (p.active) activeMask |= static_cast<uint16_t>(1u << i);
 
+        // Legacy (per-pattern) record: pattern i owns set i of every library.
+        state.patternRefs[i] = PatternRefs{i, i, i};
+
         GateSetConfig gate{};
         gate.algorithm = static_cast<GateAlgorithm>(p.gateAlgorithm);
         gate.steps = p.gateSteps;
@@ -149,7 +152,7 @@ void applyPersistableConfig(UIState& state,
             gate.stepProbability[j] = p.genStepProbability[j];
         }
         gate.patternProbability = p.genPatternProbability;
-        state.gateSetConfigs[i] = gate;
+        state.gateSetOf(i) = gate;
 
         PitchSetConfig pitch{};
         pitch.count = p.pitchCount > MAX_PITCHES ? MAX_PITCHES : p.pitchCount;
@@ -163,7 +166,7 @@ void applyPersistableConfig(UIState& state,
         pitch.scale = static_cast<common::ScaleId>(p.genScale);
         pitch.scaleRoot = p.genScaleRoot;
         pitch.quantize = static_cast<common::QuantizeMode>(p.genQuantize);
-        state.pitchSetConfigs[i] = pitch;
+        state.pitchSetOf(i) = pitch;
 
         VelocitySetConfig vel{};
         vel.count = p.velocityCount > MAX_VELOCITIES ? MAX_VELOCITIES : p.velocityCount;
@@ -177,8 +180,13 @@ void applyPersistableConfig(UIState& state,
         vel.seedSet = p.genSeedSet != 0;
         vel.seed = p.genSeed;
         vel.coupling = static_cast<common::CouplingMode>(p.genCoupling);
-        state.velocitySetConfigs[i] = vel;
+        state.velocitySetOf(i) = vel;
     }
+
+    const uint16_t ownedSlots = static_cast<uint16_t>((1u << count) - 1u);
+    state.gateLib.occupied = ownedSlots;
+    state.noteLib.occupied = ownedSlots;
+    state.velocityLib.occupied = ownedSlots;
 
     state.activePatterns = activeMask;
     // Draft / dirty / selection / save-status fields are intentionally left at

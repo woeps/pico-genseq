@@ -161,9 +161,9 @@ void test_persist_roundtrip() {
     const persistence::PersistableConfig cfg = toPersistableConfig(s);
     UIState loaded;
     applyPersistableConfig(loaded, cfg);
-    check(loaded.gateSetConfigs[0].stepProbability[5] == prob5,
+    check(loaded.gateSetOf(0).stepProbability[5] == prob5,
           "per-step probability survives save/load");
-    check(loaded.gateSetConfigs[0].gateStates[2] == gate2,
+    check(loaded.gateSetOf(0).gateStates[2] == gate2,
           "manual gate state survives save/load");
 }
 

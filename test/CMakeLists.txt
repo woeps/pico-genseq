@@ -428,6 +428,7 @@ set(EXAMPLE_SAVE_COMBO_SRC "${TEST_DIR}/example_save_combo.cpp")
 add_executable(genseq_example_save_combo
     "${EXAMPLE_SAVE_COMBO_SRC}"
     "${SRC_DIR}/ui/state/Reducer.cpp"
+    "${SRC_DIR}/ui/state/SetLibrary.cpp"
 )
 target_include_directories(genseq_example_save_combo PRIVATE
     ${EMISSION_INCLUDE_DIRS}
@@ -940,6 +941,7 @@ if(RAPIDCHECK_AVAILABLE)
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_DESTRUCTION_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_LAUNCH_GUARD_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_GOLDEN_STREAM_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SET_LIBRARY_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${SMOKE_HOST_COMPILATION_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_HEADER_LAYOUT_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_OUTCOME_MAPPING_SRC}")
@@ -1060,6 +1062,7 @@ if(RAPIDCHECK_AVAILABLE)
     add_executable(genseq_reducer_property_tests
         "${REDUCER_PROPERTY7_SRC}"
         "${SRC_DIR}/ui/state/Reducer.cpp"
+        "${SRC_DIR}/ui/state/SetLibrary.cpp"
     )
     target_include_directories(genseq_reducer_property_tests PRIVATE
         ${EMISSION_INCLUDE_DIRS}
@@ -1079,6 +1082,7 @@ endif()
 add_executable(genseq_example_pitchset_scale_view
     "${EXAMPLE_PITCHSET_SCALE_VIEW_SRC}"
     "${SRC_DIR}/ui/state/Reducer.cpp"
+    "${SRC_DIR}/ui/state/SetLibrary.cpp"
     "${SRC_DIR}/ui/state/PersistMapping.cpp"
 )
 target_include_directories(genseq_example_pitchset_scale_view PRIVATE
@@ -1099,6 +1103,7 @@ add_test(NAME genseq_example_pitchset_scale_view COMMAND genseq_example_pitchset
 add_executable(genseq_example_gateset_grid_view
     "${EXAMPLE_GATESET_GRID_VIEW_SRC}"
     "${SRC_DIR}/ui/state/Reducer.cpp"
+    "${SRC_DIR}/ui/state/SetLibrary.cpp"
     "${SRC_DIR}/ui/state/PersistMapping.cpp"
 )
 target_include_directories(genseq_example_gateset_grid_view PRIVATE
@@ -1119,6 +1124,7 @@ add_test(NAME genseq_example_gateset_grid_view COMMAND genseq_example_gateset_gr
 add_executable(genseq_example_velocity_genparams_view
     "${EXAMPLE_VELOCITY_GENPARAMS_VIEW_SRC}"
     "${SRC_DIR}/ui/state/Reducer.cpp"
+    "${SRC_DIR}/ui/state/SetLibrary.cpp"
     "${SRC_DIR}/ui/state/PersistMapping.cpp"
 )
 target_include_directories(genseq_example_velocity_genparams_view PRIVATE
@@ -1130,6 +1136,24 @@ target_include_directories(genseq_example_velocity_genparams_view PRIVATE
 )
 target_link_libraries(genseq_example_velocity_genparams_view PRIVATE genseq_emission)
 add_test(NAME genseq_example_velocity_genparams_view COMMAND genseq_example_velocity_genparams_view)
+
+# Set library model (separate-velocity-set-gate-set-and-note-set tasks 2.2-2.4). Compiles the real
+# Reducer.cpp + SetLibrary.cpp with host-safe commands:: seam stubs. Own main().
+set(EXAMPLE_SET_LIBRARY_SRC "${TEST_DIR}/example_set_library.cpp")
+add_executable(genseq_example_set_library
+    "${EXAMPLE_SET_LIBRARY_SRC}"
+    "${SRC_DIR}/ui/state/Reducer.cpp"
+    "${SRC_DIR}/ui/state/SetLibrary.cpp"
+)
+target_include_directories(genseq_example_set_library PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}"
+    "${SRC_DIR}/ui"
+    "${SRC_DIR}/ui/state"
+    "${SRC_DIR}/persistence"
+)
+target_link_libraries(genseq_example_set_library PRIVATE genseq_emission)
+add_test(NAME genseq_example_set_library COMMAND genseq_example_set_library)
 
 # ---------------------------------------------------------------------------
 # Example test: GEN_PARAMS_SET FIFO round-trip (generative-engine-expansion task

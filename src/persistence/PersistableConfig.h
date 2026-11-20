@@ -15,7 +15,7 @@ constexpr uint8_t MAX_SET_LEN = 16;
 // from ui::state::UIState — no transient runtime state (position / randomState).
 struct PatternConfig {
     // Gate set: persisted as the euclidean generator parameters (the source of
-    // truth in UIState::gateSetConfigs), not the expanded boolean vector.
+    // truth in UIState gate sets), not the expanded boolean vector.
     uint8_t gateAlgorithm;   // ui::state::GateAlgorithm
     uint8_t gateSteps;       // 1..64
     uint8_t gatePulses;      // 0..steps

@@ -1,4 +1,5 @@
 #include "Reducer.h"
+#include "SetLibrary.h"
 #include "../../commands/command.h"
 #include "../../common/gate_set.h"
 #include "../../common/pitch_set.h"
@@ -120,7 +121,7 @@ void clampEuclidean(GateSetConfig& config) {
 
 void restoreGateSetDraft(UIState& state) {
     if (!state.gateSetDirty || state.selectedPattern >= state.patternCount) return;
-    state.gateSetDraft = state.gateSetConfigs[state.selectedPattern];
+    state.gateSetDraft = state.gateSetOf(state.selectedPattern);
     state.gateSetDirty = false;
     sendGateSet(state.selectedPattern, state.gateSetDraft);
     sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
@@ -137,7 +138,7 @@ void sendPitchSetConfig(uint8_t patternIndex, const PitchSetConfig& config) {
 
 void restorePitchSetDraft(UIState& state) {
     if (!state.pitchSetDirty || state.selectedPattern >= state.patternCount) return;
-    state.pitchSetDraft = state.pitchSetConfigs[state.selectedPattern];
+    state.pitchSetDraft = state.pitchSetOf(state.selectedPattern);
     state.pitchSetDirty = false;
     sendPitchSetConfig(state.selectedPattern, state.pitchSetDraft);
     sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
@@ -181,9 +182,9 @@ void sendGenParamsFrom(uint8_t patternIndex, const PitchSetConfig& pitch,
 // Committed gen-params (commit, ESC/undo, leaving an editor, boot restore).
 void sendPatternGenParams(const UIState& state, uint8_t patternIndex) {
     if (patternIndex >= state.patternCount) return;
-    sendGenParamsFrom(patternIndex, state.pitchSetConfigs[patternIndex],
-                      state.gateSetConfigs[patternIndex],
-                      state.velocitySetConfigs[patternIndex]);
+    sendGenParamsFrom(patternIndex, state.pitchSetOf(patternIndex),
+                      state.gateSetOf(patternIndex),
+                      state.velocitySetOf(patternIndex));
 }
 
 // Live preview while editing: the one stream being edited contributes its DRAFT,
@@ -192,23 +193,23 @@ void sendPatternGenParams(const UIState& state, uint8_t patternIndex) {
 // keeps them, ESC sends the committed values back.
 void previewGateGenParams(const UIState& s) {
     if (s.selectedPattern >= s.patternCount) return;
-    sendGenParamsFrom(s.selectedPattern, s.pitchSetConfigs[s.selectedPattern], s.gateSetDraft,
-                      s.velocitySetConfigs[s.selectedPattern]);
+    sendGenParamsFrom(s.selectedPattern, s.pitchSetOf(s.selectedPattern), s.gateSetDraft,
+                      s.velocitySetOf(s.selectedPattern));
 }
 void previewPitchGenParams(const UIState& s) {
     if (s.selectedPattern >= s.patternCount) return;
-    sendGenParamsFrom(s.selectedPattern, s.pitchSetDraft, s.gateSetConfigs[s.selectedPattern],
-                      s.velocitySetConfigs[s.selectedPattern]);
+    sendGenParamsFrom(s.selectedPattern, s.pitchSetDraft, s.gateSetOf(s.selectedPattern),
+                      s.velocitySetOf(s.selectedPattern));
 }
 void previewVelocityGenParams(const UIState& s) {
     if (s.selectedPattern >= s.patternCount) return;
-    sendGenParamsFrom(s.selectedPattern, s.pitchSetConfigs[s.selectedPattern],
-                      s.gateSetConfigs[s.selectedPattern], s.velocitySetDraft);
+    sendGenParamsFrom(s.selectedPattern, s.pitchSetOf(s.selectedPattern),
+                      s.gateSetOf(s.selectedPattern), s.velocitySetDraft);
 }
 
 void restoreVelocitySetDraft(UIState& state) {
     if (!state.velocitySetDirty || state.selectedPattern >= state.patternCount) return;
-    state.velocitySetDraft = state.velocitySetConfigs[state.selectedPattern];
+    state.velocitySetDraft = state.velocitySetOf(state.selectedPattern);
     state.velocitySetDirty = false;
     sendVelocitySetConfig(state.selectedPattern, state.velocitySetDraft);
     sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
@@ -249,7 +250,7 @@ void setCurrentView(UIState& state, ViewId viewId) {
 
 void beginGateSetEdit(UIState& state) {
     if (state.selectedPattern >= state.patternCount) return;
-    state.gateSetDraft = state.gateSetConfigs[state.selectedPattern];
+    state.gateSetDraft = state.gateSetOf(state.selectedPattern);
     // Seed the per-step gate states from the generator if they were never set
     // (all-zero but the generator would produce pulses) — e.g. a config created
     // before the R9 grid existed, or a fresh default. A config with manual edits
@@ -378,7 +379,7 @@ void adjustGateSetValue(UIState& state, int delta, bool coarse) {
 
     if (next == state.gateSetDraft) return;
     state.gateSetDraft = next;
-    state.gateSetDirty = next != state.gateSetConfigs[state.selectedPattern];
+    state.gateSetDirty = next != state.gateSetOf(state.selectedPattern);
     const GateSetProperty prop = state.selectedGateSetProperty;
     // Probability edits (per-Pattern PRB, per-step grid probability) do not change
     // the gate array. Resending it would rebuild core1's GateSet at step 0 and
@@ -406,13 +407,13 @@ void toggleGateStep(UIState& state) {
     GateSetConfig next = state.gateSetDraft;
     next.gateStates[s] = next.gateStates[s] ? 0 : 1;
     state.gateSetDraft = next;
-    state.gateSetDirty = next != state.gateSetConfigs[state.selectedPattern];
+    state.gateSetDirty = next != state.gateSetOf(state.selectedPattern);
     sendGateSet(state.selectedPattern, next);
 }
 
 void commitGateSetEdit(UIState& state) {
     if (state.selectedPattern >= state.patternCount) return;
-    state.gateSetConfigs[state.selectedPattern] = state.gateSetDraft;
+    state.gateSetOf(state.selectedPattern) = state.gateSetDraft;
     state.gateSetDirty = false;
     // task 10.4: transmit the pattern's full gen-params to core1 on commit (gate
     // carries per-Pattern/per-step probability + stepLength).
@@ -424,12 +425,12 @@ void undoGateSetEdit(UIState& state) {
 }
 
 void syncGateSet(const UIState& state, uint8_t index) {
-    if (index < state.patternCount) sendGateSet(index, state.gateSetConfigs[index]);
+    if (index < state.patternCount) sendGateSet(index, state.gateSetOf(index));
 }
 
 void beginPitchSetEdit(UIState& state) {
     if (state.selectedPattern >= state.patternCount) return;
-    state.pitchSetDraft = state.pitchSetConfigs[state.selectedPattern];
+    state.pitchSetDraft = state.pitchSetOf(state.selectedPattern);
     state.selectedPitchSetField = PITCH_SET_FIELD_COUNT;
     state.pitchSetDirty = false;
 }
@@ -490,7 +491,7 @@ void adjustPitchSetValue(UIState& state, int delta, bool coarse) {
 
     if (next == state.pitchSetDraft) return;
     state.pitchSetDraft = next;
-    state.pitchSetDirty = next != state.pitchSetConfigs[state.selectedPattern];
+    state.pitchSetDirty = next != state.pitchSetOf(state.selectedPattern);
     if (state.selectedPitchSetField <= PITCH_SET_FIELD_QUANTIZE) {
         previewPitchGenParams(state);  // scale/root/quantize: audible immediately
     } else {
@@ -500,7 +501,7 @@ void adjustPitchSetValue(UIState& state, int delta, bool coarse) {
 
 void commitPitchSetEdit(UIState& state) {
     if (state.selectedPattern >= state.patternCount) return;
-    state.pitchSetConfigs[state.selectedPattern] = state.pitchSetDraft;
+    state.pitchSetOf(state.selectedPattern) = state.pitchSetDraft;
     state.pitchSetDirty = false;
     // task 10.4: pitch carries the scale constraint; transmit gen-params on commit.
     sendPatternGenParams(state, state.selectedPattern);
@@ -508,19 +509,19 @@ void commitPitchSetEdit(UIState& state) {
 
 void undoPitchSetEdit(UIState& state) {
     if (!state.pitchSetDirty || state.selectedPattern >= state.patternCount) return;
-    state.pitchSetDraft = state.pitchSetConfigs[state.selectedPattern];
+    state.pitchSetDraft = state.pitchSetOf(state.selectedPattern);
     state.pitchSetDirty = false;
     sendPitchSetConfig(state.selectedPattern, state.pitchSetDraft);
     sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
 }
 
 void syncPitchSet(const UIState& state, uint8_t index) {
-    if (index < state.patternCount) sendPitchSetConfig(index, state.pitchSetConfigs[index]);
+    if (index < state.patternCount) sendPitchSetConfig(index, state.pitchSetOf(index));
 }
 
 void beginVelocitySetEdit(UIState& state) {
     if (state.selectedPattern >= state.patternCount) return;
-    state.velocitySetDraft = state.velocitySetConfigs[state.selectedPattern];
+    state.velocitySetDraft = state.velocitySetOf(state.selectedPattern);
     state.selectedVelocitySetField = VELOCITY_SET_FIELD_COUNT;
     state.velocitySetDirty = false;
 }
@@ -590,7 +591,7 @@ void adjustVelocitySetValue(UIState& state, int delta, bool coarse) {
 
     if (next == state.velocitySetDraft) return;
     state.velocitySetDraft = next;
-    state.velocitySetDirty = next != state.velocitySetConfigs[state.selectedPattern];
+    state.velocitySetDirty = next != state.velocitySetOf(state.selectedPattern);
     if (state.selectedVelocitySetField <= VELOCITY_SET_FIELD_COUPLING) {
         previewVelocityGenParams(state);  // humanize/seed/coupling: audible immediately
     } else {
@@ -600,7 +601,7 @@ void adjustVelocitySetValue(UIState& state, int delta, bool coarse) {
 
 void commitVelocitySetEdit(UIState& state) {
     if (state.selectedPattern >= state.patternCount) return;
-    state.velocitySetConfigs[state.selectedPattern] = state.velocitySetDraft;
+    state.velocitySetOf(state.selectedPattern) = state.velocitySetDraft;
     state.velocitySetDirty = false;
     // task 10.4: velocity carries humanize/seed/coupling; transmit on commit.
     sendPatternGenParams(state, state.selectedPattern);
@@ -611,7 +612,7 @@ void undoVelocitySetEdit(UIState& state) {
 }
 
 void syncVelocitySet(const UIState& state, uint8_t index) {
-    if (index < state.patternCount) sendVelocitySetConfig(index, state.velocitySetConfigs[index]);
+    if (index < state.patternCount) sendVelocitySetConfig(index, state.velocitySetOf(index));
 }
 
 void setSelectedPattern(UIState& state, uint8_t index) {
@@ -625,9 +626,10 @@ void setSelectedPatternSet(UIState& state, PatternSet patternSet) {
 void addPattern(UIState& state) {
     if (state.patternCount >= MAX_PATTERNS) return;
     const uint8_t newPattern = state.patternCount;
-    state.gateSetConfigs[newPattern] = GateSetConfig{};
-    state.pitchSetConfigs[newPattern] = PitchSetConfig{};
-    state.velocitySetConfigs[newPattern] = VelocitySetConfig{};
+    // A new pattern references the lowest occupied slot of each library (R2.4).
+    state.patternRefs[newPattern] = PatternRefs{lowestOccupied(state, SetType::GATE),
+                                                lowestOccupied(state, SetType::NOTE),
+                                                lowestOccupied(state, SetType::VELOCITY)};
     state.patternCount++;
     state.activePatterns |= (1 << newPattern);
     state.selectedPattern = newPattern;
@@ -644,14 +646,11 @@ void removePattern(UIState& state, uint8_t index) {
     const uint16_t lower = state.activePatterns & lowerMask;
     const uint16_t upper = state.activePatterns >> (index + 1);
     state.activePatterns = lower | static_cast<uint16_t>(upper << index);
+    // Removing a pattern drops only its references; the libraries are untouched (R2.5).
     for (uint8_t i = index; i + 1 < state.patternCount; i++) {
-        state.gateSetConfigs[i] = state.gateSetConfigs[i + 1];
-        state.pitchSetConfigs[i] = state.pitchSetConfigs[i + 1];
-        state.velocitySetConfigs[i] = state.velocitySetConfigs[i + 1];
+        state.patternRefs[i] = state.patternRefs[i + 1];
     }
-    state.gateSetConfigs[state.patternCount - 1] = GateSetConfig{};
-    state.pitchSetConfigs[state.patternCount - 1] = PitchSetConfig{};
-    state.velocitySetConfigs[state.patternCount - 1] = VelocitySetConfig{};
+    state.patternRefs[state.patternCount - 1] = PatternRefs{};
     state.patternCount--;
     if (state.selectedPattern > index) state.selectedPattern--;
     state.selectedPattern = std::min(state.selectedPattern,

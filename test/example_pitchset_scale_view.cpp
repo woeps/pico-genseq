@@ -119,7 +119,7 @@ void test_pitch_edit_leaves_scale() {
     adjustPitchSetValue(s, 1, false);  // nudge pitch
     check(s.pitchSetDraft.scale == common::ScaleId::MAJOR, "pitch edit leaves scale unchanged");
     commitPitchSetEdit(s);
-    check(s.pitchSetConfigs[0].scale == common::ScaleId::MAJOR, "commit persists scale to config");
+    check(s.pitchSetOf(0).scale == common::ScaleId::MAJOR, "commit persists scale to config");
 }
 
 // The cue decision matches common::scale::inScale against the draft's scale/root
@@ -157,10 +157,10 @@ void test_persist_roundtrip() {
 
     UIState loaded;
     applyPersistableConfig(loaded, cfg);
-    check(loaded.pitchSetConfigs[0].scale == common::ScaleId::MINOR_NATURAL,
+    check(loaded.pitchSetOf(0).scale == common::ScaleId::MINOR_NATURAL,
           "load restores scale");
-    check(loaded.pitchSetConfigs[0].scaleRoot == 9, "load restores root");
-    check(loaded.pitchSetConfigs[0].quantize == common::QuantizeMode::SKIP,
+    check(loaded.pitchSetOf(0).scaleRoot == 9, "load restores root");
+    check(loaded.pitchSetOf(0).quantize == common::QuantizeMode::SKIP,
           "load restores quantize");
 
     // A default (untouched) config maps to CHROMATIC/0/NEAREST == 0/0/0.

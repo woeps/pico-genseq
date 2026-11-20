@@ -20,6 +20,7 @@ add_executable(genseq_tests
     ${SRC}/common/pitch_set.cpp
     ${SRC}/ui/KeyNames.cpp
     ${SRC}/ui/state/Reducer.cpp
+    ${SRC}/ui/state/SetLibrary.cpp
     ${SRC}/ui/views/InitView.cpp
     ${SRC}/ui/views/PatternsView.cpp
     ${SRC}/ui/views/GateSetView.cpp

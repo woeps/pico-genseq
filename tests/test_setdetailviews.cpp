@@ -116,7 +116,7 @@ TEST(gatesetview_enter_commits_and_escape_undoes_then_exits) {
 
     s = view.handleEvent(s, press(KeyId::ENTER));
     CHECK(!s.gateSetDirty);
-    CHECK_EQ(s.gateSetConfigs[0].pulses, 5);
+    CHECK_EQ(s.gateSetOf(0).pulses, 5);
     CHECK(view.handleEvent(s, press(KeyId::ESCAPE)).currentView == state::ViewId::PATTERNS);
 }
 
@@ -396,7 +396,7 @@ TEST(pitchsetview_enter_commits_and_escape_undoes_then_exits) {
     // commit path
     s = view.handleEvent(s, press(KeyId::ENTER));
     CHECK(!s.pitchSetDirty);
-    CHECK_EQ(s.pitchSetConfigs[0].pitches[0], 61);
+    CHECK_EQ(s.pitchSetOf(0).pitches[0], 61);
     CHECK(view.handleEvent(s, press(KeyId::ESCAPE)).currentView == state::ViewId::PATTERNS);
 }
 

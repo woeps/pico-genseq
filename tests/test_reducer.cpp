@@ -184,11 +184,11 @@ TEST(add_pattern_initializes_and_sends_default_gate_set) {
     commands::testing::reset();
     state::UIState s;
     s.patternCount = 2;
-    s.gateSetConfigs[2].steps = 7;
+    s.gateSetOf(2).steps = 7;
 
     state::addPattern(s);
 
-    CHECK_EQ(s.gateSetConfigs[2].steps, 16);
+    CHECK_EQ(s.gateSetOf(2).steps, 16);
     CHECK_EQ(commands::testing::sentCommands().size(), 3);
     if (commands::testing::sentCommands().size() >= 3) {
         CHECK(commands::testing::sentCommands()[0].cmd == commands::Command::PATTERN_ADD);
@@ -204,22 +204,22 @@ TEST(add_pattern_initializes_and_sends_default_gate_set) {
 TEST(remove_pattern_compacts_gate_set_configs) {
     state::UIState s;
     s.patternCount = 3;
-    s.gateSetConfigs[0].steps = 8;
-    s.gateSetConfigs[1].steps = 12;
-    s.gateSetConfigs[2].steps = 24;
+    s.gateSetOf(0).steps = 8;
+    s.gateSetOf(1).steps = 12;
+    s.gateSetOf(2).steps = 24;
 
     state::removePattern(s, 1);
 
-    CHECK_EQ(s.gateSetConfigs[0].steps, 8);
-    CHECK_EQ(s.gateSetConfigs[1].steps, 24);
-    CHECK_EQ(s.gateSetConfigs[2].steps, 16);
+    CHECK_EQ(s.gateSetOf(0).steps, 8);
+    CHECK_EQ(s.gateSetOf(1).steps, 24);
+    CHECK_EQ(s.gateSetOf(2).steps, 16);
 }
 
 TEST(sync_gate_set_supports_long_musical_cycles) {
     commands::testing::reset();
     state::UIState s;
-    s.gateSetConfigs[0].steps = 64;
-    s.gateSetConfigs[0].noteLength = state::NoteLength::WHOLE;
+    s.gateSetOf(0).steps = 64;
+    s.gateSetOf(0).noteLength = state::NoteLength::WHOLE;
 
     state::syncGateSet(s, 0);
 
@@ -273,8 +273,8 @@ TEST(add_pattern_initializes_and_sends_default_pitch_set) {
 
     state::addPattern(s);
 
-    CHECK_EQ(s.pitchSetConfigs[2].count, 4);
-    CHECK_EQ(s.pitchSetConfigs[2].pitches[0], 60);
+    CHECK_EQ(s.pitchSetOf(2).count, 4);
+    CHECK_EQ(s.pitchSetOf(2).pitches[0], 60);
     auto& cmds = commands::testing::sentCommands();
     // PATTERN_ADD, PATTERN_GATE_SET, PATTERN_PITCH_SET
     bool hasPitchSet = false;
@@ -292,25 +292,25 @@ TEST(add_pattern_initializes_and_sends_default_pitch_set) {
 TEST(remove_pattern_compacts_pitch_set_configs) {
     state::UIState s;
     s.patternCount = 3;
-    s.pitchSetConfigs[0].pitches[0] = 60;
-    s.pitchSetConfigs[1].pitches[0] = 62;
-    s.pitchSetConfigs[2].pitches[0] = 64;
+    s.pitchSetOf(0).pitches[0] = 60;
+    s.pitchSetOf(1).pitches[0] = 62;
+    s.pitchSetOf(2).pitches[0] = 64;
 
     state::removePattern(s, 1);
 
-    CHECK_EQ(s.pitchSetConfigs[0].pitches[0], 60);
-    CHECK_EQ(s.pitchSetConfigs[1].pitches[0], 64);
-    CHECK_EQ(s.pitchSetConfigs[2].pitches[0], 60);  // reset to default
+    CHECK_EQ(s.pitchSetOf(0).pitches[0], 60);
+    CHECK_EQ(s.pitchSetOf(1).pitches[0], 64);
+    CHECK_EQ(s.pitchSetOf(2).pitches[0], 60);  // reset to default
 }
 
 TEST(sync_pitch_set_sends_configured_pitches) {
     commands::testing::reset();
     state::UIState s;
-    s.pitchSetConfigs[0].count = 3;
-    s.pitchSetConfigs[0].pitches[0] = 55;
-    s.pitchSetConfigs[0].pitches[1] = 57;
-    s.pitchSetConfigs[0].pitches[2] = 59;
-    s.pitchSetConfigs[0].order = common::PlayingOrder::BACKWARDS;
+    s.pitchSetOf(0).count = 3;
+    s.pitchSetOf(0).pitches[0] = 55;
+    s.pitchSetOf(0).pitches[1] = 57;
+    s.pitchSetOf(0).pitches[2] = 59;
+    s.pitchSetOf(0).order = common::PlayingOrder::BACKWARDS;
 
     state::syncPitchSet(s, 0);
 
