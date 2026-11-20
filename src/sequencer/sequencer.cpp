@@ -46,11 +46,27 @@ Sequencer::Sequencer(IMidiOutput& output, IMonotonicClock& clock)
     patternRng.emplace_back();
 }
 
+#if GENSEQ_HOST_CONTROL
+// Task 11.3 bench MIDI tap: a single-producer (core1) / single-consumer (core0,
+// only while disarmed) byte log of EXACTLY what is handed to the MIDI UART, so a
+// host can compare decoded MIDI across runs (seed determinism) with no analyzer
+// wire. Host-control builds only; shipping firmware is byte-identical.
+volatile uint32_t g_midiTapArmed = 0;
+volatile uint32_t g_midiTapCount = 0;
+uint8_t g_midiTap[kMidiTapCapacity];
+#endif
+
 void MeteredMidiOutput::write(uint8_t byte) {
     instrumentation::PerformanceTrace::midiDispatchBegin();
     inner_.write(byte);
     instrumentation::PerformanceTrace::midiDispatchEnd();
     ++byteCounter_;
+#if GENSEQ_HOST_CONTROL
+    if (g_midiTapArmed) {
+        const uint32_t n = g_midiTapCount;
+        if (n < kMidiTapCapacity) { g_midiTap[n] = byte; g_midiTapCount = n + 1; }
+    }
+#endif
 }
 
 void Sequencer::init() {

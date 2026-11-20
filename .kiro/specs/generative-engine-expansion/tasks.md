@@ -223,6 +223,17 @@ part of this plan.
       power-cycle + load
     - Store commands, seeds, firmware revision, analyzer setup, and captures as milestone evidence
     - _Requirements: 4.3, 6.2, 10.5, 10.6_
+    - **11.3a live control — PASS** (commit 6119812): `test/bench/livecontrol_11_3.py --bpm 200`,
+      evidence `test/bench/evidence_11_3a_livecontrol.log`.
+    - **11.3b determinism — PASS except the cold power-cycle step** (fix 7fa3b7d):
+      `test/bench/determinism_11_3.py /dev/ttyACM0 --secs 8`, evidence
+      `test/bench/evidence_11_3b_determinism.log`. Pattern 0 alone, PROBABILITY 50, HUMANIZE 20,
+      SEED 7 set through the R10 UI; decoded MIDI from the host-control MIDI tap. A == A2
+      (Stop→Play), A == B (save + watchdog reboot + FRAM load) over 58 events; seed 8 differs.
+      The first silicon runs FAILED and exposed two bugs, both fixed in 7fa3b7d with host tests:
+      boot restore never sent Generation Parameters to core1, and seeded RANDOM order was never
+      re-routed to the Pattern RNG (task 4.2 had claimed it; 4.3 had no RANDOM-order test).
+      **Remaining:** `--after-power-cycle` capture C after a manual cold power-cycle.
 
 ## RESOLVED hardware issue (was blocking 11.2/11.3) — core1 boot fault
 
