@@ -128,6 +128,19 @@ void Sequencer::update() {
       g_core1Region = 31; if (31 > g_core1RegionMax) g_core1RegionMax = 31; }  // after soundingCount(), pre !playing return
 #endif
 
+    // Hold the tick path while a command batch is open; abandon it if it stalls for more
+    // than one tick period so the clock can never freeze.
+    if (batchRemaining > 0) {
+        const uint64_t now = clock.nowMicros();
+        const uint64_t tickPeriodUs = 60000000ULL / (static_cast<uint64_t>(timeline.bpm()) * 24ULL);
+        if (now - batchLastActivityUs > tickPeriodUs) {
+            batchRemaining = 0;
+            ++metrics.batchTimeouts;
+        } else {
+            return;
+        }
+    }
+
     if (!playing) return;
 
     // All musical time advances through Scheduler::service(now) (tasks 5.1-5.3,
@@ -382,7 +395,30 @@ void Sequencer::setPatternGenerationParameters(size_t patternIndex,
     }
 }
 
+bool Sequencer::handleBatchFrame(const commands::CommandMessage& msg) {
+    if (msg.cmd == commands::Command::BATCH_BEGIN) {
+        const uint8_t n = msg.param1 > commands::MAX_BATCH_COMMANDS ? commands::MAX_BATCH_COMMANDS
+                                                                    : msg.param1;
+        batchRemaining = n;
+        batchLastActivityUs = clock.nowMicros();
+        return true;
+    }
+    if (msg.cmd == commands::Command::BATCH_END) {
+        batchRemaining = 0;
+        return true;
+    }
+    return false;
+}
+
+void Sequencer::noteBatchCommand(const commands::CommandMessage& msg) {
+    if (batchRemaining == 0 || msg.cmd == commands::Command::NOOP) return;
+    --batchRemaining;
+    batchLastActivityUs = clock.nowMicros();
+}
+
 void Sequencer::processCommand(commands::CommandMessage msg) {
+    if (handleBatchFrame(msg)) return;
+    noteBatchCommand(msg);
     if (!canApplyCommand(msg)) return;
 
     instrumentation::PerformanceTrace::operationApplyBegin();
@@ -463,6 +499,8 @@ void Sequencer::processCommand(const commands::CommandMessage& msg,
     // (now-empty) vectors. canApplyCommand checks `count <= vector.size()` for
     // set commands, which is vacuously false here (empty vectors) — so validate
     // those against the snapshot's counts instead.
+    if (handleBatchFrame(msg)) return;
+    noteBatchCommand(msg);
     bool applicable;
     switch (msg.cmd) {
         case commands::Command::PATTERN_GATE_SET:

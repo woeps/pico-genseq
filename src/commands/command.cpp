@@ -24,6 +24,15 @@ namespace commands {
         multicore_fifo_push_blocking(packed);
     }
 
+    void sendBatchBegin(uint8_t commandCount) {
+        const uint8_t n = std::min<uint8_t>(commandCount == 0 ? 1 : commandCount, MAX_BATCH_COMMANDS);
+        sendCommand(Command::BATCH_BEGIN, n);
+    }
+
+    void sendBatchEnd() {
+        sendCommand(Command::BATCH_END);
+    }
+
     void sendGateSet(uint8_t patternIndex, const std::vector<bool>& gates) {
         const uint16_t gateCount = static_cast<uint16_t>(
             std::min(gates.size(), static_cast<size_t>(MAX_GATE_SET_LENGTH)));

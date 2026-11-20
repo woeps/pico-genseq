@@ -632,10 +632,18 @@ add_test(NAME genseq_example_sequencer_integration COMMAND genseq_example_sequen
 # Golden MIDI stream (separate-velocity-set-gate-set-and-note-set task 1.1): fingerprint of the
 # per-pattern-sets emission, which the set-library refactor must reproduce (Req 9.1).
 set(EXAMPLE_GOLDEN_STREAM_SRC "${TEST_DIR}/example_golden_stream.cpp")
+set(EXAMPLE_SET_LIBRARY_SRC "${TEST_DIR}/example_set_library.cpp")
 add_executable(genseq_example_golden_stream "${EXAMPLE_GOLDEN_STREAM_SRC}")
 target_include_directories(genseq_example_golden_stream PRIVATE ${EMISSION_INCLUDE_DIRS})
 target_link_libraries(genseq_example_golden_stream PRIVATE genseq_emission)
 add_test(NAME genseq_example_golden_stream COMMAND genseq_example_golden_stream)
+
+# Command batch framing (separate-velocity-set-gate-set-and-note-set task 3.3).
+set(EXAMPLE_BATCH_FRAMING_SRC "${TEST_DIR}/example_batch_framing.cpp")
+add_executable(genseq_example_batch_framing "${EXAMPLE_BATCH_FRAMING_SRC}")
+target_include_directories(genseq_example_batch_framing PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_batch_framing PRIVATE genseq_emission)
+add_test(NAME genseq_example_batch_framing COMMAND genseq_example_batch_framing)
 
 # ---------------------------------------------------------------------------
 # Example test: allocation-free core1 command path (task 6.4).
@@ -941,6 +949,7 @@ if(RAPIDCHECK_AVAILABLE)
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_DESTRUCTION_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_LAUNCH_GUARD_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_GOLDEN_STREAM_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_BATCH_FRAMING_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SET_LIBRARY_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${SMOKE_HOST_COMPILATION_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_HEADER_LAYOUT_SRC}")
@@ -1139,7 +1148,6 @@ add_test(NAME genseq_example_velocity_genparams_view COMMAND genseq_example_velo
 
 # Set library model (separate-velocity-set-gate-set-and-note-set tasks 2.2-2.4). Compiles the real
 # Reducer.cpp + SetLibrary.cpp with host-safe commands:: seam stubs. Own main().
-set(EXAMPLE_SET_LIBRARY_SRC "${TEST_DIR}/example_set_library.cpp")
 add_executable(genseq_example_set_library
     "${EXAMPLE_SET_LIBRARY_SRC}"
     "${SRC_DIR}/ui/state/Reducer.cpp"

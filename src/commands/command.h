@@ -24,8 +24,16 @@ namespace commands {
         PATTERN_ADD,
         PATTERN_REMOVE,
         GEN_PARAMS_SET,  // generative-engine-expansion: apply a pattern's Generation Parameters
+        // set-library fan-out: core1 holds ticks while a batch of per-pattern set updates
+        // lands, so patterns sharing one edited set never play mixed old/new material.
+        // BATCH_BEGIN param1 = number of commands that follow (1..MAX_BATCH_COMMANDS).
+        BATCH_BEGIN,
+        BATCH_END,
         // Add more commands as needed
     };
+
+    // 15 patterns x (gate, pitch, velocity, gen params).
+    constexpr uint8_t MAX_BATCH_COMMANDS = 60;
 
     constexpr uint16_t MAX_GATE_SET_LENGTH = 64 * 96;
     constexpr uint8_t MAX_PITCH_SET_LENGTH = 16;
@@ -47,6 +55,10 @@ namespace commands {
 
     // Function to send a command to the sequencer core
     void sendCommand(Command cmd, uint8_t param1 = 0, uint8_t param2 = 0);
+    // Frame the next `commandCount` commands as one atomic update (see Command::BATCH_BEGIN).
+    // Counts are clamped to 1..MAX_BATCH_COMMANDS.
+    void sendBatchBegin(uint8_t commandCount);
+    void sendBatchEnd();
     void sendGateSet(uint8_t patternIndex, const std::vector<bool>& gates);
     void sendPitchSet(uint8_t patternIndex, uint8_t count,
                       common::PlayingOrder order, const std::vector<uint8_t>& pitches);

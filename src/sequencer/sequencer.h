@@ -86,6 +86,12 @@ private:
     bool playing;
     bool midiClockEnabled;
 
+    // Command batch framing (set-library fan-out). While batchRemaining > 0 the tick
+    // path is held so a multi-pattern set update is applied as one unit. A batch is
+    // abandoned if no command arrives within one tick period (never stalls the clock).
+    uint8_t batchRemaining = 0;
+    uint64_t batchLastActivityUs = 0;
+
     // Global musical timeline (task 3.2) and the single note-ownership service
     // all emission passes through (task 2.3).
     TransportTimeline timeline;
@@ -167,6 +173,10 @@ private:
 
     void sendMidiByte(uint8_t byte);
     bool canApplyCommand(const commands::CommandMessage& msg) const;
+    // Consumes BATCH_BEGIN/BATCH_END; returns true when `msg` was a batch frame.
+    bool handleBatchFrame(const commands::CommandMessage& msg);
+    // Counts a real command against an open batch.
+    void noteBatchCommand(const commands::CommandMessage& msg);
 };
 
 // Function to create the sequencer task for the second core

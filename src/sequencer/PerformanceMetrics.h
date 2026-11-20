@@ -29,6 +29,9 @@ struct PerformanceMetrics {
     uint64_t operationsApplied = 0;
     uint32_t midiQueueHighWater = 0;
     uint32_t commandQueueHighWater = 0;
+    // Command batches abandoned because the next command did not arrive within one tick
+    // period (set-library fan-out). Expected 0 in normal operation.
+    uint32_t batchTimeouts = 0;
     PerformanceFaultCause lastFault = PerformanceFaultCause::NONE;
 
     void observeSchedulerTick(uint64_t latenessUs, uint64_t missedTickCount) {
