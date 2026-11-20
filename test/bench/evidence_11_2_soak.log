@@ -1,0 +1,9 @@
+SOAK 12.3/12.4 on /dev/ttyACM0 (cycles=20 longrun=60s)
+
+===== SOAK RESULTS =====
+PASS  A_bpm_sweep: {40: {'nominal_ms': 62.5, 'baseline_max_ms': 62.52, 'during_save_max_ms': 62.52, 'n': 10}, 120: {'nominal_ms': 20.83, 'baseline_max_ms': 20.88, 'during_save_max_ms': 20.88, 'n': 49}, 255: {'nominal_ms': 9.8, 'baseline_max_ms': 9.84, 'during_save_max_ms': 9.84, 'n': 110}}
+PASS  B_edit_storm: {'channel_alive': True, 'timingFault': '0'}
+PASS  C_endurance: {'cycles': 20, 'config_survived': 20, 'faults': 0}
+PASS  D_longrun: {'secs': 60, 'faults_seen': 0}
+
+MILESTONE-2 SOAK: ALL GATES PASS

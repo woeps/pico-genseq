@@ -203,10 +203,20 @@ part of this plan.
     - All new and existing CTest targets pass under ASan/UBSan; default-equivalence and
       determinism guards included
     - _Requirements: 6.1, 6.3, 1.5, 2.3, 3.3, 4.3_
-  - [ ] 11.2 Prove no M2 regression on silicon
+  - [x] 11.2 Prove no M2 regression on silicon
     - With Generation Parameters active, re-run the M2 acceptance gates (save transparency, UI-loop
       bound, stuck-note count) and confirm unchanged timing vs the M2 soak under worst-case load
     - _Requirements: 6.1, 6.3, 6.4_
+    - **Evidence (2026-11-20, commit 559cd55, branch bisect/core1-boot-fault):**
+      `test/bench/soak_12_3_12_4.py --cycles 20 --longrun 60` → ALL GATES PASS. A save
+      transparency: max inter-tick during continuous saves = quiet baseline = nominal at
+      40/120/255 BPM (62.52/20.88/9.84 ms). B edit storm (200 keys + saves): alive, timingFault=0.
+      C 20/20 save+watchdog-reset cycles, config survived all, 0 faults. D 60 s @255 BPM under
+      testload: 0 faults. Literal metrics via H:dump at 255 BPM + testload + saves: maxUiGapUs
+      18717 (≤ 50 ms), lastSaveUs 11013 (M2: 10.5-10.6 ms), soundingNotes 1 → 0 after Stop.
+      Dual-core stack guard stayed 0. Firmware: HOST_CONTROL + PERFORMANCE_TRACE, tick=GP7,
+      fault=GP6, TICK_WIDEN_US=200; BS05U L0=GP7. First run FAILED A/B: the save path's
+      ~2 KB core0 frames overflowed into core1 (caught by the stack guard), fixed in 559cd55.
   - [ ] 11.3 Prove per-feature live control and determinism on silicon
     - Each parameter toggled via its R10 control applies at the boundary with no stuck note and
       within the UI responsiveness bound; a seeded Pattern reproduces the same decoded MIDI across a
