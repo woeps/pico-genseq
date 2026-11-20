@@ -33,6 +33,28 @@ struct PatternConfig {
 
     uint8_t midiChannel;  // 1..16 (reserved; defaulted from convention today)
     uint8_t active;       // 0/1 (from UIState::activePatterns bit)
+
+    // --- Generation Parameters (generative-engine-expansion, format v2) ------
+    // Behavior-preserving defaults so a v1 record decodes to today's behavior.
+    uint8_t genScale = 0;            // common::ScaleId (0 == CHROMATIC)
+    uint8_t genScaleRoot = 0;        // 0..11
+    uint8_t genQuantize = 0;         // common::QuantizeMode (0 == NEAREST)
+    uint8_t genPatternProbability = 100;  // 0..100
+    uint8_t genHumanizeRange = 0;    // +/- amount
+    uint8_t genSeedSet = 0;          // 0/1
+    uint32_t genSeed = 0;
+    uint8_t genCoupling = 0;         // common::CouplingMode (0 == INDEPENDENT)
+    // Per-step probability, count-driven. 0xFF == INHERIT.
+    uint8_t genStepProbCount = 0;    // 0..MAX_SET_LEN
+    uint8_t genStepProbability[MAX_SET_LEN];  // only [0, genStepProbCount) meaningful
+
+    // Explicit gate array (format v2): manual per-step gate editing (R9.2) can
+    // diverge from what the generator parameters above would produce, so the
+    // actual gate states are persisted. On a v1 load this is empty and the gate
+    // array is derived from the generator params as before. Up to 64 UI steps.
+    static constexpr uint8_t kMaxGateEditSteps = 64;
+    uint8_t gateStepCount = 0;                       // 0 == derive from generator
+    uint8_t gateStates[kMaxGateEditSteps] = {0};     // 0/1 per step
 };
 
 // Compares only the meaningful elements (respecting counts), matching the
@@ -58,7 +80,26 @@ inline bool operator==(const PatternConfig& lhs, const PatternConfig& rhs) {
     for (uint8_t i = 0; i < lhs.velocityCount && i < MAX_SET_LEN; i++) {
         if (lhs.velocities[i] != rhs.velocities[i]) return false;
     }
-    return lhs.midiChannel == rhs.midiChannel && lhs.active == rhs.active;
+    if (lhs.midiChannel != rhs.midiChannel || lhs.active != rhs.active) return false;
+
+    // Generation Parameters (format v2).
+    if (lhs.genScale != rhs.genScale || lhs.genScaleRoot != rhs.genScaleRoot ||
+        lhs.genQuantize != rhs.genQuantize ||
+        lhs.genPatternProbability != rhs.genPatternProbability ||
+        lhs.genHumanizeRange != rhs.genHumanizeRange ||
+        lhs.genSeedSet != rhs.genSeedSet || lhs.genSeed != rhs.genSeed ||
+        lhs.genCoupling != rhs.genCoupling ||
+        lhs.genStepProbCount != rhs.genStepProbCount) {
+        return false;
+    }
+    for (uint8_t i = 0; i < lhs.genStepProbCount && i < MAX_SET_LEN; i++) {
+        if (lhs.genStepProbability[i] != rhs.genStepProbability[i]) return false;
+    }
+    if (lhs.gateStepCount != rhs.gateStepCount) return false;
+    for (uint8_t i = 0; i < lhs.gateStepCount && i < PatternConfig::kMaxGateEditSteps; i++) {
+        if (lhs.gateStates[i] != rhs.gateStates[i]) return false;
+    }
+    return true;
 }
 
 inline bool operator!=(const PatternConfig& lhs, const PatternConfig& rhs) {

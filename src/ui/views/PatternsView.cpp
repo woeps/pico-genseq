@@ -14,14 +14,14 @@ void PatternsView::onEnter()
     ledMatrix.clear();
 }
 
-state::UIState PatternsView::handleEvent(const state::UIState& state, const events::Event& event)
+void PatternsView::handleEvent(state::UIState& state, const events::Event& event)
 {
     if (event.type != events::EventType::KEY_PRESSED &&
         event.type != events::EventType::KEY_HELD) {
-        return state;
+        return;
     }
 
-    state::UIState newState = state;
+    state::UIState& newState = state;  // in-place: no 1.4KB copy
     const bool isPressed = event.type == events::EventType::KEY_PRESSED;
     const bool isPattern = state.selectedPattern < state.patternCount;
     const uint8_t maxPattern = state.patternCount < state::MAX_PATTERNS
@@ -94,7 +94,7 @@ state::UIState PatternsView::handleEvent(const state::UIState& state, const even
         default: break;
     }
 
-    return newState;
+    return;
 }
 
 void PatternsView::render(const state::UIState& state)

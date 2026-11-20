@@ -10,7 +10,52 @@
 #include "../config/pins.h"
 #include "../instrumentation/PerformanceTrace.h"
 #include "pico/time.h"
+#include "hardware/gpio.h"
+#include "hardware/spi.h"
 #include <cstdio>
+
+// Temporary BUG B part 2 isolation knobs (OFF by default).
+#ifndef GENSEQ_CORE1_BOOT_TRACE_NO_RESTORE
+#define GENSEQ_CORE1_BOOT_TRACE_NO_RESTORE 0
+#endif
+#ifndef GENSEQ_CORE1_BOOT_TRACE_NO_FRAM
+#define GENSEQ_CORE1_BOOT_TRACE_NO_FRAM 0
+#endif
+// BUG B part 2 bench marker: GPIO driven HIGH for the whole core0 FRAM-read
+// window (-1 = disabled). Lets a logic analyzer time-correlate the FRAM read
+// against core1's fault pin and the rail.
+#ifndef GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN
+#define GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN -1
+#endif
+// Bench capture aid: delay (ms) before the FRAM read so a one-shot analyzer can
+// arm and catch the boot->fault transition live. 0 = no delay.
+#ifndef GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS
+#define GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS 0
+#endif
+// Bench test: replace the FRAM read with a sustained no-SPI core0 busy-loop, to
+// test whether the core1 fault is SPI1-specific or any sustained core0 activity.
+#ifndef GENSEQ_CORE1_BOOT_TRACE_BUSY_NOSPI
+#define GENSEQ_CORE1_BOOT_TRACE_BUSY_NOSPI 0
+#endif
+// Bench test: core0 tight-loops reading the SPI1 DATA register (no FRAM protocol).
+#ifndef GENSEQ_CORE1_BOOT_TRACE_SPI1_DR_SPIN
+#define GENSEQ_CORE1_BOOT_TRACE_SPI1_DR_SPIN 0
+#endif
+// Bench test: core0 does a pure SPI1 TX-only write (clocks the engine, no RX read).
+#ifndef GENSEQ_CORE1_BOOT_TRACE_SPI1_TX
+#define GENSEQ_CORE1_BOOT_TRACE_SPI1_TX 0
+#endif
+// Bench test: core0 does a pure SPI1 READ (RX path), no FRAM protocol.
+#ifndef GENSEQ_CORE1_BOOT_TRACE_SPI1_RX
+#define GENSEQ_CORE1_BOOT_TRACE_SPI1_RX 0
+#endif
+// Bench test: real framStore->read() pattern (CS framing + device MISO), no RecordStore parse.
+#ifndef GENSEQ_CORE1_BOOT_TRACE_FRAM_READ_ONLY
+#define GENSEQ_CORE1_BOOT_TRACE_FRAM_READ_ONLY 0
+#endif
+#ifndef GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD
+#define GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD 0
+#endif
 
 namespace {
 // Completion / watchdog bounds from the design (Req 1.1, 7.5). save() here is
@@ -122,26 +167,144 @@ void UIController::initialize()
         pins.cs = FRAM_SPI_PIN_CS;
         framSpi = std::make_unique<persistence::Mb85rsFramSpi>(pins);
     }
+#if !GENSEQ_CORE1_BOOT_TRACE_NO_FRAM
     framSpi->init();
+#endif
     framStore =
         std::make_unique<persistence::Mb85rsFram>(*framSpi, /*regionSize=*/8192);
     recordStore = std::make_unique<persistence::RecordStore>(*framStore);
 
-    persistence::PersistableConfig cfg{};
+    // PersistableConfig is ~2.1 KB; a stack local here alone overflows core0's
+    // 2 KB stack on this deep boot path (and then core1's adjacent launch stack
+    // -- the core1 boot fault). initialize() runs exactly once and is not
+    // re-entrant, so hold the decode buffer in static storage instead of on the
+    // stack. Paired with the in-place UIState mutation below, this keeps the
+    // ~3.5 KB of boot-only buffers off core0's stack entirely.
+    static persistence::PersistableConfig cfg{};
+#if GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD || GENSEQ_CORE1_BOOT_TRACE_NO_FRAM
+    // BUG B part 2 isolation: skip the FRAM SPI load (treat as no saved config).
+    // NO_FRAM also skips init() above; NO_FRAM_LOAD keeps init() but skips the
+    // repeated read transfers -> splits "SPI/peripheral bring-up" from "SPI
+    // traffic" as the core1 corruptor.
+    const persistence::LoadStatus status = persistence::LoadStatus::ABSENT;
+#else
+#if GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN >= 0
+    // BUG B part 2 bench marker: drive a GPIO HIGH for the whole duration of the
+    // core0 FRAM read, so a logic analyzer / BS05U can time-correlate core1's
+    // fault pin (GENSEQ_TRACE_FAULT_PIN) and the 3V3 rail against the EXACT
+    // window core0 is reading FRAM over SPI1. Raw SIO writes: no SDK gpio_put
+    // indirection, safe to call before/independent of PerformanceTrace init.
+    gpio_init(GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN);
+    gpio_set_dir(GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN, GPIO_OUT);
+    gpio_put(GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN, 0);
+#endif
+#if GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS > 0
+    // Bench capture aid: hold the FRAM read off for a fixed delay after boot so a
+    // one-shot analyzer can be armed and catch the boot->fault transition live
+    // (core1 keeps idle-looping fine during the delay; the fault only fires once
+    // the FRAM read below runs). Trace-build only.
+    sleep_ms(GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS);
+#endif
+#if GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN >= 0
+    gpio_put(GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN, 1);  // marker HIGH: FRAM read begins
+#endif
+#if GENSEQ_CORE1_BOOT_TRACE_FRAM_READ_ONLY
+    // BUG B part 2 test: exercise the REAL FRAM transfer pattern -- framStore->read()
+    // does select()(CS low) + write header (opcode+addr) + clocked read with the
+    // real device driving MISO + deselect()(CS high), repeated -- but WITHOUT the
+    // RecordStore parse/CRC. If core1 faults here -> the real framed FRAM transfer
+    // (CS toggling + real MISO data) is the corruptor, not RecordStore logic.
+    {
+        static uint8_t buf[512];
+        for (int r = 0; r < 16; ++r) {
+            framStore->read(0, buf, sizeof(buf));  // real CS-framed SPI read, device responds
+        }
+    }
+    const persistence::LoadStatus status = persistence::LoadStatus::ABSENT;
+#elif GENSEQ_CORE1_BOOT_TRACE_SPI1_RX
+    // BUG B part 2 test: core0 does a pure SPI1 READ (spi_read_blocking) of dummy
+    // bytes -- the RX path (the SDK read writes repeated_tx AND reads the RX FIFO
+    // in a tight bidirectional poll), but NO FRAM protocol / CS toggling. If core1
+    // faults here -> the RX-read path is the corruptor independent of FRAM.
+    {
+        static uint8_t rxbuf[4096];
+        spi_read_blocking(spi1, 0x00, rxbuf, sizeof(rxbuf));
+    }
+    const persistence::LoadStatus status = persistence::LoadStatus::ABSENT;
+#elif GENSEQ_CORE1_BOOT_TRACE_SPI1_TX
+    // BUG B part 2 test: core0 does a pure SPI1 WRITE (TX-only) of dummy bytes --
+    // this CLOCKS SCK/MOSI and runs the SPI serial engine + FIFO, but does NOT
+    // read RX. framSpi->init() above brought SPI1 up. If core1 faults here -> the
+    // active SPI engine clocking/FIFO churn is the corruptor; if it survives ->
+    // the fault is specific to the RX/read path (spi_read_blocking).
+    {
+        static uint8_t dummy[4096];
+        spi_write_blocking(spi1, dummy, sizeof(dummy));
+    }
+    const persistence::LoadStatus status = persistence::LoadStatus::ABSENT;
+#elif GENSEQ_CORE1_BOOT_TRACE_SPI1_DR_SPIN
+    // BUG B part 2 test: core0 hammers the SPI1 DATA register (0x4003c008) in a
+    // tight loop -- the SPI1 peripheral/APB access, WITHOUT the FRAM protocol or
+    // a real transfer. framSpi->init() above already brought SPI1 up. If core1
+    // faults here -> it is SPI1 register/APB access specifically, not the FRAM
+    // transfer logic. (A DR read with no TX returns stale/empty but is a valid
+    // APB read; this is a probe, not a functional transfer.)
+    {
+        volatile uint32_t acc = 0;
+        volatile uint32_t* const SPI1_DR = reinterpret_cast<volatile uint32_t*>(0x4003c008u);
+        for (volatile uint32_t i = 0; i < 400000u; ++i) {
+            acc ^= *SPI1_DR;   // SPI1 APB read
+        }
+        (void)acc;
+    }
+    const persistence::LoadStatus status = persistence::LoadStatus::ABSENT;
+#elif GENSEQ_CORE1_BOOT_TRACE_BUSY_NOSPI
+    // BUG B part 2 test: substitute a sustained core0 BUSY-LOOP with NO SPI for
+    // the FRAM read, same marker window, ~15 ms of pure RAM/register churn. If
+    // core1 STILL faults during this window -> it is NOT SPI1-specific, it is any
+    // sustained core0 activity colliding (cross-core bus). If core1 SURVIVES ->
+    // the fault is genuinely tied to the SPI1 peripheral read.
+    {
+        volatile uint32_t acc = 0;
+        for (volatile uint32_t i = 0; i < 1500000u; ++i) {
+            acc += i;                                   // RAM/reg churn
+            acc ^= *reinterpret_cast<volatile uint32_t*>(0xd0000004);  // SIO GPIO_IN read (benign MMIO)
+        }
+        (void)acc;
+    }
+    const persistence::LoadStatus status = persistence::LoadStatus::ABSENT;
+#else
     const persistence::LoadStatus status = recordStore->load(cfg);
+#endif
+#if GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN >= 0
+    gpio_put(GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN, 0);
+#endif
+#endif
 
-    // Start from the StateManager's current (default) UIState.
-    state::UIState bootState = state::getStateManager().getState();
+    // Mutate the StateManager's authoritative UIState IN PLACE (core1 boot-fault
+    // fix). UIState is ~1.4 KB; a by-value `UIState bootState` local here plus a
+    // setState() copy put ~2.8 KB of UIState copies on core0's 2 KB stack along
+    // the deepest boot path (FRAM load + restoreSequencerFromState), overflowing
+    // it into core1's adjacent launch stack and faulting core1 at launch. The
+    // StateManager already holds currentState in static storage, so we fold the
+    // restored config straight into it with no stack-resident UIState copy.
+    state::UIState& boot = state::getStateManager().mutableState();
 
     if (status == persistence::LoadStatus::OK) {
-        // Valid saved config: fold it into the UIState mirror, install it as the
-        // authoritative state, then replay the sync commands to seed core1 from
-        // the restored configuration (Req 5.3, 5.4).
-        state::applyPersistableConfig(bootState, cfg);
-        state::getStateManager().setState(bootState);
+        // Valid saved config: fold it into the authoritative state in place and
+        // notify, then replay the sync commands to seed core1 from the restored
+        // configuration (Req 5.3, 5.4).
+        state::applyPersistableConfig(boot, cfg);
+        state::getStateManager().notifyStateChanged();
 
         const state::UIState& restored = state::getStateManager().getState();
+#if !GENSEQ_CORE1_BOOT_TRACE_NO_RESTORE
+        // BUG B part 2 isolation: NO_RESTORE skips the cross-core FIFO command
+        // burst (PATTERN_ADD/GATE_SET/... pushed to core1) while keeping FRAM
+        // load + state apply + the UI loop. If core1 survives, the restore
+        // burst / FIFO interaction is the part-2 corruptor.
         state::restoreSequencerFromState(restored);
+#endif
     } else {
         // No valid saved config. Keep the firmware defaults and leave the
         // Storage_Region untouched (load is read-only).
@@ -163,9 +326,9 @@ void UIController::initialize()
         //   - BAD_VERSION / TRUNCATED : an unrecognized or malformed span,
         //     indistinguishable from junk - not treated as the user's save.
         if (persistence::shouldWarnOnBootLoad(status)) {
-            bootState.saveBanner = state::SaveBanner::NOT_LOADED;
+            boot.saveBanner = state::SaveBanner::NOT_LOADED;
         }
-        state::getStateManager().setState(bootState);
+        state::getStateManager().notifyStateChanged();
 
         // Seed core1 with the default pattern 0, exactly as before this feature.
         const state::UIState& defaults = state::getStateManager().getState();
@@ -217,15 +380,16 @@ void UIController::drainSaveRequest()
     // Step 1: map the (consistent, single-threaded) live state to the durable
     // config in the off-stack member. The UI loop is single-threaded, so the
     // live reference is never torn (Req 2.1, 2.2).
-    framConfig_ = state::toPersistableConfig(state::getStateManager().getState());
+    state::toPersistableConfig(state::getStateManager().getState(), framConfig_);  // in place, no 2 KB stack temp
 
     // Step 2: clear saveRequested so the same request is not re-run next tick
-    // even if the save fails (Req 1.4). Confined to its own scope.
-    {
-        state::UIState next = state::getStateManager().getState();
-        next.saveRequested = false;
-        state::getStateManager().setState(next);
-    }
+    // even if the save fails (Req 1.4). Mutated IN PLACE: UIState is ~1.4 KB in
+    // M3 (not the ~700 B this comment once assumed), and the two by-value copies
+    // this function used to hold were merged into one 3640 B frame
+    // (-fstack-usage) -- bigger than core0's whole 2 KB stack -- which overflowed
+    // into core1's stack during a save and locked core1 up.
+    state::getStateManager().mutableState().saveRequested = false;
+    state::getStateManager().notifyStateChanged();
 
     // Step 3: the A/B transactional commit onto the FRAM backend (task 10.2).
     // Writes the slot NOT holding the newest valid record so an interrupted
@@ -261,11 +425,8 @@ void UIController::drainSaveRequest()
     // Step 4: latch the banner into state. Re-read current state (a listener may
     // have changed it during the save) in its own scope so no earlier copy is
     // still alive here.
-    {
-        state::UIState afterSave = state::getStateManager().getState();
-        afterSave.saveBanner = banner;
-        state::getStateManager().setState(afterSave);
-    }
+    state::getStateManager().mutableState().saveBanner = banner;  // in place, no 1.4 KB copy
+    state::getStateManager().notifyStateChanged();
 
     bannerActive = true;
     bannerSetMs = to_ms_since_boot(get_absolute_time());
@@ -315,9 +476,9 @@ void UIController::updateSaveBanner()
         // persists until the next view change (which clears via onEnter()).
         ledMatrix->clear();
 
-        state::UIState cleared = state;
-        cleared.saveBanner = state::SaveBanner::NONE;
-        state::getStateManager().setState(cleared);
+        // In place: a by-value UIState copy here made this frame 1456 B.
+        state::getStateManager().mutableState().saveBanner = state::SaveBanner::NONE;
+        state::getStateManager().notifyStateChanged();
         return;
     }
 

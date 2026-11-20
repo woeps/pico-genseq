@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "../../common/pitch_set.h"
+#include "../../common/GenerationParameters.h"
 
 namespace ui::state {
 
@@ -45,6 +46,8 @@ enum class GateSetProperty : uint8_t {
     ROTATION,
     NOTE_LENGTH,
     LENGTH,
+    PROBABILITY,  // R2/R10: per-Pattern Step Probability (0..100)
+    STEP_GRID,  // generative-engine-expansion R9: per-step gate + probability grid
 };
 
 enum class NoteLength : uint8_t {
@@ -56,6 +59,14 @@ enum class NoteLength : uint8_t {
     WHOLE,
 };
 
+// R9 per-step grid limits. The grid addresses PROGRAMMED steps (0..steps-1),
+// capped at the per-step probability array size the engine carries
+// (common::GenerationParameters::kMaxSteps == 16). Manual gate editing toggles a
+// whole programmed step on/off.
+constexpr uint8_t MAX_GRID_STEPS = 16;
+// Per-step probability sentinel mirrors common::STEP_PROB_INHERIT.
+constexpr uint8_t STEP_PROB_INHERIT = 0xFF;
+
 struct GateSetConfig {
     GateAlgorithm algorithm = GateAlgorithm::EUCLIDEAN;
     uint8_t steps = 16;
@@ -63,12 +74,34 @@ struct GateSetConfig {
     uint8_t rotation = 0;
     NoteLength noteLength = NoteLength::SIXTEENTH;
     uint8_t gateLength = 50;
+
+    // R9: explicit per-programmed-step gate states and per-step probability. The
+    // generator writes gateStates (the "optional seed"); manual edits layer on
+    // top. probability is INHERIT by default (falls back to per-Pattern), so an
+    // untouched config is behavior-preserving. Only [0, steps) are meaningful.
+    uint8_t gateStates[MAX_GRID_STEPS] = {0};
+    uint8_t stepProbability[MAX_GRID_STEPS] = {
+        STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT,
+        STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT,
+        STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT,
+        STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT, STEP_PROB_INHERIT};
+    // Per-Pattern Step Probability (R2), 0..100. 100 == today's behavior.
+    uint8_t patternProbability = 100;
 };
 
 inline bool operator==(const GateSetConfig& lhs, const GateSetConfig& rhs) {
-    return lhs.algorithm == rhs.algorithm && lhs.steps == rhs.steps &&
-           lhs.pulses == rhs.pulses && lhs.rotation == rhs.rotation &&
-           lhs.noteLength == rhs.noteLength && lhs.gateLength == rhs.gateLength;
+    if (!(lhs.algorithm == rhs.algorithm && lhs.steps == rhs.steps &&
+          lhs.pulses == rhs.pulses && lhs.rotation == rhs.rotation &&
+          lhs.noteLength == rhs.noteLength && lhs.gateLength == rhs.gateLength &&
+          lhs.patternProbability == rhs.patternProbability)) {
+        return false;
+    }
+    const uint8_t n = lhs.steps < MAX_GRID_STEPS ? lhs.steps : MAX_GRID_STEPS;
+    for (uint8_t i = 0; i < n; ++i) {
+        if (lhs.gateStates[i] != rhs.gateStates[i]) return false;
+        if (lhs.stepProbability[i] != rhs.stepProbability[i]) return false;
+    }
+    return true;
 }
 
 inline bool operator!=(const GateSetConfig& lhs, const GateSetConfig& rhs) {
@@ -77,16 +110,28 @@ inline bool operator!=(const GateSetConfig& lhs, const GateSetConfig& rhs) {
 
 constexpr uint8_t MAX_PITCHES = 16;
 
-// PitchSetConfig field indices: 0 = COUNT, 1 = ORDER, 2..2+count-1 = pitches
-constexpr uint8_t PITCH_SET_FIELD_COUNT = 0;
-constexpr uint8_t PITCH_SET_FIELD_ORDER = 1;
-constexpr uint8_t PITCH_SET_FIELD_PITCH_BASE = 2;
+// PitchSetConfig field indices. The scale controls (generative-engine-expansion
+// R8/R10) come FIRST so the scale context sits with the membership cue, ahead of
+// the pitches it constrains:
+//   0 = SCALE, 1 = ROOT, 2 = QUANTIZE, 3 = COUNT, 4 = ORDER,
+//   5.. = pitches[0..count-1]
+constexpr uint8_t PITCH_SET_FIELD_SCALE = 0;
+constexpr uint8_t PITCH_SET_FIELD_ROOT = 1;
+constexpr uint8_t PITCH_SET_FIELD_QUANTIZE = 2;
+constexpr uint8_t PITCH_SET_FIELD_COUNT = 3;
+constexpr uint8_t PITCH_SET_FIELD_ORDER = 4;
+constexpr uint8_t PITCH_SET_FIELD_PITCH_BASE = 5;
 
 struct PitchSetConfig {
     uint8_t count = 4;
     common::PlayingOrder order = common::PlayingOrder::FORWARDS;
     std::array<uint8_t, MAX_PITCHES> pitches{60, 67, 69, 72, 0, 0, 0, 0,
                                               0, 0, 0, 0, 0, 0, 0, 0};
+    // Scale constraint (R1/R8), behavior-preserving defaults: CHROMATIC == no
+    // constraint, so an untouched PitchSet renders and sounds exactly as before.
+    common::ScaleId scale = common::ScaleId::CHROMATIC;
+    uint8_t scaleRoot = 0;  // 0..11 (0 == C)
+    common::QuantizeMode quantize = common::QuantizeMode::NEAREST;
 };
 
 inline bool operator==(const PitchSetConfig& lhs, const PitchSetConfig& rhs) {
@@ -94,7 +139,8 @@ inline bool operator==(const PitchSetConfig& lhs, const PitchSetConfig& rhs) {
     for (uint8_t i = 0; i < lhs.count; i++) {
         if (lhs.pitches[i] != rhs.pitches[i]) return false;
     }
-    return true;
+    return lhs.scale == rhs.scale && lhs.scaleRoot == rhs.scaleRoot &&
+           lhs.quantize == rhs.quantize;
 }
 
 inline bool operator!=(const PitchSetConfig& lhs, const PitchSetConfig& rhs) {
@@ -103,16 +149,29 @@ inline bool operator!=(const PitchSetConfig& lhs, const PitchSetConfig& rhs) {
 
 constexpr uint8_t MAX_VELOCITIES = 16;
 
-// VelocitySetConfig field indices: 0 = COUNT, 1 = ORDER, 2..count+1 = velocities
-constexpr uint8_t VELOCITY_SET_FIELD_COUNT = 0;
-constexpr uint8_t VELOCITY_SET_FIELD_ORDER = 1;
-constexpr uint8_t VELOCITY_SET_FIELD_VELOCITY_BASE = 2;
+// VelocitySetConfig field indices. HUMANIZE/SEED/COUPLING (the remaining
+// Pattern-scope Generation Parameters, R10) come FIRST, then COUNT/ORDER/
+// velocities. Seed and coupling are per-Pattern (not velocity-specific) but live
+// here because the VelocitySet view is the per-pattern editor with the move/
+// adjust vocabulary R10 requires; HUMANIZE is naturally a velocity concept.
+constexpr uint8_t VELOCITY_SET_FIELD_HUMANIZE = 0;
+constexpr uint8_t VELOCITY_SET_FIELD_SEED = 1;
+constexpr uint8_t VELOCITY_SET_FIELD_COUPLING = 2;
+constexpr uint8_t VELOCITY_SET_FIELD_COUNT = 3;
+constexpr uint8_t VELOCITY_SET_FIELD_ORDER = 4;
+constexpr uint8_t VELOCITY_SET_FIELD_VELOCITY_BASE = 5;
 
 struct VelocitySetConfig {
     uint8_t count = 4;
     common::PlayingOrder order = common::PlayingOrder::FORWARDS;
     std::array<uint8_t, MAX_VELOCITIES> velocities{100, 80, 60, 80, 0, 0, 0, 0,
                                                      0,   0,  0,  0, 0, 0, 0, 0};
+    // Pattern-scope Generation Parameters (R3/R4/R5), behavior-preserving
+    // defaults: humanize 0, no seed, independent coupling.
+    uint8_t humanizeRange = 0;                                 // +/- amount
+    bool seedSet = false;
+    uint32_t seed = 0;
+    common::CouplingMode coupling = common::CouplingMode::INDEPENDENT;
 };
 
 inline bool operator==(const VelocitySetConfig& lhs, const VelocitySetConfig& rhs) {
@@ -120,7 +179,8 @@ inline bool operator==(const VelocitySetConfig& lhs, const VelocitySetConfig& rh
     for (uint8_t i = 0; i < lhs.count; i++) {
         if (lhs.velocities[i] != rhs.velocities[i]) return false;
     }
-    return true;
+    return lhs.humanizeRange == rhs.humanizeRange && lhs.seedSet == rhs.seedSet &&
+           lhs.seed == rhs.seed && lhs.coupling == rhs.coupling;
 }
 
 inline bool operator!=(const VelocitySetConfig& lhs, const VelocitySetConfig& rhs) {
@@ -143,6 +203,9 @@ struct UIState {
     std::array<GateSetConfig, MAX_PATTERNS> gateSetConfigs{};
     GateSetConfig gateSetDraft{};
     GateSetProperty selectedGateSetProperty = GateSetProperty::ALGORITHM;
+    // R9 grid: which programmed step (0..steps-1) is selected while the
+    // STEP_GRID property is active.
+    uint8_t selectedGateStep = 0;
     bool gateSetDirty = false;
     std::array<PitchSetConfig, MAX_PATTERNS> pitchSetConfigs{};
     PitchSetConfig pitchSetDraft{};

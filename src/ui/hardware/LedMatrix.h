@@ -25,6 +25,8 @@ public:
     void fill(uint32_t color);
     void drawNumber(int number, uint32_t color);
     void drawLabel(const char (&text)[4], uint32_t color);
+    // Text value centred in the value area (rows 6-10), below the label.
+    void drawValueText(const char (&text)[4], uint32_t color);
     void drawNote(const char (&noteStr)[4], uint32_t color);
 
 private:

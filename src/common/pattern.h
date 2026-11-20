@@ -4,6 +4,7 @@
 #include "velocity_set.h"
 #include "gate_set.h"
 #include "MidiChannel.h"
+#include "GenerationParameters.h"
 
 namespace common {
 
@@ -33,12 +34,20 @@ namespace common {
         bool isActive() const;
         void setActive(bool active);
 
+        // Generation Parameters (generative-engine-expansion). Defaults to the
+        // behavior-preserving value object, so an existing Pattern constructed
+        // without them emits exactly as before (design invariant 1).
+        GenerationParameters& getGenerationParameters();
+        const GenerationParameters& getGenerationParameters() const;
+        void setGenerationParameters(const GenerationParameters& params);
+
     private:
         PitchSet pitchSet;
         VelocitySet velocitySet;
         GateSet gateSet;
         int midiChannel;
         bool active;
+        GenerationParameters generationParameters;
     };
 
 } // namespace common

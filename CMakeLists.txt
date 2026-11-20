@@ -84,6 +84,7 @@ target_link_libraries(genseq
     hardware_dma
     hardware_sync
     hardware_watchdog
+    hardware_exception  # TEMPORARY: core1 boot-fault handler (GENSEQ_CORE1_BOOT_TRACE); remove with the diagnostic
     tinyusb_host
     tinyusb_board
 )
@@ -122,7 +123,78 @@ set(GENSEQ_TRACE_TICK_WIDEN_US 0 CACHE STRING
 option(GENSEQ_HOST_CONTROL
        "Enable the host-control serial command channel for bench testing" OFF)
 
+# TEMPORARY core1 boot-fault diagnostic (BUG B). When ON, core1 writes stage
+# breadcrumbs to BSS and installs a core1-local HardFault handler that captures
+# the true stacked faulting PC (the hardware frame is unreadable once core1
+# double-faults). Read the g_core1* symbols over SWD after a self-reset. Never
+# ship enabled. Remove once BUG B is fixed.
+option(GENSEQ_CORE1_BOOT_TRACE
+       "Enable the temporary core1 boot-fault breadcrumb + fault handler" OFF)
+# TEMPORARY isolation knob (BUG B): skip the whole core0 UI task so core1 idles
+# with nothing else on core0. Proves whether the corruptor lives in createUITask.
+option(GENSEQ_CORE1_BOOT_TRACE_NO_UI
+       "Skip createUITask (BUG B isolation; requires GENSEQ_CORE1_BOOT_TRACE)" OFF)
+# TEMPORARY isolation knob (BUG B part 2): run the full UI EXCEPT the WS2812
+# DMA/PIO/IRQ + alarm setup, to test whether that subsystem is the corruptor.
+option(GENSEQ_CORE1_BOOT_TRACE_NO_DMA
+       "Skip WS2812 DMA/alarm setup (BUG B part 2 isolation)" OFF)
+# TEMPORARY isolation knob (BUG B part 2): skip the restoreSequencerFromState
+# cross-core FIFO command burst, to test whether it is the corruptor.
+option(GENSEQ_CORE1_BOOT_TRACE_NO_RESTORE
+       "Skip restoreSequencerFromState FIFO burst (BUG B part 2 isolation)" OFF)
+# TEMPORARY isolation knob (BUG B part 2): skip the FRAM SPI init+load, to test
+# whether FRAM/SPI activity is the corruptor.
+option(GENSEQ_CORE1_BOOT_TRACE_NO_FRAM
+       "Skip FRAM init+load (BUG B part 2 isolation)" OFF)
+# Skip only the FRAM read transfers (keep init) -- splits bring-up from traffic.
+option(GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD
+       "Skip only recordStore->load, keep framSpi->init (BUG B part 2 isolation)" OFF)
+# TEMPORARY: run FRAM SPI at 100 kHz instead of 8 MHz, to separate an electrical/
+# timing cause from a logical one for the part-2 fault.
+option(GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI
+       "Run FRAM SPI at 100 kHz (BUG B part 2 electrical-vs-logical test)" OFF)
+# TEMPORARY: zero PatternSnapshot.gateBits_ with a volatile loop so core1's
+# per-idle-loop clear() does NOT call the bootrom memset/memcpy — tests whether
+# core1's ROM-function calls (concurrent with core0 FRAM SPI) are the corruptor.
+option(GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR
+       "Zero snapshot without bootrom memset/memcpy (BUG B part 2 test)" OFF)
+# Bench marker: GPIO held HIGH for the whole core0 FRAM-read window, for
+# analyzer/scope time-correlation against the fault pin and the 3V3 rail. -1 off.
+set(GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN -1 CACHE STRING
+    "GPIO driven high during the core0 FRAM read (BUG B part 2 bench marker)")
+set(GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS 0 CACHE STRING
+    "Delay (ms) before the FRAM read so an analyzer can arm (BUG B part 2)")
+# Test: replace the FRAM read with a no-SPI core0 busy-loop (SPI1-specific vs any
+# sustained core0 activity).
+option(GENSEQ_CORE1_BOOT_TRACE_BUSY_NOSPI
+       "Substitute a no-SPI core0 busy-loop for the FRAM read (BUG B part 2 test)" OFF)
+
+option(GENSEQ_CORE1_BOOT_TRACE_SPI1_DR_SPIN
+       "core0 tight-loops reading SPI1 DR, no FRAM protocol (BUG B part 2 test)" OFF)
+option(GENSEQ_CORE1_BOOT_TRACE_SPI1_TX
+       "core0 pure SPI1 TX-only write, no RX (BUG B part 2 test)" OFF)
+option(GENSEQ_CORE1_BOOT_TRACE_SPI1_RX
+       "core0 pure SPI1 read (RX path), no FRAM protocol (BUG B part 2 test)" OFF)
+option(GENSEQ_CORE1_BOOT_TRACE_FRAM_READ_ONLY
+       "core0 real framStore->read() loop, no RecordStore parse (BUG B part 2 test)" OFF)
+
 target_compile_definitions(genseq PRIVATE
+    GENSEQ_CORE1_BOOT_TRACE_BUSY_NOSPI=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_BUSY_NOSPI}>
+    GENSEQ_CORE1_BOOT_TRACE_SPI1_DR_SPIN=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_SPI1_DR_SPIN}>
+    GENSEQ_CORE1_BOOT_TRACE_SPI1_TX=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_SPI1_TX}>
+    GENSEQ_CORE1_BOOT_TRACE_SPI1_RX=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_SPI1_RX}>
+    GENSEQ_CORE1_BOOT_TRACE_FRAM_READ_ONLY=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_FRAM_READ_ONLY}>
+    GENSEQ_STACK_GUARD_FILL_GAP=$<BOOL:${GENSEQ_STACK_GUARD_FILL_GAP}>
+    GENSEQ_CORE1_BOOT_TRACE=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE}>
+    GENSEQ_CORE1_BOOT_TRACE_NO_UI=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_UI}>
+    GENSEQ_CORE1_BOOT_TRACE_NO_DMA=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_DMA}>
+    GENSEQ_CORE1_BOOT_TRACE_NO_RESTORE=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_RESTORE}>
+    GENSEQ_CORE1_BOOT_TRACE_NO_FRAM=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_FRAM}>
+    GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_FRAM_LOAD}>
+    GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI}>
+    GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR=$<BOOL:${GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR}>
+    GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN=${GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN}
+    GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS=${GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS}
     GENSEQ_PERFORMANCE_TRACE_ENABLED=$<BOOL:${GENSEQ_PERFORMANCE_TRACE_ENABLED}>
     GENSEQ_TRACE_TICK_PIN=${GENSEQ_TRACE_TICK_PIN}
     GENSEQ_TRACE_MIDI_PIN=${GENSEQ_TRACE_MIDI_PIN}

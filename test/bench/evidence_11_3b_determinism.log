@@ -1,0 +1,89 @@
+# Task 11.3b seeded determinism, 2026-11-20T20:36Z
+# firmware: fix 7fa3b7d + bench tooling (MIDI tap, midilog, key delete), build -DGENSEQ_HOST_CONTROL=ON
+# controls (R10 UI path): pattern 0 only (patterns 1,2 deleted via PatternsView DELETE), PROBABILITY 50, HUMANIZE 20, SEED 7; BPM 200; capture 8 s via H:midilog (bytes handed to the MIDI UART)
+# command: python3 test/bench/determinism_11_3.py /dev/ttyACM0 --secs 8 --ref $KIROCREW_SCRATCH/determinism_11_3_ref.txt
+# reboot for B: H:save then H:reset (watchdog; board stays powered). Cold power-cycle step C pending (--after-power-cycle).
+[11.3b] port=/dev/ttyACM0 secs=8.0 mode=full
+  isolated pattern 0: patternCount=1 activePatterns=0x0001
+  configured seed 7 via UI: True  (prob=50 humanize=20 seedSet=1 seed=7)
+  A  fresh play           : 58 events, 29 note-ons, velocities [80, 81, 82, 83, 84, 85, 86, 90]...
+  A2 stop->play restart   : 58 events, 29 note-ons, velocities [80, 81, 82, 83, 84, 85, 86, 90]...
+  after save+reboot load : prob=50 humanize=20 seedSet=1 seed=7
+  B  reboot + FRAM load   : 58 events, 29 note-ons, velocities [80, 81, 82, 83, 84, 85, 86, 90]...
+  S  seed 8 (sensitivity) : 56 events, 28 note-ons, velocities [80, 81, 86, 87, 92, 95, 98, 100]...
+    first difference at event 0: ['90 3c 5c', '80 3c 00', '90 3c 56'] vs ['90 3c 51', '80 3c 00', '90 3c 72']
+  PASS  A == A2 over first 58 events (restart re-seeds, R4.5)
+  PASS  A == B  over first 58 events (saved seed reproduces, R4.3)
+  PASS  seed 8 != seed 7 (capture is RNG-sensitive)
+  reference saved to /home/chris/.kiro/crew/scratch/b65c7eb2/determinism_11_3_ref.txt (run --after-power-cycle after a cold power-cycle)
+
+11.3b DETERMINISM: PASS
+
+# reference capture A (status data1 data2):
+90 3c 5c
+80 3c 00
+90 3c 56
+80 3c 00
+90 49 73
+80 49 00
+90 49 67
+80 49 00
+90 25 5d
+80 25 00
+90 3c 72
+80 3c 00
+90 25 6e
+80 25 00
+90 49 76
+80 49 00
+90 25 52
+80 25 00
+90 25 5c
+80 25 00
+90 43 5a
+80 43 00
+90 49 6b
+80 49 00
+90 49 60
+80 49 00
+90 25 50
+80 25 00
+90 49 55
+80 49 00
+90 25 70
+80 25 00
+90 49 53
+80 49 00
+90 25 5a
+80 25 00
+90 3c 54
+80 3c 00
+90 25 6e
+80 25 00
+90 3c 75
+80 3c 00
+90 25 5f
+80 25 00
+90 49 51
+80 49 00
+90 3c 6d
+80 3c 00
+90 49 5d
+80 49 00
+90 49 6d
+80 49 00
+90 3c 5b
+80 3c 00
+90 49 73
+80 49 00
+90 43 6b
+80 43 00
+
+# Step C, 2026-11-20T20:42Z: MANUAL cold power-cycle (USB unplug/replug), firmware 536a5af host-control build
+# command: python3 test/bench/determinism_11_3.py /dev/ttyACM0 --ref $KIROCREW_SCRATCH/determinism_11_3_ref.txt --after-power-cycle
+[11.3b] port=/dev/ttyACM0 secs=8.0 mode=after-power-cycle
+  loaded after power-cycle: prob=50 humanize=20 seedSet=1 seed=7 bpm=200
+  C (cold power-cycle + load): 58 events, 29 note-ons, velocities [80, 81, 82, 83, 84, 85, 86, 90]...
+  PASS  C == A over first 58 events
+
+11.3b DETERMINISM (power-cycle): PASS

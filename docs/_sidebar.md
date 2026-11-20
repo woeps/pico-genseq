@@ -1,4 +1,5 @@
 * [Home](/)
+* [User Manual](user/user-manual.md)
 * [Quick Start](#quick-start)
   * [Repository Structure](architecture/repository-structure.md)
   * [Dependencies & Requirements](reference/dependencies.md)

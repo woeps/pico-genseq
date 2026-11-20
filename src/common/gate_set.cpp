@@ -66,6 +66,23 @@ namespace common {
         return flank;
     }
 
+    void GateSet::continueFrom(const GateSet& previous) {
+        if (gates.empty() || previous.gates.empty() ||
+            previous.position == previous.previousPosition) {
+            reset();  // nothing played yet (or no material): normal start
+            return;
+        }
+        const uint32_t n = static_cast<uint32_t>(gates.size());
+        position = previous.position % n;
+        previousPosition = previous.previousPosition % n;
+        const bool previousGate = previous.gates[previous.previousPosition];
+        const bool currentGate = gates[position];
+        if (!previousGate && currentGate) flank = RISING;
+        else if (previousGate && !currentGate) flank = FALLING;
+        else if (currentGate) flank = HIGH;
+        else flank = LOW;
+    }
+
     void GateSet::reset() {
         position = 0;
         previousPosition = 0;

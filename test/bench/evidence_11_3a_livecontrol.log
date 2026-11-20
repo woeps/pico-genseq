@@ -1,0 +1,14 @@
+[11.3a] port=/dev/ttyACM0 bpm=200
+  PASS  Scale id                         default=0    set=1    cleared=0   
+  PASS  Scale root                       default=0    set=2    cleared=0   
+  PASS  Quantize mode                    default=0    set=3    cleared=0   
+  PASS  Per-Pattern probability          default=100  set=70   cleared=100 
+  PASS  Per-step probability (step 0)    default=ff   set=32   cleared=ff  
+  PASS  Per-step gate (step 0)           default=1    set=0    cleared=1   
+  PASS  Humanize range                   default=0    set=20   cleared=0   
+  PASS  Seed                             default=0    set=5    cleared=0   
+  PASS  Coupling                         default=0    set=1    cleared=0   
+  PASS  Stop -> soundingNotes=0 (no stuck note)
+  max UI-loop gap over the whole run: 36583 us (limit 50000)
+
+11.3a LIVE CONTROL: ALL PASS

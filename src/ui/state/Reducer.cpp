@@ -9,6 +9,12 @@ namespace ui::state {
 
 namespace {
 
+// Gen-params senders (defined further down, used by the restore helpers).
+void sendPatternGenParams(const UIState& state, uint8_t patternIndex);
+void previewGateGenParams(const UIState& s);
+void previewPitchGenParams(const UIState& s);
+void previewVelocityGenParams(const UIState& s);
+
 constexpr GateSetProperty EUCLIDEAN_PROPERTIES[] = {
     GateSetProperty::ALGORITHM,
     GateSetProperty::STEPS,
@@ -16,6 +22,8 @@ constexpr GateSetProperty EUCLIDEAN_PROPERTIES[] = {
     GateSetProperty::ROTATION,
     GateSetProperty::NOTE_LENGTH,
     GateSetProperty::LENGTH,
+    GateSetProperty::PROBABILITY,  // R2/R10 per-Pattern probability
+    GateSetProperty::STEP_GRID,  // R9 per-step grid, last so it sits after the generator
 };
 
 uint8_t noteLengthTicks(NoteLength noteLength) {
@@ -30,16 +38,77 @@ uint8_t noteLengthTicks(NoteLength noteLength) {
     return 6;
 }
 
+// R9.3: regenerate the per-step GATE states from the Euclidean generator (the
+// "optional seed"), PRESERVING per-step probability values. Called when a
+// generator property (STEPS/PULSES/ROTATION) changes. Probability is indexed by
+// step position, so it is left untouched across a regenerate; steps newly in
+// range keep whatever probability they held (INHERIT by default).
+void regenerateGateStates(GateSetConfig& config) {
+    // Build the programmed-step pulse pattern (same Bjorklund distribution
+    // createEuclidean uses), then store it as per-step gate states.
+    const uint8_t steps = config.steps > MAX_GRID_STEPS ? MAX_GRID_STEPS : config.steps;
+    for (uint8_t i = 0; i < MAX_GRID_STEPS; ++i) config.gateStates[i] = 0;
+    if (steps == 0) return;
+    if (config.pulses >= config.steps) {
+        for (uint8_t i = 0; i < steps; ++i) config.gateStates[i] = 1;
+        return;
+    }
+    if (config.pulses == 0) return;
+    int bucket = 0;
+    for (uint8_t i = 0; i < config.steps; ++i) {
+        bucket += config.pulses;
+        if (bucket >= config.steps) {
+            bucket -= config.steps;
+            const uint8_t pos = (i + config.rotation) % config.steps;
+            if (pos < MAX_GRID_STEPS) config.gateStates[pos] = 1;
+        }
+    }
+}
+
+// Expand the explicit per-step gate states (config.gateStates, R9) into the
+// tick-level boolean gate array the sequencer consumes. This is the manual-edit-
+// aware replacement for calling createEuclidean directly: the generator seeds
+// gateStates (regenerateGateStates), manual toggles edit them, and THIS builds
+// the wire gate array from whatever gateStates now holds. The high-tick gate-
+// length shaping matches createEuclidean so a generator-only config is
+// byte-identical to the old output (R9.7).
+std::vector<bool> expandGateStates(const GateSetConfig& config) {
+    const uint8_t steps = config.steps;
+    const uint8_t stepLen = noteLengthTicks(config.noteLength);
+    if (steps == 0 || stepLen == 0) return {};
+    const uint32_t patternLength = static_cast<uint32_t>(steps) * stepLen;
+    std::vector<bool> expanded(patternLength, false);
+
+    // Collect the tick positions of the active programmed steps.
+    std::vector<uint32_t> pulsePositions;
+    for (uint8_t s = 0; s < steps && s < MAX_GRID_STEPS; ++s) {
+        if (config.gateStates[s]) pulsePositions.push_back(static_cast<uint32_t>(s) * stepLen);
+    }
+    const uint8_t gateLength = std::min<uint8_t>(config.gateLength, 100);
+    for (size_t i = 0; i < pulsePositions.size(); ++i) {
+        const uint32_t start = pulsePositions[i];
+        const uint32_t next = pulsePositions[(i + 1) % pulsePositions.size()];
+        const uint32_t interval = next > start ? next - start : patternLength - start + next;
+        const uint32_t scaled = (interval * gateLength + 99) / 100;
+        const uint32_t highTicks = std::max<uint32_t>(1, std::min<uint32_t>(interval - 1, scaled));
+        for (uint32_t tick = 0; tick < highTicks; ++tick) {
+            expanded[(start + tick) % patternLength] = true;
+        }
+    }
+    return expanded;
+}
+
 void sendGateSet(uint8_t patternIndex, const GateSetConfig& config) {
     switch (config.algorithm) {
         case GateAlgorithm::EUCLIDEAN: {
-            const common::GateSet gateSet = common::GateSet::createEuclidean(
-                config.steps, config.pulses, config.rotation,
-                noteLengthTicks(config.noteLength), config.gateLength);
-            commands::sendGateSet(patternIndex, gateSet.getGates());
+            commands::sendGateSet(patternIndex, expandGateStates(config));
             break;
         }
     }
+    // NOTE (task 9/10.4): the gate ARRAY is sent here so manual gate edits take
+    // effect immediately. The per-step/per-Pattern probability and stepLength are
+    // transmitted separately via sendPatternGenParams() on commit (GEN_PARAMS_SET
+    // FIFO transport, task 10.4) — not on every scrub of a draft value.
 }
 
 void clampEuclidean(GateSetConfig& config) {
@@ -54,12 +123,16 @@ void restoreGateSetDraft(UIState& state) {
     state.gateSetDraft = state.gateSetConfigs[state.selectedPattern];
     state.gateSetDirty = false;
     sendGateSet(state.selectedPattern, state.gateSetDraft);
+    sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
 }
 
 void sendPitchSetConfig(uint8_t patternIndex, const PitchSetConfig& config) {
     std::vector<uint8_t> pitches(config.pitches.begin(),
                                  config.pitches.begin() + config.count);
     commands::sendPitchSet(patternIndex, config.count, config.order, pitches);
+    // NOTE (task 8/10.4): the scale fields (scale/scaleRoot/quantize) are carried
+    // to core1 by sendPatternGenParams() on commit (GEN_PARAMS_SET transport),
+    // not here — this function sends only the pitch set itself.
 }
 
 void restorePitchSetDraft(UIState& state) {
@@ -67,12 +140,70 @@ void restorePitchSetDraft(UIState& state) {
     state.pitchSetDraft = state.pitchSetConfigs[state.selectedPattern];
     state.pitchSetDirty = false;
     sendPitchSetConfig(state.selectedPattern, state.pitchSetDraft);
+    sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
 }
 
 void sendVelocitySetConfig(uint8_t patternIndex, const VelocitySetConfig& config) {
     std::vector<uint8_t> velocities(config.velocities.begin(),
                                     config.velocities.begin() + config.count);
     commands::sendVelocitySet(patternIndex, config.count, config.order, velocities);
+    // NOTE (task 10/10.4): humanize/seed/coupling are carried to core1 by
+    // sendPatternGenParams() on commit (GEN_PARAMS_SET transport), not here.
+}
+
+// task 10.4: assemble the full GenerationParameters for a pattern from its three
+// per-stream configs (scale lives in PitchSet, probability+stepLength in GateSet,
+// humanize/seed/coupling in VelocitySet) and transmit them to core1 as one
+// GEN_PARAMS_SET command. Called after any gen-param edit so the engine's view
+// stays in sync with Working State through the real cross-core path.
+void sendGenParamsFrom(uint8_t patternIndex, const PitchSetConfig& pitch,
+                       const GateSetConfig& gate, const VelocitySetConfig& vel) {
+    common::GenerationParameters gp;
+    gp.scale = pitch.scale;
+    gp.scaleRoot = pitch.scaleRoot;
+    gp.quantize = pitch.quantize;
+    gp.patternProbability = gate.patternProbability;
+    gp.stepLength = noteLengthTicks(gate.noteLength);
+    const uint8_t n = gate.steps < common::GenerationParameters::kMaxSteps
+                          ? gate.steps : common::GenerationParameters::kMaxSteps;
+    for (uint8_t i = 0; i < common::GenerationParameters::kMaxSteps; ++i) {
+        gp.stepProbability[i] =
+            (i < n) ? gate.stepProbability[i] : common::STEP_PROB_INHERIT;
+    }
+    gp.humanizeRange = vel.humanizeRange;
+    gp.seedSet = vel.seedSet;
+    gp.seed = vel.seed;
+    gp.coupling = vel.coupling;
+
+    commands::sendGenParams(patternIndex, gp);
+}
+
+// Committed gen-params (commit, ESC/undo, leaving an editor, boot restore).
+void sendPatternGenParams(const UIState& state, uint8_t patternIndex) {
+    if (patternIndex >= state.patternCount) return;
+    sendGenParamsFrom(patternIndex, state.pitchSetConfigs[patternIndex],
+                      state.gateSetConfigs[patternIndex],
+                      state.velocitySetConfigs[patternIndex]);
+}
+
+// Live preview while editing: the one stream being edited contributes its DRAFT,
+// the other two their committed configs. Gen-param fields then sound as soon as
+// they change, exactly like gate/pitch/velocity material edits already do; ENTER
+// keeps them, ESC sends the committed values back.
+void previewGateGenParams(const UIState& s) {
+    if (s.selectedPattern >= s.patternCount) return;
+    sendGenParamsFrom(s.selectedPattern, s.pitchSetConfigs[s.selectedPattern], s.gateSetDraft,
+                      s.velocitySetConfigs[s.selectedPattern]);
+}
+void previewPitchGenParams(const UIState& s) {
+    if (s.selectedPattern >= s.patternCount) return;
+    sendGenParamsFrom(s.selectedPattern, s.pitchSetDraft, s.gateSetConfigs[s.selectedPattern],
+                      s.velocitySetConfigs[s.selectedPattern]);
+}
+void previewVelocityGenParams(const UIState& s) {
+    if (s.selectedPattern >= s.patternCount) return;
+    sendGenParamsFrom(s.selectedPattern, s.pitchSetConfigs[s.selectedPattern],
+                      s.gateSetConfigs[s.selectedPattern], s.velocitySetDraft);
 }
 
 void restoreVelocitySetDraft(UIState& state) {
@@ -80,6 +211,7 @@ void restoreVelocitySetDraft(UIState& state) {
     state.velocitySetDraft = state.velocitySetConfigs[state.selectedPattern];
     state.velocitySetDirty = false;
     sendVelocitySetConfig(state.selectedPattern, state.velocitySetDraft);
+    sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
 }
 
 }
@@ -118,7 +250,19 @@ void setCurrentView(UIState& state, ViewId viewId) {
 void beginGateSetEdit(UIState& state) {
     if (state.selectedPattern >= state.patternCount) return;
     state.gateSetDraft = state.gateSetConfigs[state.selectedPattern];
+    // Seed the per-step gate states from the generator if they were never set
+    // (all-zero but the generator would produce pulses) — e.g. a config created
+    // before the R9 grid existed, or a fresh default. A config with manual edits
+    // already has non-zero gateStates and is left as-is.
+    bool anyGate = false;
+    for (uint8_t i = 0; i < MAX_GRID_STEPS; ++i) {
+        if (state.gateSetDraft.gateStates[i]) { anyGate = true; break; }
+    }
+    if (!anyGate && state.gateSetDraft.pulses > 0) {
+        regenerateGateStates(state.gateSetDraft);
+    }
     state.selectedGateSetProperty = GateSetProperty::ALGORITHM;
+    state.selectedGateStep = 0;
     state.gateSetDirty = false;
 }
 
@@ -132,12 +276,33 @@ void moveGateSetProperty(UIState& state, int direction) {
             break;
     }
 
+    // Within the STEP_GRID, LEFT/RIGHT walks the step cursor across the
+    // programmed steps (R9). Moving right past the last step clamps; moving left
+    // past step 0 LEAVES the grid back to the previous generator property.
+    if (state.selectedGateSetProperty == GateSetProperty::STEP_GRID) {
+        const uint8_t gridSteps =
+            state.gateSetDraft.steps < MAX_GRID_STEPS ? state.gateSetDraft.steps : MAX_GRID_STEPS;
+        const int nextStep = static_cast<int>(state.selectedGateStep) + direction;
+        if (nextStep < 0) {
+            // Exit the grid to the property just before STEP_GRID.
+            if (propertyCount >= 2) state.selectedGateSetProperty = properties[propertyCount - 2];
+            return;
+        }
+        state.selectedGateStep = static_cast<uint8_t>(
+            std::clamp(nextStep, 0, static_cast<int>(gridSteps) - 1));
+        return;
+    }
+
     size_t index = 0;
     while (index < propertyCount && properties[index] != state.selectedGateSetProperty) index++;
     if (index == propertyCount) index = 0;
     const int next = std::clamp(static_cast<int>(index) + direction, 0,
                                 static_cast<int>(propertyCount) - 1);
     state.selectedGateSetProperty = properties[next];
+    // Entering the grid lands on step 0.
+    if (state.selectedGateSetProperty == GateSetProperty::STEP_GRID) {
+        state.selectedGateStep = 0;
+    }
 }
 
 void adjustGateSetValue(UIState& state, int delta, bool coarse) {
@@ -173,12 +338,73 @@ void adjustGateSetValue(UIState& state, int delta, bool coarse) {
                 case GateSetProperty::LENGTH:
                     next.gateLength = std::clamp(static_cast<int>(next.gateLength) + step, 0, 100);
                     break;
+                case GateSetProperty::PROBABILITY:
+                    // Per-Pattern Step Probability (R2/R10), 0..100; 100 == today.
+                    next.patternProbability = static_cast<uint8_t>(
+                        std::clamp(static_cast<int>(next.patternProbability) + step, 0, 100));
+                    break;
+                case GateSetProperty::STEP_GRID: {
+                    // UP/DOWN cycles the SELECTED step's probability through the
+                    // ladder INHERIT -> 0 -> 10 -> ... -> 100 (R9.4). INHERIT is a
+                    // distinct state below 0 (R9.5). Coarse has no effect (discrete
+                    // ladder). Gate TOGGLE is a separate action (toggleGateStep).
+                    const uint8_t s = state.selectedGateStep;
+                    if (s >= MAX_GRID_STEPS) return;
+                    const uint8_t cur = next.stepProbability[s];
+                    // Represent the ladder as an index: -1 == INHERIT, 0..10 == 0..100%.
+                    int idx;
+                    if (cur == STEP_PROB_INHERIT) idx = -1;
+                    else idx = std::clamp(static_cast<int>(cur) / 10, 0, 10);
+                    idx = std::clamp(idx + delta, -1, 10);
+                    next.stepProbability[s] =
+                        (idx < 0) ? STEP_PROB_INHERIT : static_cast<uint8_t>(idx * 10);
+                    break;
+                }
             }
-            clampEuclidean(next);
+            // Generator properties reseed the per-step GATE states (R9.3), but
+            // PRESERVE per-step probability (handled by regenerateGateStates,
+            // which touches only gateStates). NOTE_LENGTH/LENGTH/STEP_GRID do not
+            // change which steps pulse, so they do not regenerate.
+            if (state.selectedGateSetProperty == GateSetProperty::STEPS ||
+                state.selectedGateSetProperty == GateSetProperty::PULSES ||
+                state.selectedGateSetProperty == GateSetProperty::ROTATION) {
+                clampEuclidean(next);
+                regenerateGateStates(next);
+            } else {
+                clampEuclidean(next);
+            }
             break;
     }
 
     if (next == state.gateSetDraft) return;
+    state.gateSetDraft = next;
+    state.gateSetDirty = next != state.gateSetConfigs[state.selectedPattern];
+    const GateSetProperty prop = state.selectedGateSetProperty;
+    // Probability edits (per-Pattern PRB, per-step grid probability) do not change
+    // the gate array. Resending it would rebuild core1's GateSet at step 0 and
+    // fire that step's note on every scrub (bench report 2026-11-20), so only a
+    // gate-structure change sends the array.
+    if (prop != GateSetProperty::PROBABILITY && prop != GateSetProperty::STEP_GRID) {
+        sendGateSet(state.selectedPattern, next);
+    }
+    // Fields that feed the gen-params (probabilities; STEPS bounds the per-step
+    // array; NOTE_LENGTH sets stepLength) preview live instead of on ENTER only.
+    if (prop == GateSetProperty::PROBABILITY || prop == GateSetProperty::STEP_GRID ||
+        prop == GateSetProperty::STEPS || prop == GateSetProperty::NOTE_LENGTH) {
+        previewGateGenParams(state);
+    }
+}
+
+// R9.2: toggle the SELECTED programmed step's gate on/off (manual editing),
+// layered on top of the generator seed. Routed through the same draft/dirty/send
+// path as every other GateSet edit.
+void toggleGateStep(UIState& state) {
+    if (state.selectedPattern >= state.patternCount) return;
+    if (state.selectedGateSetProperty != GateSetProperty::STEP_GRID) return;
+    const uint8_t s = state.selectedGateStep;
+    if (s >= MAX_GRID_STEPS) return;
+    GateSetConfig next = state.gateSetDraft;
+    next.gateStates[s] = next.gateStates[s] ? 0 : 1;
     state.gateSetDraft = next;
     state.gateSetDirty = next != state.gateSetConfigs[state.selectedPattern];
     sendGateSet(state.selectedPattern, next);
@@ -188,6 +414,9 @@ void commitGateSetEdit(UIState& state) {
     if (state.selectedPattern >= state.patternCount) return;
     state.gateSetConfigs[state.selectedPattern] = state.gateSetDraft;
     state.gateSetDirty = false;
+    // task 10.4: transmit the pattern's full gen-params to core1 on commit (gate
+    // carries per-Pattern/per-step probability + stepLength).
+    sendPatternGenParams(state, state.selectedPattern);
 }
 
 void undoGateSetEdit(UIState& state) {
@@ -208,7 +437,7 @@ void beginPitchSetEdit(UIState& state) {
 void movePitchSetField(UIState& state, int direction) {
     const uint8_t lastField = PITCH_SET_FIELD_PITCH_BASE + state.pitchSetDraft.count - 1;
     int next = static_cast<int>(state.selectedPitchSetField) + direction;
-    next = std::clamp(next, static_cast<int>(PITCH_SET_FIELD_COUNT),
+    next = std::clamp(next, static_cast<int>(PITCH_SET_FIELD_SCALE),
                       static_cast<int>(lastField));
     state.selectedPitchSetField = static_cast<uint8_t>(next);
 }
@@ -217,7 +446,23 @@ void adjustPitchSetValue(UIState& state, int delta, bool coarse) {
     if (state.selectedPattern >= state.patternCount || delta == 0) return;
     PitchSetConfig next = state.pitchSetDraft;
 
-    if (state.selectedPitchSetField == PITCH_SET_FIELD_COUNT) {
+    if (state.selectedPitchSetField == PITCH_SET_FIELD_SCALE) {
+        // SCALE cycles the enum one position at a time (coarse has no effect).
+        // CHROMATIC (0) is the behavior-preserving default / clear-to-off.
+        constexpr int kScaleCount = 3;  // CHROMATIC, MAJOR, MINOR_NATURAL
+        const int s = std::clamp(static_cast<int>(next.scale) + delta, 0, kScaleCount - 1);
+        next.scale = static_cast<common::ScaleId>(s);
+    } else if (state.selectedPitchSetField == PITCH_SET_FIELD_ROOT) {
+        // ROOT wraps 0..11; coarse has no effect (12 values only).
+        int r = (static_cast<int>(next.scaleRoot) + delta) % 12;
+        if (r < 0) r += 12;
+        next.scaleRoot = static_cast<uint8_t>(r);
+    } else if (state.selectedPitchSetField == PITCH_SET_FIELD_QUANTIZE) {
+        // QUANTIZE cycles NEAREST/DOWN/UP/SKIP; NEAREST (0) is the default.
+        constexpr int kQuantCount = 4;
+        const int q = std::clamp(static_cast<int>(next.quantize) + delta, 0, kQuantCount - 1);
+        next.quantize = static_cast<common::QuantizeMode>(q);
+    } else if (state.selectedPitchSetField == PITCH_SET_FIELD_COUNT) {
         const int step = coarse ? delta * 10 : delta;
         next.count = std::clamp(static_cast<int>(next.count) + step, 1,
                                 static_cast<int>(MAX_PITCHES));
@@ -246,13 +491,19 @@ void adjustPitchSetValue(UIState& state, int delta, bool coarse) {
     if (next == state.pitchSetDraft) return;
     state.pitchSetDraft = next;
     state.pitchSetDirty = next != state.pitchSetConfigs[state.selectedPattern];
-    sendPitchSetConfig(state.selectedPattern, next);
+    if (state.selectedPitchSetField <= PITCH_SET_FIELD_QUANTIZE) {
+        previewPitchGenParams(state);  // scale/root/quantize: audible immediately
+    } else {
+        sendPitchSetConfig(state.selectedPattern, next);
+    }
 }
 
 void commitPitchSetEdit(UIState& state) {
     if (state.selectedPattern >= state.patternCount) return;
     state.pitchSetConfigs[state.selectedPattern] = state.pitchSetDraft;
     state.pitchSetDirty = false;
+    // task 10.4: pitch carries the scale constraint; transmit gen-params on commit.
+    sendPatternGenParams(state, state.selectedPattern);
 }
 
 void undoPitchSetEdit(UIState& state) {
@@ -260,6 +511,7 @@ void undoPitchSetEdit(UIState& state) {
     state.pitchSetDraft = state.pitchSetConfigs[state.selectedPattern];
     state.pitchSetDirty = false;
     sendPitchSetConfig(state.selectedPattern, state.pitchSetDraft);
+    sendPatternGenParams(state, state.selectedPattern);  // drop the previewed draft gen-params
 }
 
 void syncPitchSet(const UIState& state, uint8_t index) {
@@ -276,7 +528,7 @@ void beginVelocitySetEdit(UIState& state) {
 void moveVelocitySetField(UIState& state, int direction) {
     const uint8_t lastField = VELOCITY_SET_FIELD_VELOCITY_BASE + state.velocitySetDraft.count - 1;
     int next = static_cast<int>(state.selectedVelocitySetField) + direction;
-    next = std::clamp(next, static_cast<int>(VELOCITY_SET_FIELD_COUNT),
+    next = std::clamp(next, static_cast<int>(VELOCITY_SET_FIELD_HUMANIZE),
                       static_cast<int>(lastField));
     state.selectedVelocitySetField = static_cast<uint8_t>(next);
 }
@@ -285,7 +537,33 @@ void adjustVelocitySetValue(UIState& state, int delta, bool coarse) {
     if (state.selectedPattern >= state.patternCount || delta == 0) return;
     VelocitySetConfig next = state.velocitySetDraft;
 
-    if (state.selectedVelocitySetField == VELOCITY_SET_FIELD_COUNT) {
+    if (state.selectedVelocitySetField == VELOCITY_SET_FIELD_HUMANIZE) {
+        // HUMANIZE range 0..64; 0 == off (behavior-preserving, clear-to-default).
+        const int step = coarse ? delta * 10 : delta;
+        next.humanizeRange = static_cast<uint8_t>(
+            std::clamp(static_cast<int>(next.humanizeRange) + step, 0, 64));
+    } else if (state.selectedVelocitySetField == VELOCITY_SET_FIELD_SEED) {
+        // SEED: a single control that spans "no seed" (seedSet=false) then an
+        // explicit seed 0,1,2,... Going below 0 clears to no-seed (R10.3 / R4).
+        // coarse steps by 10. The displayed/stored seed is the low byte space
+        // here; the full 32-bit seed is set via the host/transport path, but the
+        // UI exposes a simple incrementing seed sufficient to make a Pattern
+        // deterministic and to clear it.
+        const int step = coarse ? delta * 10 : delta;
+        if (!next.seedSet) {
+            if (delta > 0) { next.seedSet = true; next.seed = 0; }
+            // delta < 0 while already no-seed: stay cleared.
+        } else {
+            const long s = static_cast<long>(next.seed) + step;
+            if (s < 0) { next.seedSet = false; next.seed = 0; }  // clear to no-seed
+            else next.seed = static_cast<uint32_t>(s);
+        }
+    } else if (state.selectedVelocitySetField == VELOCITY_SET_FIELD_COUPLING) {
+        // COUPLING cycles INDEPENDENT/LOCKED; INDEPENDENT (0) is the default.
+        constexpr int kCouplingCount = 2;
+        const int c = std::clamp(static_cast<int>(next.coupling) + delta, 0, kCouplingCount - 1);
+        next.coupling = static_cast<common::CouplingMode>(c);
+    } else if (state.selectedVelocitySetField == VELOCITY_SET_FIELD_COUNT) {
         const int step = coarse ? delta * 10 : delta;
         next.count = static_cast<uint8_t>(std::clamp(
             static_cast<int>(next.count) + step, 1, static_cast<int>(MAX_VELOCITIES)));
@@ -313,13 +591,19 @@ void adjustVelocitySetValue(UIState& state, int delta, bool coarse) {
     if (next == state.velocitySetDraft) return;
     state.velocitySetDraft = next;
     state.velocitySetDirty = next != state.velocitySetConfigs[state.selectedPattern];
-    sendVelocitySetConfig(state.selectedPattern, next);
+    if (state.selectedVelocitySetField <= VELOCITY_SET_FIELD_COUPLING) {
+        previewVelocityGenParams(state);  // humanize/seed/coupling: audible immediately
+    } else {
+        sendVelocitySetConfig(state.selectedPattern, next);
+    }
 }
 
 void commitVelocitySetEdit(UIState& state) {
     if (state.selectedPattern >= state.patternCount) return;
     state.velocitySetConfigs[state.selectedPattern] = state.velocitySetDraft;
     state.velocitySetDirty = false;
+    // task 10.4: velocity carries humanize/seed/coupling; transmit on commit.
+    sendPatternGenParams(state, state.selectedPattern);
 }
 
 void undoVelocitySetEdit(UIState& state) {
@@ -400,6 +684,12 @@ void restoreSequencerFromState(const UIState& state) {
         syncGateSet(state, i);
         syncPitchSet(state, i);
         syncVelocitySet(state, i);
+        // Generation Parameters ride their own GEN_PARAMS_SET command (task
+        // 10.4), not the per-stream sync above. Without this, a boot load left
+        // core1 running DEFAULT gen-params while Working State (and the UI)
+        // showed the saved ones -- a saved seed/probability/humanize/scale never
+        // took effect after reboot (task 11.3 silicon finding; R4.3, R6.5).
+        sendPatternGenParams(state, i);
     }
 
     // Align core1's active mask with the restored activePatterns bitmask. Every
@@ -466,26 +756,23 @@ void applyGlobal(UIState& state, KeyId id) {
 
 } // namespace
 
-UIState reduce(const UIState& state, const events::Event& event, ui::IView* activeView) {
+void reduce(UIState& state, const events::Event& event, ui::IView* activeView) {
     if (isSaveCombo(event)) {
-        UIState next = state;
-        requestSave(next);          // record intent; UI loop performs the save
-        return next;                // consumed globally; never routed to a view (Req 1.2)
+        requestSave(state);         // record intent; UI loop performs the save
+        return;                     // consumed globally; never routed to a view (Req 1.2)
     }
 
     if (isReserved(event.data.key.id)) {
-        UIState next = state;
         if (event.type == events::EventType::KEY_PRESSED &&
             event.data.key.mods == mod::NONE) {
-            applyGlobal(next, event.data.key.id);
+            applyGlobal(state, event.data.key.id);
         }
-        return next;    // consumed either way - never reaches a view
+        return;    // consumed either way - never reaches a view
     }
 
     if (activeView) {
-        return activeView->handleEvent(state, event);
+        activeView->handleEvent(state, event);
     }
-    return state;
 }
 
 } // namespace ui::state

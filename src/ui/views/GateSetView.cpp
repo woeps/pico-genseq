@@ -20,14 +20,14 @@ void GateSetView::onEnter()
     ledMatrix.clear();
 }
 
-state::UIState GateSetView::handleEvent(const state::UIState& state, const events::Event& event)
+void GateSetView::handleEvent(state::UIState& state, const events::Event& event)
 {
     if (event.type != events::EventType::KEY_PRESSED &&
         event.type != events::EventType::KEY_HELD) {
-        return state;
+        return;
     }
 
-    state::UIState newState = state;
+    state::UIState& newState = state;  // in-place: no 1.4KB copy
     const bool isPressed = event.type == events::EventType::KEY_PRESSED;
     const bool coarse = (event.data.key.mods & mod::SHIFT) != 0;
     switch (combo(event.data.key.id, event.data.key.mods & ~mod::SHIFT)) {
@@ -36,7 +36,16 @@ state::UIState GateSetView::handleEvent(const state::UIState& state, const event
         case combo(KeyId::UP):    state::adjustGateSetValue(newState, 1, coarse); break;
         case combo(KeyId::DOWN):  state::adjustGateSetValue(newState, -1, coarse); break;
         case combo(KeyId::ENTER):
-            if (isPressed) state::commitGateSetEdit(newState);
+            if (isPressed) {
+                // On the per-step grid, ENTER toggles the selected step's gate
+                // (R9.2); elsewhere it commits the draft as before. Commit is
+                // still reachable from any generator field.
+                if (state.selectedGateSetProperty == state::GateSetProperty::STEP_GRID) {
+                    state::toggleGateStep(newState);
+                } else {
+                    state::commitGateSetEdit(newState);
+                }
+            }
             break;
         case combo(KeyId::ESCAPE):
             if (!isPressed) break;
@@ -48,7 +57,7 @@ state::UIState GateSetView::handleEvent(const state::UIState& state, const event
             break;
         default: break;
     }
-    return newState;
+    return;
 }
 
 void GateSetView::render(const state::UIState& state)
@@ -56,7 +65,8 @@ void GateSetView::render(const state::UIState& state)
     ledMatrix.clear();
     switch (state.selectedGateSetProperty) {
         case state::GateSetProperty::ALGORITHM:
-            ledMatrix.drawLabel("EUC", 0xFFFFEE00);
+            ledMatrix.drawLabel("Alg", 0xFFFFEE00);
+            ledMatrix.drawValueText("euc", 0xFFFF0011);
             break;
         case state::GateSetProperty::STEPS:
             ledMatrix.drawLabel("StP", 0xFFFFEE00);
@@ -80,6 +90,40 @@ void GateSetView::render(const state::UIState& state)
             ledMatrix.drawLabel("LEn", 0xFFFFEE00);
             ledMatrix.drawNumber(state.gateSetDraft.gateLength, 0xFFFF0011);
             break;
+        case state::GateSetProperty::PROBABILITY:
+            ledMatrix.drawLabel("Prb", 0xFFFFEE00);
+            ledMatrix.drawNumber(state.gateSetDraft.patternProbability, 0xFFFF0011);
+            break;
+        case state::GateSetProperty::STEP_GRID: {
+            // R9 per-step grid: show which step is selected, its gate state, and
+            // its probability (or INHERIT). Label "s<NN>"; the gate is shown as a
+            // pixel (green on / dim off) at a reserved column, and the probability
+            // as a number (or a distinct INHERIT marker) per R9.4/R9.6.
+            const uint8_t s = state.selectedGateStep;
+            char stepLabel[4] = {'s', '\0', '\0', '\0'};
+            if (s < 10) {
+                stepLabel[1] = static_cast<char>('0' + s);
+            } else {
+                stepLabel[1] = '1';
+                stepLabel[2] = static_cast<char>('0' + s - 10);
+            }
+            ledMatrix.drawLabel(stepLabel, 0xFFFFEE00);
+
+            const bool gateOn = (s < state::MAX_GRID_STEPS) && state.gateSetDraft.gateStates[s];
+            // Gate indicator pixel at (13,0): green on, dim red off (0x00GGRRBB).
+            ledMatrix.setPixel(13, 0, gateOn ? 0x00FF0000 : 0x00002200);
+
+            const uint8_t prob = (s < state::MAX_GRID_STEPS)
+                                     ? state.gateSetDraft.stepProbability[s]
+                                     : state::STEP_PROB_INHERIT;
+            if (prob == state::STEP_PROB_INHERIT) {
+                // INHERIT is distinct from an explicit 0 ("000"): shown as "inh".
+                ledMatrix.drawValueText("inh", 0xFFFF0011);
+            } else {
+                ledMatrix.drawNumber(prob, 0xFFFF0011);
+            }
+            break;
+        }
     }
     if (state.gateSetDirty) ledMatrix.setPixel(15, 0, 0x0000FF00);
 }

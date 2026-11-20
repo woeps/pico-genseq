@@ -24,6 +24,10 @@
 #include "hardware/spi.h"
 #include "hardware/gpio.h"
 
+#ifndef GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI
+#define GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI 0
+#endif
+
 namespace persistence {
 
 class Mb85rsFramSpi : public IFramSpi {
@@ -34,7 +38,11 @@ class Mb85rsFramSpi : public IFramSpi {
         uint mosi = 11;
         uint miso = 12;
         uint cs = 13;
+#if GENSEQ_CORE1_BOOT_TRACE_SLOW_SPI
+        uint baud = 100u * 1000u;  // BUG B part 2 test: 100 kHz to separate electrical/timing from logical
+#else
         uint baud = 8u * 1000u * 1000u;  // 8 MHz; part supports up to 40 MHz
+#endif
     };
 
     Mb85rsFramSpi() : pins_(Pins{}) {}

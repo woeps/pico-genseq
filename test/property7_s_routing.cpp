@@ -63,6 +63,10 @@ void sendVelocitySet(uint8_t /*patternIndex*/, uint8_t /*count*/,
     // No-op host double.
 }
 
+void sendGenParams(uint8_t /*patternIndex*/, const common::GenerationParameters& /*params*/) {
+    // No-op host double.
+}
+
 }  // namespace commands
 
 namespace {
@@ -73,10 +77,9 @@ class RecordingView : public ui::IView {
 public:
     bool handleEventCalled = false;
 
-    ui::state::UIState handleEvent(const ui::state::UIState& state,
-                                   const ui::events::Event& /*event*/) override {
+    void handleEvent(ui::state::UIState& /*state*/,
+                     const ui::events::Event& /*event*/) override {
         handleEventCalled = true;
-        return state;
     }
 
     void render(const ui::state::UIState& /*state*/) override {
@@ -105,9 +108,10 @@ bool runPersistProperty7() {
                 ui::events::Event::keyPressed(ui::KeyId::S, mods, ts);
 
             RecordingView view;
-            const ui::state::UIState state{};  // defaults: saveRequested == false
+            ui::state::UIState state{};  // defaults: saveRequested == false
 
-            const ui::state::UIState result = ui::state::reduce(state, event, &view);
+            ui::state::reduce(state, event, &view);
+            const ui::state::UIState& result = state;
 
             // S is not reserved and Ctrl+S is not matched, so it must reach the view...
             RC_ASSERT(view.handleEventCalled);

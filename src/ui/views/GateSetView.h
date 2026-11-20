@@ -10,7 +10,7 @@ public:
     explicit GateSetView(hardware::LedMatrix& ledMatrix);
 
     void onEnter() override;
-    state::UIState handleEvent(const state::UIState& state, const events::Event& event) override;
+    void handleEvent(state::UIState& state, const events::Event& event) override;
     void render(const state::UIState& state) override;
 
 private:

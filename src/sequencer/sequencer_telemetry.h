@@ -17,4 +17,16 @@ namespace sequencer {
 // (the post-Stop ownership invariant, Req 5.8) — the literal stuck-note signal.
 extern volatile uint32_t g_soundingNotes;
 
+#ifndef GENSEQ_HOST_CONTROL
+#define GENSEQ_HOST_CONTROL 0
+#endif
+#if GENSEQ_HOST_CONTROL
+// Task 11.3 bench MIDI tap (host-control builds only). core1 appends every byte
+// handed to the MIDI UART while armed; core0 reads it only after disarming.
+constexpr uint32_t kMidiTapCapacity = 4096;
+extern volatile uint32_t g_midiTapArmed;
+extern volatile uint32_t g_midiTapCount;
+extern uint8_t g_midiTap[kMidiTapCapacity];
+#endif
+
 }  // namespace sequencer

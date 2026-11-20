@@ -348,6 +348,34 @@ static inline void get_label_pattern(const char (*text)[4], uint32_t (*buffer)[2
     }
 }
 
+// Text VALUE (e.g. "maj", "euc", "off") in the value area: rows 6-10, the same
+// band as get_number_pattern / get_note_pattern, horizontally centred. The top
+// rows stay free for the field label. Glyphs are 4 columns with the 4th blank,
+// so n glyphs are 4n-1 pixels wide; trailing spaces are not counted.
+static inline void get_value_text_pattern(const char (*text)[4], uint32_t (*buffer)[256], uint32_t *color) {
+    int n = 0;
+    for (int i = 0; i < 4 && (*text)[i] != '\0'; i++) n = i + 1;
+    while (n > 0 && (*text)[n - 1] == ' ') n--;
+    if (n == 0) return;
+    const int start_col = (16 - (n * 4 - 1)) / 2;
+    const int start_row = 6;
+    for (int pos = 0; pos < n; pos++) {
+        char c = (*text)[pos];
+        const bool (*glyph)[4] = 0;
+        if (c >= 'A' && c <= 'Z') c = c - 'A' + 'a';
+        if (c >= 'a' && c <= 'z') glyph = font[c - 'a'];
+        else if (c >= '0' && c <= '9') glyph = digits[c - '0'];
+        if (!glyph) continue;  // space / unsupported: leave blank
+        for (int row = 0; row < 5; row++) {
+            for (int col = 0; col < 4; col++) {
+                const int x = start_col + pos * 4 + col;
+                if (x < 0 || x >= 16) continue;
+                (*buffer)[(start_row + row) * 16 + x] = glyph[row][col] ? *color : 0;
+            }
+        }
+    }
+}
+
 static inline void get_note_pattern(const char (*note_str)[4], uint32_t (*buffer)[256], uint32_t *color) {
     // Clear only rows 6-15 (10 rows * 16 columns)
     // memset(&(*buffer)[6 * 16], 0, 10 * 16 * sizeof(uint32_t));

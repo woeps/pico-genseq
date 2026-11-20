@@ -87,12 +87,45 @@ void test_clear_reuse() {
     check(s.gate(0) && !s.gate(1), "snapshot reusable after clear");
 }
 
+// Generation Parameters ride the snapshot (generative-engine-expansion task
+// 6.1): a POD member that round-trips and is reset by clear().
+void test_generation_parameters() {
+    PatternSnapshot s;
+    // Default on construction.
+    check(s.generationParameters().isDefault(), "snapshot gen-params default on construction");
+
+    common::GenerationParameters gp;
+    gp.scale = common::ScaleId::MINOR_NATURAL;
+    gp.scaleRoot = 9;
+    gp.quantize = common::QuantizeMode::SKIP;
+    gp.patternProbability = 55;
+    gp.humanizeRange = 8;
+    gp.seedSet = true; gp.seed = 0xABCDEF01u;
+    gp.coupling = common::CouplingMode::LOCKED;
+    gp.stepProbability[2] = 25;
+    s.setGenerationParameters(gp);
+
+    const common::GenerationParameters& r = s.generationParameters();
+    check(r.scale == common::ScaleId::MINOR_NATURAL, "snapshot gen-params scale round-trips");
+    check(r.scaleRoot == 9, "snapshot gen-params root round-trips");
+    check(r.quantize == common::QuantizeMode::SKIP, "snapshot gen-params quantize round-trips");
+    check(r.patternProbability == 55, "snapshot gen-params pattern prob round-trips");
+    check(r.humanizeRange == 8, "snapshot gen-params humanize round-trips");
+    check(r.seedSet && r.seed == 0xABCDEF01u, "snapshot gen-params seed round-trips");
+    check(r.coupling == common::CouplingMode::LOCKED, "snapshot gen-params coupling round-trips");
+    check(r.stepProbability[2] == 25, "snapshot gen-params per-step prob round-trips");
+
+    s.clear();
+    check(s.generationParameters().isDefault(), "clear resets gen-params to default");
+}
+
 // Documented fixed footprint is a compile-time constant.
 void test_footprint() {
     static_assert(PatternSnapshot::footprintBytes() > 0, "footprint is a compile-time constant");
     check(PatternSnapshot::footprintBytes() ==
-              PatternSnapshot::kGateWords * 4u + PatternSnapshot::kMaxSetLen * 2u + 16u,
-          "footprint matches the documented bound");
+              PatternSnapshot::kGateWords * 4u + PatternSnapshot::kMaxSetLen * 2u + 16u +
+              static_cast<uint32_t>(sizeof(common::GenerationParameters)),
+          "footprint matches the documented bound incl. GenerationParameters");
 }
 
 }  // namespace
@@ -102,6 +135,7 @@ int main() {
     test_count_clamping();
     test_pitch_velocity();
     test_clear_reuse();
+    test_generation_parameters();
     test_footprint();
 
     if (failures == 0) {

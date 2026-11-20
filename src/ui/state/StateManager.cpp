@@ -7,8 +7,10 @@ StateManager::StateManager() { views.fill(nullptr); }
 
 void StateManager::dispatch(const events::Event& event) {
     IView* activeView = views[static_cast<size_t>(currentState.currentView)];
-    UIState newState = reduce(currentState, event, activeView);
-    currentState = newState;
+    // Reduce in place: UIState is ~1.4 KB, so copying it per event (as the old
+    // copy-and-return reducer did) overflowed core0's 2 KB stack. reduce()
+    // mutates currentState directly; the listener then renders the result.
+    reduce(currentState, event, activeView);
     if (listener_) {
         listener_(currentState);
     }

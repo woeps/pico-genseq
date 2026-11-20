@@ -4,6 +4,7 @@
 
 #include "../common/PatternId.h"
 #include "../common/pitch_set.h"  // common::PlayingOrder (header-only enum)
+#include "../common/GenerationParameters.h"  // common::GenerationParameters (POD)
 
 // Fixed-capacity Pattern snapshot for core1 command handling (performance-safe-
 // foundation task 6.4, Requirements 7.4, 7.9, 7.10).
@@ -28,6 +29,10 @@
 // header-only canonical id / PlayingOrder enum, so it compiles in firmware and
 // host tests identically. No logging lives here (Req 7.10).
 
+#ifndef GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR
+#define GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR 0
+#endif
+
 namespace sequencer {
 
 class PatternSnapshot {
@@ -46,7 +51,19 @@ public:
         velocityCount_ = 0;
         pitchOrder_ = common::PlayingOrder::FORWARDS;
         velocityOrder_ = common::PlayingOrder::FORWARDS;
+        genParams_ = common::GenerationParameters{};  // back to behavior-preserving
+#if GENSEQ_CORE1_BOOT_TRACE_NO_ROM_CLEAR
+        // BUG B part 2 test: zero gateBits_ WITHOUT the compiler lowering the loop
+        // to the bootrom memset/memcpy (core1 died inside ROM memset in part 1,
+        // and this clear() runs every idle loop while core0 hammers FRAM SPI).
+        // A volatile-pointer word loop defeats the memset idiom recognizer.
+        {
+            volatile uint32_t* p = gateBits_;
+            for (uint16_t i = 0; i < kGateWords; ++i) p[i] = 0u;
+        }
+#else
         for (uint16_t i = 0; i < kGateWords; ++i) gateBits_[i] = 0;
+#endif
     }
 
     // --- Gates (packed bitset) -----------------------------------------------
@@ -92,11 +109,18 @@ public:
     void setVelocityOrder(common::PlayingOrder o) { velocityOrder_ = o; }
     common::PlayingOrder velocityOrder() const { return velocityOrder_; }
 
+    // --- Generation Parameters (generative-engine-expansion task 6.1) --------
+    // A POD GenerationParameters rides the snapshot so a parameter edit reaches
+    // core1 through the same allocation-free handoff as gate/pitch/velocity.
+    void setGenerationParameters(const common::GenerationParameters& gp) { genParams_ = gp; }
+    const common::GenerationParameters& generationParameters() const { return genParams_; }
+
     common::PatternId target{};  // which pattern this snapshot applies to
 
     // Documented fixed memory footprint (bytes), for the handoff budget (Req 7.2).
     static constexpr uint32_t footprintBytes() {
-        return kGateWords * 4u + kMaxSetLen * 2u + 16u;
+        return kGateWords * 4u + kMaxSetLen * 2u + 16u +
+               static_cast<uint32_t>(sizeof(common::GenerationParameters));
     }
 
 private:
@@ -108,6 +132,7 @@ private:
     uint8_t velocityCount_ = 0;
     common::PlayingOrder pitchOrder_ = common::PlayingOrder::FORWARDS;
     common::PlayingOrder velocityOrder_ = common::PlayingOrder::FORWARDS;
+    common::GenerationParameters genParams_{};  // defaults to behavior-preserving
 };
 
 }  // namespace sequencer

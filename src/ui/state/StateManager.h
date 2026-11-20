@@ -23,6 +23,21 @@ public:
     // UIState. If no listener is subscribed yet, the state is still replaced.
     void setState(const UIState& newState);
 
+    // In-place boot mutation (core1 boot-fault fix). UIState is ~1.4 KB, so a
+    // by-value `UIState bootState` local in UIController::initialize() consumed
+    // ~70% of core0's 2 KB stack on the deepest boot path (FRAM load +
+    // restoreSequencerFromState), overflowing it DOWN into core1's adjacent
+    // launch stack and corrupting the entry/SP multicore_launch_core1 had pushed
+    // there -> core1 HardFaulted at the trampoline before running any of its own
+    // code (LED dark, core0 wedged on the FIFO). This mirrors the same in-place
+    // fix dispatch()/reduce() already uses: mutate currentState (static storage)
+    // directly, with no stack-resident copy. Returns a mutable reference for the
+    // caller to fold a restored config into; call notifyStateChanged() after.
+    UIState& mutableState() { return currentState; }
+    // Notify the subscribed listener that currentState changed in place. Pairs
+    // with mutableState(); same notify semantics as setState()/dispatch().
+    void notifyStateChanged() { if (listener_) listener_(currentState); }
+
     // Set the view registry for looking up active view
     void setViews(std::array<IView*, VIEW_COUNT> views) { this->views = views; }
     

@@ -114,6 +114,7 @@ set(EMISSION_SOURCES
     "${SRC_DIR}/common/pitch_set.cpp"
     "${SRC_DIR}/common/velocity_set.cpp"
     "${SRC_DIR}/common/gate_set.cpp"
+    "${SRC_DIR}/common/Scale.cpp"
 )
 
 # Include dirs, ORDER MATTERS: pico_stubs FIRST so it shadows the real SDK.
@@ -497,6 +498,73 @@ add_executable(genseq_example_pattern_id "${EXAMPLE_PATTERN_ID_SRC}")
 target_include_directories(genseq_example_pattern_id PRIVATE ${EMISSION_INCLUDE_DIRS})
 target_link_libraries(genseq_example_pattern_id PRIVATE genseq_emission)
 add_test(NAME genseq_example_pattern_id COMMAND genseq_example_pattern_id)
+
+# ---------------------------------------------------------------------------
+# Example test: GenerationParameters value object (generative-engine-expansion
+# task 1.2).
+#
+# A standalone example (not property-based) validating the behavior-preserving
+# default contract (Requirements 1.5, 2.3, 3.3): a default-constructed value
+# reports isDefault(), each single non-default field flips it false, and the
+# STEP_PROB_INHERIT sentinel is distinct from an explicit 100/0 (Req 9.5).
+#
+# It includes only the SDK-free header-only common/GenerationParameters.h; links
+# genseq_emission for consistency with the sibling examples (no symbols actually
+# needed); NO Pico SDK libs and NO RapidCheck, so it builds host-side
+# unconditionally. Its own main() means it MUST be excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_GENERATION_PARAMETERS_SRC "${TEST_DIR}/example_generation_parameters.cpp")
+
+add_executable(genseq_example_generation_parameters "${EXAMPLE_GENERATION_PARAMETERS_SRC}")
+target_include_directories(genseq_example_generation_parameters PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_generation_parameters PRIVATE genseq_emission)
+add_test(NAME genseq_example_generation_parameters COMMAND genseq_example_generation_parameters)
+
+# ---------------------------------------------------------------------------
+# Example test: scale model library (generative-engine-expansion task 2.2).
+#
+# A standalone example validating Requirements 1.1, 1.2, 1.3, 1.6: membership for
+# major/natural-minor across roots, chromatic passes everything, each
+# quantization mode over out-of-scale inputs, octave behavior, and SKIP
+# suppression. Links genseq_emission for the real common/Scale.cpp. Own main(),
+# so it MUST be excluded from the glob below.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_SCALE_SRC "${TEST_DIR}/example_scale.cpp")
+
+add_executable(genseq_example_scale "${EXAMPLE_SCALE_SRC}")
+target_include_directories(genseq_example_scale PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_scale PRIVATE genseq_emission)
+add_test(NAME genseq_example_scale COMMAND genseq_example_scale)
+
+# ---------------------------------------------------------------------------
+# Example test: emission-lens default-equivalence (generative-engine-expansion
+# task 3.3).
+#
+# Drives the REAL Sequencer with default Generation Parameters and asserts the
+# note stream is the pre-milestone one (stored pitches/velocity unchanged),
+# proving the lens short-circuit (design invariant 1). Links genseq_emission for
+# the real Sequencer + common. Own main(), excluded from the glob.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_EMISSION_LENS_SRC "${TEST_DIR}/example_emission_lens.cpp")
+
+add_executable(genseq_example_emission_lens "${EXAMPLE_EMISSION_LENS_SRC}")
+target_include_directories(genseq_example_emission_lens PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_emission_lens PRIVATE genseq_emission)
+add_test(NAME genseq_example_emission_lens COMMAND genseq_example_emission_lens)
+
+# ---------------------------------------------------------------------------
+# Example test: stream coupling (generative-engine-expansion task 5.4).
+#
+# Drives the real Sequencer: INDEPENDENT == today; LOCKED drives velocity index
+# from pitch position via pitchPos % velocityCount, incl. mismatched lengths.
+# Links genseq_emission. Own main(), excluded from the glob.
+# ---------------------------------------------------------------------------
+set(EXAMPLE_STREAM_COUPLING_SRC "${TEST_DIR}/example_stream_coupling.cpp")
+
+add_executable(genseq_example_stream_coupling "${EXAMPLE_STREAM_COUPLING_SRC}")
+target_include_directories(genseq_example_stream_coupling PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_stream_coupling PRIVATE genseq_emission)
+add_test(NAME genseq_example_stream_coupling COMMAND genseq_example_stream_coupling)
 
 # ---------------------------------------------------------------------------
 # Example test: centralized NoteLifecycle (task 2.3).
@@ -889,6 +957,34 @@ if(RAPIDCHECK_AVAILABLE)
     # The pattern-id example (task 2.2) is its own dedicated target with its own
     # main(); exclude it from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_PATTERN_ID_SRC}")
+    # The GenerationParameters example (generative-engine-expansion task 1.2) is
+    # its own dedicated target with its own main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_GENERATION_PARAMETERS_SRC}")
+    # The scale-library example (generative-engine-expansion task 2.2) is its own
+    # dedicated target with its own main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SCALE_SRC}")
+    # The PitchSet scale-view example (generative-engine-expansion task 8.3)
+    # compiles Reducer.cpp + its own main(); exclude it from the shared runner.
+    set(EXAMPLE_PITCHSET_SCALE_VIEW_SRC "${TEST_DIR}/example_pitchset_scale_view.cpp")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_PITCHSET_SCALE_VIEW_SRC}")
+    # The GateSet grid-view example (generative-engine-expansion task 9.6)
+    # compiles Reducer.cpp + its own main(); exclude it from the shared runner.
+    set(EXAMPLE_GATESET_GRID_VIEW_SRC "${TEST_DIR}/example_gateset_grid_view.cpp")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_GATESET_GRID_VIEW_SRC}")
+    # The VelocitySet gen-params example (generative-engine-expansion task 10)
+    # compiles Reducer.cpp + its own main(); exclude it from the shared runner.
+    set(EXAMPLE_VELOCITY_GENPARAMS_VIEW_SRC "${TEST_DIR}/example_velocity_genparams_view.cpp")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_VELOCITY_GENPARAMS_VIEW_SRC}")
+    # The GEN_PARAMS_SET FIFO round-trip (task 10.4) compiles command.cpp with a
+    # std::queue FIFO double + its own main(); exclude it from the shared runner.
+    set(EXAMPLE_GENPARAMS_FIFO_SRC "${TEST_DIR}/example_genparams_fifo.cpp")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_GENPARAMS_FIFO_SRC}")
+    # The emission-lens example (generative-engine-expansion task 3.3) is its own
+    # dedicated target with its own main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_EMISSION_LENS_SRC}")
+    # The stream-coupling example (generative-engine-expansion task 5.4) is its own
+    # dedicated target with its own main(); exclude it from the shared runner.
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_STREAM_COUPLING_SRC}")
     # The NoteLifecycle (2.3) and TransportTimeline (3.2) examples are their own
     # dedicated targets with their own main(); exclude them from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_NOTE_LIFECYCLE_SRC}")
@@ -964,3 +1060,82 @@ if(RAPIDCHECK_AVAILABLE)
     target_link_libraries(genseq_reducer_property_tests PRIVATE genseq_emission rapidcheck)
     add_test(NAME genseq_reducer_property_tests COMMAND genseq_reducer_property_tests)
 endif()
+
+# ---------------------------------------------------------------------------
+# Example test: PitchSet scale controls + membership cue (generative-engine-
+# expansion task 8.3). Compiles the real Reducer.cpp + PersistMapping.cpp with
+# host-safe commands:: seam stubs; links genseq_emission for common::scale and
+# the enums. Own main(), standalone target (NOT in the shared glob).
+# ---------------------------------------------------------------------------
+add_executable(genseq_example_pitchset_scale_view
+    "${EXAMPLE_PITCHSET_SCALE_VIEW_SRC}"
+    "${SRC_DIR}/ui/state/Reducer.cpp"
+    "${SRC_DIR}/ui/state/PersistMapping.cpp"
+)
+target_include_directories(genseq_example_pitchset_scale_view PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}"
+    "${SRC_DIR}/ui"
+    "${SRC_DIR}/ui/state"
+    "${SRC_DIR}/persistence"
+)
+target_link_libraries(genseq_example_pitchset_scale_view PRIVATE genseq_emission)
+add_test(NAME genseq_example_pitchset_scale_view COMMAND genseq_example_pitchset_scale_view)
+
+# ---------------------------------------------------------------------------
+# Example test: GateSet per-step grid editor (generative-engine-expansion task
+# 9.6). Compiles the real Reducer.cpp + PersistMapping.cpp with host-safe
+# commands:: seam stubs; links genseq_emission for common::GateSet. Own main().
+# ---------------------------------------------------------------------------
+add_executable(genseq_example_gateset_grid_view
+    "${EXAMPLE_GATESET_GRID_VIEW_SRC}"
+    "${SRC_DIR}/ui/state/Reducer.cpp"
+    "${SRC_DIR}/ui/state/PersistMapping.cpp"
+)
+target_include_directories(genseq_example_gateset_grid_view PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}"
+    "${SRC_DIR}/ui"
+    "${SRC_DIR}/ui/state"
+    "${SRC_DIR}/persistence"
+)
+target_link_libraries(genseq_example_gateset_grid_view PRIVATE genseq_emission)
+add_test(NAME genseq_example_gateset_grid_view COMMAND genseq_example_gateset_grid_view)
+
+# ---------------------------------------------------------------------------
+# Example test: VelocitySet gen-params + R10 control map (generative-engine-
+# expansion task 10). Compiles Reducer.cpp + PersistMapping.cpp with host-safe
+# commands:: seam stubs; links genseq_emission. Own main().
+# ---------------------------------------------------------------------------
+add_executable(genseq_example_velocity_genparams_view
+    "${EXAMPLE_VELOCITY_GENPARAMS_VIEW_SRC}"
+    "${SRC_DIR}/ui/state/Reducer.cpp"
+    "${SRC_DIR}/ui/state/PersistMapping.cpp"
+)
+target_include_directories(genseq_example_velocity_genparams_view PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}"
+    "${SRC_DIR}/ui"
+    "${SRC_DIR}/ui/state"
+    "${SRC_DIR}/persistence"
+)
+target_link_libraries(genseq_example_velocity_genparams_view PRIVATE genseq_emission)
+add_test(NAME genseq_example_velocity_genparams_view COMMAND genseq_example_velocity_genparams_view)
+
+# ---------------------------------------------------------------------------
+# Example test: GEN_PARAMS_SET FIFO round-trip (generative-engine-expansion task
+# 10.4). Compiles the REAL command.cpp with a std::queue-backed FIFO double so
+# sendGenParams -> receiveCommandInto round-trips a GenerationParameters through
+# the actual cross-core encode/decode. Links genseq_emission for PatternSnapshot
+# + the enums. Own main().
+# ---------------------------------------------------------------------------
+add_executable(genseq_example_genparams_fifo
+    "${EXAMPLE_GENPARAMS_FIFO_SRC}"
+    "${SRC_DIR}/commands/command.cpp"
+)
+target_include_directories(genseq_example_genparams_fifo PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/commands"
+)
+target_link_libraries(genseq_example_genparams_fifo PRIVATE genseq_emission)
+add_test(NAME genseq_example_genparams_fifo COMMAND genseq_example_genparams_fifo)

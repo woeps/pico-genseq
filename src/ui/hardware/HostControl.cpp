@@ -47,6 +47,7 @@ KeyId keyFromName(const char* name) {
         {"left", KeyId::LEFT}, {"right", KeyId::RIGHT},
         {"f1", KeyId::F1}, {"f2", KeyId::F2}, {"f3", KeyId::F3},
         {"enter", KeyId::ENTER}, {"escape", KeyId::ESCAPE},
+        {"delete", KeyId::DELETE_KEY},
     };
     for (const auto& e : table) {
         if (strcasecmp(e.n, name) == 0) return e.id;
@@ -250,6 +251,36 @@ void HostControl::dispatchLine(const char* raw) {
         return;
     }
 
+    if (strcasecmp(verb, "midilog") == 0) {
+        // Task 11.3 MIDI tap. "start": clear + arm (core1 then logs every byte
+        // handed to the MIDI UART). "dump": disarm, then print M:n=<count> and the
+        // bytes as hex, 64 per line ("M:<hex>"), ending with M:end.
+        if (a1 != nullptr && strcasecmp(a1, "start") == 0) {
+            sequencer::g_midiTapArmed = 0;
+            sequencer::g_midiTapCount = 0;
+            sequencer::g_midiTapArmed = 1;
+            printf("H:ok midilog start\n");
+            return;
+        }
+        if (a1 != nullptr && strcasecmp(a1, "dump") == 0) {
+            sequencer::g_midiTapArmed = 0;
+            sleep_ms(2);  // let any in-flight core1 append land before reading
+            const uint32_t n = sequencer::g_midiTapCount;
+            printf("M:n=%lu\n", static_cast<unsigned long>(n));
+            for (uint32_t i = 0; i < n; i += 64) {
+                printf("M:");
+                for (uint32_t j = i; j < n && j < i + 64; ++j) {
+                    printf("%02x", static_cast<unsigned>(sequencer::g_midiTap[j]));
+                }
+                printf("\n");
+            }
+            printf("M:end\n");
+            return;
+        }
+        printf("H:err midilog_needs_start_or_dump\n");
+        return;
+    }
+
     if (strcasecmp(verb, "reset") == 0) {
         // Autonomous "power-cycle": arm the watchdog with a short timeout and
         // spin. The chip reboots and re-runs main(), re-loading config from the
@@ -284,6 +315,33 @@ void HostControl::emitDump() {
     printf("D:soundingNotes=%u\n", static_cast<unsigned>(sequencer::g_soundingNotes));
     printf("D:lastSaveUs=%u\n", static_cast<unsigned>(ui::g_lastSaveMicros));
     printf("D:maxUiGapUs=%u\n", static_cast<unsigned>(ui::g_maxUiGapMicros));
+    // Generation Parameters of the SELECTED pattern's COMMITTED configs (task
+    // 11.3 bench evidence: proves each R10 matrix-UI control actually set and
+    // cleared its parameter -- R10.6 demonstrated set-and-clear path).
+    {
+        const uint8_t p = s.selectedPattern < s.patternCount ? s.selectedPattern : 0;
+        const auto& g = s.gateSetConfigs[p];
+        const auto& pi = s.pitchSetConfigs[p];
+        const auto& v = s.velocitySetConfigs[p];
+        printf("D:genScale=%u\n", static_cast<unsigned>(pi.scale));
+        printf("D:genRoot=%u\n", static_cast<unsigned>(pi.scaleRoot));
+        printf("D:genQuantize=%u\n", static_cast<unsigned>(pi.quantize));
+        printf("D:genProb=%u\n", static_cast<unsigned>(g.patternProbability));
+        printf("D:genStepProb=");
+        for (uint8_t i = 0; i < ui::state::MAX_GRID_STEPS; ++i) {
+            printf("%02x", static_cast<unsigned>(g.stepProbability[i]));
+        }
+        printf("\n");
+        printf("D:genGates=");
+        for (uint8_t i = 0; i < ui::state::MAX_GRID_STEPS; ++i) {
+            printf("%u", g.gateStates[i] ? 1u : 0u);
+        }
+        printf("\n");
+        printf("D:genHumanize=%u\n", static_cast<unsigned>(v.humanizeRange));
+        printf("D:genSeedSet=%u\n", v.seedSet ? 1u : 0u);
+        printf("D:genSeed=%lu\n", static_cast<unsigned long>(v.seed));
+        printf("D:genCoupling=%u\n", static_cast<unsigned>(v.coupling));
+    }
     printf("D:end\n");
 }
 

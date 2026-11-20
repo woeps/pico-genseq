@@ -1,0 +1,283 @@
+// generative-engine-expansion task 3.3 — emission-lens default-equivalence.
+//
+// Validates design invariant 1 (Requirements 1.5, 2.3, 3.3, 6.1): a Pattern
+// whose Generation Parameters are at their behavior-preserving defaults emits
+// EXACTLY the pre-milestone note stream. The lens (Sequencer::emitStep)
+// short-circuits on GenerationParameters::isDefault() to the original
+// noteLifecycle.noteOn(stored pitch, stored velocity) call, so routing every
+// onset through the lens changes nothing when no feature is enabled.
+//
+// This drives the REAL Sequencer through its public command API with a
+// FakeMonotonicClock (the same harness shape as example_sequencer_integration),
+// so it exercises the actual serviceTick -> emitStep path rather than a mock.
+// The existing property2_sequencer_equivalence / property5_midi_stream suites
+// are the broader randomized guard; this is the focused, named assertion the
+// task calls for.
+//
+// Standalone example (own main(), no RapidCheck); excluded from the glob.
+
+#include "FakeMonotonicClock.h"
+#include "RecordingMidiOutput.h"
+#include "sequencer.h"
+#include "command.h"
+#include "midi_messages.h"
+#include "GenerationParameters.h"
+
+#include <cstdint>
+#include <cstdio>
+#include <vector>
+
+namespace midi = sequencer::midi;
+
+namespace {
+
+int failures = 0;
+void check(bool cond, const char* what) {
+    if (!cond) { std::printf("FAIL: %s\n", what); ++failures; }
+}
+
+commands::CommandMessage cmd(commands::Command c, uint8_t p1 = 0) {
+    commands::CommandMessage m; m.cmd = c; m.param1 = p1; return m;
+}
+
+// Collect the note numbers of every NOTE_ON (velocity > 0) in order.
+std::vector<uint8_t> noteOnPitches(const std::vector<uint8_t>& s) {
+    std::vector<uint8_t> out;
+    for (size_t i = 0; i + 2 < s.size() + 1 && i + 2 <= s.size(); ++i) {
+        if (i + 2 < s.size() + 1 && (s[i] & 0xF0) == midi::ChannelVoiceMessage::NOTE_ON) {
+            // NOTE_ON with velocity 0 is a note-off in running status; count only vel>0.
+            if (i + 2 < s.size() && s[i + 2] > 0) {
+                out.push_back(s[i + 1]);
+                i += 2;
+            }
+        }
+    }
+    return out;
+}
+
+struct Harness {
+    FakeMonotonicClock clock{1000};
+    RecordingMidiOutput out;
+    sequencer::Sequencer seq{out, clock};
+    uint16_t bpm = 120;
+    uint64_t base = 0;
+
+    void setGate(const std::vector<bool>& g) {
+        commands::CommandMessage m = cmd(commands::Command::PATTERN_GATE_SET, 0);
+        m.gateCount = static_cast<uint16_t>(g.size());
+        m.gates = g;
+        seq.processCommand(m);
+    }
+    void setPitch(const std::vector<uint8_t>& pitches) {
+        commands::CommandMessage m = cmd(commands::Command::PATTERN_PITCH_SET, 0);
+        m.pitchCount = static_cast<uint8_t>(pitches.size());
+        m.pitchOrder = common::PlayingOrder::FORWARDS;
+        m.pitches = pitches;
+        seq.processCommand(m);
+    }
+    void setVelocity(const std::vector<uint8_t>& vels) {
+        commands::CommandMessage m = cmd(commands::Command::PATTERN_VELOCITY_SET, 0);
+        m.velocityCount = static_cast<uint8_t>(vels.size());
+        m.velocityOrder = common::PlayingOrder::FORWARDS;
+        m.velocities = vels;
+        seq.processCommand(m);
+    }
+    void play() { base = clock.nowMicros(); seq.processCommand(cmd(commands::Command::PLAY)); }
+    uint64_t deadline(uint64_t n) const {
+        return base + (n * 60ULL * 1000000ULL) / (bpm * 24ULL);
+    }
+    void tick(uint64_t n) { clock.setMicros(deadline(n)); seq.update(); }
+};
+
+// With default Generation Parameters, a forward pitch set emits its stored
+// pitches in order, unchanged — the lens is transparent.
+void test_default_emits_stored_pitches() {
+    Harness h;
+    h.setPitch({60, 64, 67});                       // C E G
+    h.setVelocity({100});
+    h.setGate({true, false, true, false, true, false});  // 3 onsets
+    h.play();
+    for (uint64_t n = 1; n <= 6; ++n) h.tick(n);
+
+    const std::vector<uint8_t> notes = noteOnPitches(h.out.record());
+    check(notes.size() == 3, "three note-ons for three gated onsets");
+    if (notes.size() == 3) {
+        check(notes[0] == 60 && notes[1] == 64 && notes[2] == 67,
+              "default lens emits stored pitches 60/64/67 unchanged");
+    }
+}
+
+// With default Generation Parameters, the stored velocity is emitted unchanged
+// (no humanization).
+void test_default_emits_stored_velocity() {
+    Harness h;
+    h.setPitch({60});
+    h.setVelocity({77});
+    h.setGate({true, false});
+    h.play();
+    h.tick(1);
+    const std::vector<uint8_t>& s = h.out.record();
+    // Find the NOTE_ON and read its velocity byte.
+    int vel = -1;
+    for (size_t i = 0; i + 2 < s.size(); ++i) {
+        if ((s[i] & 0xF0) == midi::ChannelVoiceMessage::NOTE_ON && s[i + 2] > 0) {
+            vel = s[i + 2]; break;
+        }
+    }
+    check(vel == 77, "default lens emits stored velocity 77 unchanged");
+}
+
+// Scale constraint SKIP suppresses an out-of-scale onset without stranding a
+// prior note; NEAREST resolves it instead (Req 1.3/1.4).
+void test_scale_skip_and_nearest() {
+    // SKIP: pitch 61 (C#) is out of C major; expect the onset suppressed.
+    {
+        Harness h;
+        h.setPitch({61});          // C# — out of C major
+        h.setVelocity({100});
+        h.setGate({true, false});
+        common::GenerationParameters gp;
+        gp.scale = common::ScaleId::MAJOR;
+        gp.scaleRoot = 0;
+        gp.quantize = common::QuantizeMode::SKIP;
+        h.seq.setPatternGenerationParameters(0, gp);
+        h.play();
+        h.tick(1);
+        check(noteOnPitches(h.out.record()).empty(), "SKIP suppresses out-of-scale onset");
+    }
+    // NEAREST: 61 -> 60 (C), a note sounds at the resolved pitch.
+    {
+        Harness h;
+        h.setPitch({61});
+        h.setVelocity({100});
+        h.setGate({true, false});
+        common::GenerationParameters gp;
+        gp.scale = common::ScaleId::MAJOR;
+        gp.scaleRoot = 0;
+        gp.quantize = common::QuantizeMode::NEAREST;
+        h.seq.setPatternGenerationParameters(0, gp);
+        h.play();
+        h.tick(1);
+        const std::vector<uint8_t> notes = noteOnPitches(h.out.record());
+        check(notes.size() == 1 && notes[0] == 60, "NEAREST resolves C# -> C");
+    }
+}
+
+// Velocity humanization stays within [stored-r, stored+r] and never hits 0 or
+// exceeds 127 (Req 3.1/3.2).
+void test_humanization_bounds() {
+    Harness h;
+    h.setPitch({60});
+    h.setVelocity({100});
+    // Long gate train so we get many humanized onsets.
+    std::vector<bool> g;
+    for (int i = 0; i < 40; ++i) g.push_back(i % 2 == 0);
+    h.setGate(g);
+    common::GenerationParameters gp;
+    gp.humanizeRange = 10;
+    gp.seedSet = true;  // deterministic
+    gp.seed = 42;
+    h.seq.setPatternGenerationParameters(0, gp);
+    h.play();
+    for (uint64_t n = 1; n <= 40; ++n) h.tick(n);
+
+    const std::vector<uint8_t>& s = h.out.record();
+    int checked = 0;
+    for (size_t i = 0; i + 2 < s.size(); ++i) {
+        if ((s[i] & 0xF0) == midi::ChannelVoiceMessage::NOTE_ON && s[i + 2] > 0) {
+            const uint8_t v = s[i + 2];
+            check(v >= 90 && v <= 110, "humanized velocity within [stored-10, stored+10]");
+            check(v >= 1 && v <= 127, "humanized velocity in valid MIDI range");
+            ++checked;
+        }
+    }
+    check(checked > 0, "at least one humanized onset observed");
+}
+
+// R4.1/R4.3/R4.5: with a Deterministic Seed set, RANDOM playing order is drawn
+// from the Pattern generation RNG, so the pitch order (not only probability and
+// humanization) replays identically after Stop->Play and in a fresh Sequencer
+// given the same seed, and a different seed yields a different order.
+std::vector<uint8_t> seededRandomRun(uint32_t seed, int plays) {
+    Harness h;
+    {
+        commands::CommandMessage m = cmd(commands::Command::PATTERN_PITCH_SET, 0);
+        const std::vector<uint8_t> pitches = {60, 62, 64, 65, 67, 69, 71, 72};
+        m.pitchCount = static_cast<uint8_t>(pitches.size());
+        m.pitchOrder = common::PlayingOrder::RANDOM;
+        m.pitches = pitches;
+        h.seq.processCommand(m);
+    }
+    h.setVelocity({100});
+    std::vector<bool> g;
+    for (int i = 0; i < 48; ++i) g.push_back(i % 2 == 0);
+    h.setGate(g);
+    common::GenerationParameters gp;
+    gp.seedSet = true;
+    gp.seed = seed;
+    gp.humanizeRange = 1;  // non-default so the lens takes the seeded path
+    h.seq.setPatternGenerationParameters(0, gp);
+    std::vector<uint8_t> last;
+    for (int p = 0; p < plays; ++p) {
+        h.out.clear();
+        h.play();
+        for (uint64_t n = 1; n <= 48; ++n) h.tick(n);
+        last = noteOnPitches(h.out.record());
+        h.seq.processCommand(cmd(commands::Command::STOP));
+    }
+    return last;
+}
+
+void test_seeded_random_order_replays() {
+    const std::vector<uint8_t> a = seededRandomRun(7, 1);
+    const std::vector<uint8_t> restart = seededRandomRun(7, 2);  // Stop -> Play
+    const std::vector<uint8_t> reload = seededRandomRun(7, 1);   // fresh core1, same seed
+    const std::vector<uint8_t> other = seededRandomRun(8, 1);
+    check(a.size() >= 20, "seeded RANDOM run emits >= 20 note-ons");
+    check(a == restart, "seeded RANDOM pitch order identical after Stop->Play (R4.5)");
+    check(a == reload, "seeded RANDOM pitch order identical from the same seed (R4.3)");
+    check(a != other, "a different seed yields a different RANDOM pitch order (R4.1)");
+}
+
+// Bench report 2026-11-20: toggling one step in the GateSet grid while playing
+// retriggered a note at once. PATTERN_GATE_SET rebuilt the GateSet at position 0
+// with a fresh RISING flank. Replacing the gate set mid-play must keep the phase:
+// no note until the next real onset, and the newly toggled step sounds in place.
+void test_gate_replace_keeps_phase() {
+    Harness h;
+    h.setPitch({60});
+    h.setVelocity({100});
+    h.setGate({true, false, false, false, true, false, false, false});
+    h.play();
+    h.tick(1);  // pos 0 onset
+    h.tick(2);  // pos 1 release
+    h.out.clear();
+    // Toggle tick 6 on (a later step) while playing, as the grid editor does.
+    h.setGate({true, false, false, false, true, false, true, false});
+    h.tick(3);
+    h.tick(4);
+    check(noteOnPitches(h.out.record()).empty(),
+          "replacing the gate set mid-play fires no immediate note (phase kept)");
+    h.out.clear();
+    for (uint64_t n = 5; n <= 8; ++n) h.tick(n);
+    check(noteOnPitches(h.out.record()).size() == 2,
+          "after the replace, pos 4 and the newly toggled pos 6 sound in place");
+}
+
+}  // namespace
+
+int main() {
+    test_default_emits_stored_pitches();
+    test_default_emits_stored_velocity();
+    test_scale_skip_and_nearest();
+    test_humanization_bounds();
+    test_seeded_random_order_replays();
+    test_gate_replace_keeps_phase();
+
+    if (failures == 0) {
+        std::printf("example_emission_lens: all checks passed\n");
+        return 0;
+    }
+    std::printf("example_emission_lens: %d check(s) failed\n", failures);
+    return 1;
+}

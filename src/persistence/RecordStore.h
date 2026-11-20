@@ -159,9 +159,25 @@ private:
         const std::size_t half = store_.capacity() / 2;
         if (half <= SlotHeader::kSize) return LoadStatus::TRUNCATED;
         const std::size_t recLen = half - SlotHeader::kSize;
-        std::vector<uint8_t> rec(recLen);
-        store_.read(slotOffset(slot) + SlotHeader::kSize, rec.data(), recLen);
-        return deserialize(rec.data(), recLen, out);
+
+        // core1 boot-fault fix (BUG B part 2): the read buffer MUST NOT be a
+        // per-call heap allocation. readRecord() runs on core0 during boot load
+        // (selectNewest() calls it per slot, then load() again) while core1 is
+        // concurrently allocating/freeing on its command path; a ~4 KB
+        // std::vector here collided on the shared allocator and asynchronously
+        // double-faulted core1 (LED dark, serial silent). This is the SAME class
+        // of bug already removed from the SAVE path (see writeSlotRegion's
+        // comment) -- the load path still had it. A fixed-capacity static buffer
+        // is allocation-free: load() is one-shot and not re-entrant (boot only),
+        // so a single shared decode buffer is safe and never touches the heap.
+        // Sized to one slot of the DEFAULT 8 KiB region (the store is only ever
+        // constructed with regionSize 8192); a larger region is rejected rather
+        // than silently heap-allocating.
+        static constexpr std::size_t kMaxRecLen = (8192u / 2u) - SlotHeader::kSize;
+        static uint8_t recBuf[kMaxRecLen];
+        if (recLen > kMaxRecLen) return LoadStatus::TRUNCATED;
+        store_.read(slotOffset(slot) + SlotHeader::kSize, recBuf, recLen);
+        return deserialize(recBuf, recLen, out);
     }
 
     // Pick the slot with the highest generation whose SlotHeader is valid AND
@@ -173,7 +189,17 @@ private:
         for (uint8_t slot = 0; slot < 2; ++slot) {
             SlotHeader hdr;
             if (!readSlotHeader(slot, hdr) || hdr.committed != 1) continue;
-            PersistableConfig probe{};
+            // core1 boot-fault fix (BUG B part 2): PersistableConfig is ~2 KB.
+            // A per-slot stack-local `probe{}` here put ~2 KB on core0's 2 KB
+            // stack during boot load(), overflowing DOWN past __StackBottom
+            // (0x20041800) into core1's adjacent stack region (0x20040800-
+            // 0x20041000) and corrupting core1's live stack -> core1 faulted
+            // asynchronously (unstackable frame = its stack was stomped). This is
+            // the SAME overflow class as the UIController::initialize fix (BUG A);
+            // the load path's probe was the remaining instance. load() is
+            // boot-only and not re-entrant, so a single shared static probe keeps
+            // the 2 KB object OFF core0's stack entirely.
+            static PersistableConfig probe{};
             if (readRecord(slot, probe) != LoadStatus::OK) continue;  // CRC/format bad
             if (!best.valid || hdr.generation > best.generation) {
                 best.valid = true;

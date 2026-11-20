@@ -6,6 +6,7 @@
 #include "../common/pitch_set.h"
 #include "../common/velocity_set.h"
 #include "../common/gate_set.h"
+#include "../common/Scale.h"
 #include "../common/const.h"
 #include "../common/pattern.h"
 #include "../instrumentation/PerformanceTrace.h"
@@ -28,15 +29,44 @@ Sequencer::Sequencer(IMidiOutput& output, IMonotonicClock& clock)
       noteLifecycle(meteredOutput) {
     // MIDI transport and monotonic time are injected; no hardware setup here.
     timeline.setBpm(120);
+    // Fixed-capacity reservation (core1 boot-fault fix). The boot-sync
+    // PATTERN_ADD burst calls addPattern() repeatedly on core1 while restoring a
+    // saved config; without this, each grow reallocates the ~160-byte Pattern
+    // vector (and the parallel id/RNG vectors) on core1 mid-boot, which faults
+    // this build. PATTERN_CAPACITY is the hard cap addPattern() already enforces,
+    // so reserving it here allocates the backing store exactly once at
+    // construction (on core0, before core1 launches) and no push_back/emplace_back
+    // below ever moves it again.
+    patterns.reserve(common::PATTERN_CAPACITY);
+    patternIds.reserve(common::PATTERN_CAPACITY);
+    patternRng.reserve(common::PATTERN_CAPACITY);
     // Allocate a stable identity for the initial pattern slot.
     patternIds.push_back(idAllocator.allocate());
+    // One generation RNG per pattern slot, kept parallel to `patterns`.
+    patternRng.emplace_back();
 }
+
+#if GENSEQ_HOST_CONTROL
+// Task 11.3 bench MIDI tap: a single-producer (core1) / single-consumer (core0,
+// only while disarmed) byte log of EXACTLY what is handed to the MIDI UART, so a
+// host can compare decoded MIDI across runs (seed determinism) with no analyzer
+// wire. Host-control builds only; shipping firmware is byte-identical.
+volatile uint32_t g_midiTapArmed = 0;
+volatile uint32_t g_midiTapCount = 0;
+uint8_t g_midiTap[kMidiTapCapacity];
+#endif
 
 void MeteredMidiOutput::write(uint8_t byte) {
     instrumentation::PerformanceTrace::midiDispatchBegin();
     inner_.write(byte);
     instrumentation::PerformanceTrace::midiDispatchEnd();
     ++byteCounter_;
+#if GENSEQ_HOST_CONTROL
+    if (g_midiTapArmed) {
+        const uint32_t n = g_midiTapCount;
+        if (n < kMidiTapCapacity) { g_midiTap[n] = byte; g_midiTapCount = n + 1; }
+    }
+#endif
 }
 
 void Sequencer::init() {
@@ -67,11 +97,36 @@ void Sequencer::init() {
 }
 
 void Sequencer::update() {
+#if GENSEQ_CORE1_BOOT_TRACE
+    // BUG B diagnostic: snapshot the fields the idle path reads, so after a fault
+    // we can tell from RAM whether `playing` was corrupted (would wrongly take
+    // the playing path -> virtual call through a possibly-bad output/clock) or a
+    // shared pointer went bad. g_core1UpdateN counts update() entries.
+    {
+        extern volatile uint32_t g_core1UpdateN;
+        extern volatile uint32_t g_core1Playing;
+        extern volatile uint32_t g_core1OutputVtbl;
+        extern volatile uint32_t g_core1ClockVtbl;
+        ++g_core1UpdateN;
+        g_core1Playing = playing ? 1u : 0u;
+        // Read the vtable pointers of the injected references (first word of the
+        // object = its vptr). A corrupt/null vptr here is the call-through-0 cause.
+        g_core1OutputVtbl = *reinterpret_cast<const volatile uint32_t*>(&output);
+        g_core1ClockVtbl  = *reinterpret_cast<const volatile uint32_t*>(&clock);
+        extern volatile uint32_t g_core1Region, g_core1RegionMax;
+        g_core1Region = 30; if (30 > g_core1RegionMax) g_core1RegionMax = 30;  // entered update()
+    }
+#endif
+
     // Publish the sounding-note count every call — BEFORE the not-playing early
     // return — so it reflects Stop's releaseAll() (0 after Stop) rather than
     // freezing at the last played value. Single aligned 32-bit store, read
     // lock-free by core0 (task 12.4 literal stuck-note metric).
     g_soundingNotes = noteLifecycle.soundingCount();
+#if GENSEQ_CORE1_BOOT_TRACE
+    { extern volatile uint32_t g_core1Region, g_core1RegionMax;
+      g_core1Region = 31; if (31 > g_core1RegionMax) g_core1RegionMax = 31; }  // after soundingCount(), pre !playing return
+#endif
 
     if (!playing) return;
 
@@ -160,10 +215,14 @@ void Sequencer::serviceTick(bool reconcileOnly) {
             // this onset. Advance the material so the next authoritative tick is
             // phase-correct, but emit nothing on the wire.
             if (!reconcileOnly) {
-                // Record ownership at onset by the pattern's canonical channel and
-                // the exact pitch sounding NOW (task 2.4, Req 5.1).
-                noteLifecycle.noteOn(id, pattern.getCanonicalChannel(), pitchSet.getPitch(),
-                                     velocitySet.getVelocity());
+                // Route the onset through the emission lens (task 3/4): it applies
+                // the Pattern's Generation Parameters and either emits the note-on
+                // via NoteLifecycle (recording ownership by canonical channel and
+                // the exact sounding pitch) or suppresses the step. A suppressed
+                // step strands no note; stream positions still advance on the
+                // FALLING edge exactly as an emitted step, so phrase length and
+                // determinism are unchanged (Req 2.2).
+                emitStep(i, id, pattern.getCanonicalChannel());
             }
         } else if (flank == common::FALLING) {
             // Release the captured onset via its recorded identity, NOT the
@@ -171,12 +230,155 @@ void Sequencer::serviceTick(bool reconcileOnly) {
             // IS emitted during reconciliation: a note whose release boundary was
             // crossed must be released so it does not hang (task 5.2, Req 3.5).
             noteLifecycle.releasePattern(id);
-            pitchSet.advance();
-            velocitySet.advance();
+            advanceStreams(i, pitchSet, velocitySet);
         }
         const uint32_t nextGatePosition = static_cast<uint32_t>(
             (gateSet.getPosition() + 1) % gateSet.getGates().size());
         gateSet.setPosition(nextGatePosition);
+    }
+}
+
+Sequencer::EmitResult Sequencer::emitStep(size_t patternIndex, common::PatternId id,
+                                          common::MidiChannel channel) {
+    common::Pattern& pattern = patterns[patternIndex];
+    common::PitchSet& pitchSet = pattern.getPitchSet();
+    common::VelocitySet& velocitySet = pattern.getVelocitySet();
+    const common::GenerationParameters& gp = pattern.getGenerationParameters();
+
+    // Default short-circuit (design invariant 1): when every Generation
+    // Parameter is at its behavior-preserving default, emit EXACTLY the
+    // pre-milestone note-on — same pitch, same velocity, same ownership record —
+    // with no lens cost. This is what keeps property2/property5 byte-identical.
+    if (gp.isDefault()) {
+        noteLifecycle.noteOn(id, channel, pitchSet.getPitch(), velocitySet.getVelocity());
+        return EmitResult::EMITTED;
+    }
+
+    PatternRng& rng = patternRng[patternIndex];
+
+    // Non-default path. Fixed evaluation order (design §2): probability roll ->
+    // scale resolve -> velocity humanize -> note-on. Ordering is load-bearing: a
+    // suppressed step consumes exactly one probability draw and NO pitch/velocity
+    // draw, so the RNG stream stays aligned and seeded replay is identical.
+
+    // Step probability (Req 2): per-step override (if not INHERIT) else the
+    // per-Pattern value. The per-step array is indexed by PROGRAMMED STEP, not
+    // tick position: createEuclidean places step N at tick N*stepLength, so the
+    // owning programmed step of the current onset is getPosition()/stepLength
+    // (design §2, resolved). stepLength==0 (unknown) disables per-step lookup and
+    // falls back to the per-Pattern value, never dividing by zero.
+    uint8_t p = gp.patternProbability;
+    if (gp.stepLength > 0) {
+        const uint32_t tickPos = pattern.getGateSet().getPosition();
+        const uint32_t step = tickPos / gp.stepLength;
+        if (step < common::GenerationParameters::kMaxSteps &&
+            gp.stepProbability[step] != common::STEP_PROB_INHERIT) {
+            p = gp.stepProbability[step];
+        }
+    }
+    if (p < 100 && rng.rollPercent() >= p) {
+        return EmitResult::SUPPRESSED;  // probability suppressed this step
+    }
+
+    // Scale constraint (Req 1). SKIP on an out-of-scale pitch suppresses the step
+    // without stranding a note (Req 1.4).
+    uint8_t note = pitchSet.getPitch();
+    if (gp.scale != common::ScaleId::CHROMATIC) {
+        const uint16_t mask = common::scale::membershipMask(gp.scale, gp.scaleRoot);
+        uint8_t resolved = note;
+        if (!common::scale::quantize(mask, gp.quantize, note, resolved)) {
+            return EmitResult::SUPPRESSED;  // SKIP mode, out of scale
+        }
+        note = resolved;
+    }
+
+    // Velocity humanization (Req 3): perturb within +/- range, clamp to 1..127
+    // (never 0 — that reads as note-off — and never above 127). Under LOCKED
+    // coupling the velocity is read from the index driven by the pitch position
+    // (Req 5), not the velocity stream's own position.
+    uint8_t vel;
+    if (gp.coupling == common::CouplingMode::LOCKED) {
+        // Length reconciliation (Req 5.4): a bounded, allocation-free modulo map
+        // of the pitch position onto the velocity set. Read-only — it does not
+        // advance or mutate the velocity stream, so the FALLING-edge release path
+        // is untouched. An empty velocity set falls back to the stream getter
+        // (which yields the set's defined empty value) rather than emitting a 0
+        // velocity, which would read as a note-off; serviceTick already skips
+        // patterns with an empty velocity set, so this is a defensive floor.
+        const auto& vels = velocitySet.getVelocities();
+        if (vels.empty()) {
+            vel = velocitySet.getVelocity();
+        } else {
+            const uint8_t idx = static_cast<uint8_t>(pitchSet.getPosition() % vels.size());
+            vel = vels[idx];
+        }
+    } else {
+        vel = velocitySet.getVelocity();
+    }
+    if (gp.humanizeRange > 0) {
+        int v = static_cast<int>(vel) + rng.signedRange(gp.humanizeRange);
+        if (v < 1) v = 1;
+        if (v > 127) v = 127;
+        vel = static_cast<uint8_t>(v);
+    }
+
+    noteLifecycle.noteOn(id, channel, note, vel);
+    return EmitResult::EMITTED;
+}
+
+namespace {
+// Seeded RANDOM-order step (design §3, Req 4.1): same position rule as the
+// stream's own lcgNext() path, but the draw comes from the Pattern RNG so the
+// seed reproduces the order. Non-RANDOM orders keep their own advance().
+template <typename Stream>
+void advanceSeeded(Stream& stream, size_t size, PatternRng& rng) {
+    if (stream.getOrder() != common::PlayingOrder::RANDOM || size <= 1) {
+        stream.advance();
+        return;
+    }
+    const uint8_t draw = static_cast<uint8_t>((rng.next() >> 16) & 0xFF);
+    stream.setPosition(static_cast<uint8_t>(draw % size));
+}
+}  // namespace
+
+void Sequencer::advanceStreams(size_t patternIndex, common::PitchSet& pitchSet,
+                               common::VelocitySet& velocitySet) {
+    const common::GenerationParameters& gp = patterns[patternIndex].getGenerationParameters();
+    if (!gp.seedSet || patternIndex >= patternRng.size()) {
+        // Unseeded: the per-stream LCGs are left exactly as before, so RANDOM
+        // output stays byte-identical to pre-milestone (property2).
+        pitchSet.advance();
+        velocitySet.advance();
+        return;
+    }
+    PatternRng& rng = patternRng[patternIndex];
+    advanceSeeded(pitchSet, pitchSet.getPitches().size(), rng);
+    advanceSeeded(velocitySet, velocitySet.getVelocities().size(), rng);
+}
+
+void Sequencer::reseedGenerationState() {
+    for (size_t i = 0; i < patterns.size() && i < patternRng.size(); ++i) {
+        const common::GenerationParameters& gp = patterns[i].getGenerationParameters();
+        if (gp.seedSet) {
+            patternRng[i].seed(gp.seed);  // deterministic from the explicit seed
+        } else {
+            patternRng[i] = PatternRng{};  // documented free-running default
+        }
+    }
+}
+
+void Sequencer::setPatternGenerationParameters(size_t patternIndex,
+                                               const common::GenerationParameters& params) {
+    if (patternIndex >= patterns.size()) return;
+    patterns[patternIndex].setGenerationParameters(params);
+    // Honor a (possibly new) seed immediately so the next draw is deterministic
+    // from the defined start. Unseeded resets to the free-running default.
+    if (patternIndex < patternRng.size()) {
+        if (params.seedSet) {
+            patternRng[patternIndex].seed(params.seed);
+        } else {
+            patternRng[patternIndex] = PatternRng{};
+        }
     }
 }
 
@@ -243,6 +445,10 @@ bool Sequencer::canApplyCommand(const commands::CommandMessage& msg) const {
                    msg.velocityCount <= msg.velocities.size();
         case commands::Command::PATTERN_REMOVE:
             return patterns.size() > 1 && msg.param1 < patterns.size();
+        case commands::Command::GEN_PARAMS_SET:
+            // Payload rides the snapshot, not CommandMessage; the scalar path
+            // only validates the target index.
+            return msg.param1 < patterns.size();
         case commands::Command::NOOP:
         default:
             return false;
@@ -280,28 +486,55 @@ void Sequencer::processCommand(const commands::CommandMessage& msg,
 
     instrumentation::PerformanceTrace::operationApplyBegin();
 
+#if GENSEQ_CORE1_BOOT_TRACE
+    {
+        // BUG B part 2: record the last REAL (applicable) command core1 applied
+        // and a per-branch marker, so after the ~15k-loop fault we can see which
+        // command/apply path core1 died in (the HW frame is unstackable).
+        extern volatile uint32_t g_core1LastRealCmd;
+        extern volatile uint32_t g_core1ApplyBranch;
+        extern volatile uint32_t g_core1ApplyCount;
+        extern volatile uint32_t g_core1ApplyParam;
+        g_core1LastRealCmd = static_cast<uint32_t>(msg.cmd);
+        g_core1ApplyParam  = msg.param1;
+        ++g_core1ApplyCount;
+    }
+#define BB2_BRANCH(n) do { extern volatile uint32_t g_core1ApplyBranch; g_core1ApplyBranch = (n); } while (0)
+#else
+#define BB2_BRANCH(n) do {} while (0)
+#endif
+
     switch (msg.cmd) {
         case commands::Command::PATTERN_GATE_SET:
+            BB2_BRANCH(1);
             setPatternGateSetFromSnapshot(msg.param1, snapshot);
             break;
         case commands::Command::PATTERN_PITCH_SET:
+            BB2_BRANCH(2);
             setPatternPitchSetFromSnapshot(msg.param1, snapshot);
             break;
         case commands::Command::PATTERN_VELOCITY_SET:
+            BB2_BRANCH(3);
             setPatternVelocitySetFromSnapshot(msg.param1, snapshot);
             break;
-        case commands::Command::PLAY:            play(); break;
-        case commands::Command::STOP:            stop(); break;
-        case commands::Command::BPM_SET:         setBPM(msg.param1); break;
-        case commands::Command::PATTERN_ACTIVATE:   activatePattern(msg.param1); break;
-        case commands::Command::PATTERN_DEACTIVATE: deactivatePattern(msg.param1); break;
-        case commands::Command::PATTERN_ADD:     addPattern(common::Pattern()); break;
-        case commands::Command::PATTERN_REMOVE:  removePattern(msg.param1); break;
+        case commands::Command::GEN_PARAMS_SET:
+            BB2_BRANCH(4);
+            setPatternGenParamsFromSnapshot(msg.param1, snapshot);
+            break;
+        case commands::Command::PLAY:            BB2_BRANCH(5); play(); break;
+        case commands::Command::STOP:            BB2_BRANCH(6); stop(); break;
+        case commands::Command::BPM_SET:         BB2_BRANCH(7); setBPM(msg.param1); break;
+        case commands::Command::PATTERN_ACTIVATE:   BB2_BRANCH(8); activatePattern(msg.param1); break;
+        case commands::Command::PATTERN_DEACTIVATE: BB2_BRANCH(9); deactivatePattern(msg.param1); break;
+        case commands::Command::PATTERN_ADD:     BB2_BRANCH(10); addPattern(common::Pattern()); break;
+        case commands::Command::PATTERN_REMOVE:  BB2_BRANCH(11); removePattern(msg.param1); break;
         default: break;
     }
+    BB2_BRANCH(100);  // survived the apply
 
     ++metrics.operationsApplied;
     instrumentation::PerformanceTrace::operationApplyEnd();
+#undef BB2_BRANCH
 }
 
 void Sequencer::setPatternGateSetFromSnapshot(size_t patternIndex,
@@ -309,7 +542,9 @@ void Sequencer::setPatternGateSetFromSnapshot(size_t patternIndex,
     if (patternIndex >= patterns.size()) return;
     std::vector<bool> gates(snap.gateCount());
     for (uint16_t i = 0; i < snap.gateCount(); ++i) gates[i] = snap.gate(i);
-    patterns[patternIndex].setGateSet(common::GateSet(gates));
+    common::GateSet next(gates);
+    if (playing) next.continueFrom(patterns[patternIndex].getGateSet());  // keep phase
+    patterns[patternIndex].setGateSet(next);
 }
 
 void Sequencer::setPatternPitchSetFromSnapshot(size_t patternIndex,
@@ -326,6 +561,13 @@ void Sequencer::setPatternVelocitySetFromSnapshot(size_t patternIndex,
     std::vector<uint8_t> velocities(snap.velocityCount());
     for (uint8_t i = 0; i < snap.velocityCount(); ++i) velocities[i] = snap.velocity(i);
     patterns[patternIndex].setVelocitySet(common::VelocitySet(velocities, snap.velocityOrder()));
+}
+
+void Sequencer::setPatternGenParamsFromSnapshot(size_t patternIndex,
+                                                const sequencer::PatternSnapshot& snap) {
+    // Routes through the same application point as the test/UI setter so a
+    // freshly-set seed is honored (allocation-free: POD copy only).
+    setPatternGenerationParameters(patternIndex, snap.generationParameters());
 }
 
 void Sequencer::resetPerformanceMetrics() {
@@ -352,6 +594,10 @@ void Sequencer::play() {
         pattern.getPitchSet().reset();
         pattern.getVelocitySet().reset();
     }
+
+    // Re-establish each pattern's generation random state at this boundary so a
+    // seeded pattern reproduces its material from the defined start (Req 4.2).
+    reseedGenerationState();
 
     // Begin one monotonic Transport Timeline shared by every pattern (Req 1.1).
     timeline.start(clock.nowMicros());
@@ -398,6 +644,7 @@ void Sequencer::addPattern(const common::Pattern& pattern) {
     if (patterns.size() >= common::PATTERN_CAPACITY) return;  // fixed capacity
     patterns.push_back(pattern);
     patternIds.push_back(idAllocator.allocate());
+    patternRng.emplace_back();  // keep generation RNG parallel to patterns
 }
 
 void Sequencer::removePattern(size_t index) {
@@ -408,6 +655,7 @@ void Sequencer::removePattern(size_t index) {
     idAllocator.release(patternIds[index]);
     patterns.erase(patterns.begin() + index);
     patternIds.erase(patternIds.begin() + index);
+    patternRng.erase(patternRng.begin() + index);  // keep RNG parallel
 }
 
 void Sequencer::activatePattern(size_t index) {
@@ -433,7 +681,9 @@ void Sequencer::setPatternGateSet(size_t patternIndex,
     // using its original lifecycle and the replacement controls the NEXT note
     // (task 2.5, Req 5.7). An empty gate set simply produces no further edges.
     if (patternIndex < patterns.size()) {
-        patterns[patternIndex].setGateSet(common::GateSet(gates));
+        common::GateSet next(gates);
+        if (playing) next.continueFrom(patterns[patternIndex].getGateSet());  // keep phase
+        patterns[patternIndex].setGateSet(next);
     }
 }
 

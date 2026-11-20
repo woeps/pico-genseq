@@ -2,6 +2,10 @@
 
 Welcome to the GenSeq documentation. This section provides comprehensive guides for developing, building, and understanding the GenSeq MIDI sequencer project.
 
+## Using GenSeq
+
+- [User Manual](user/user-manual.md) - Views, editors, display labels and how to play the device
+
 ## Quick Start
 
 - [Repository Structure](architecture/repository-structure.md) - Understand the project organization
@@ -50,6 +54,8 @@ GenSeq is a generative hardware MIDI sequencer based on the Raspberry Pi Pico (R
 ```
 docs/
 ├── README.md                    # This file
+├── user/
+│   └── user-manual.md           # Customer user manual
 ├── architecture/                # Architecture documentation
 │   ├── repository-structure.md  # Project organization
 │   ├── architecture-deep-dive.md # Technical architecture

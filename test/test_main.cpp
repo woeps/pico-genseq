@@ -21,12 +21,14 @@ bool runProperty4Meter();  // property4_meter_boundary.cpp (perf-safe task 3.4)
 bool runProperty5MidiStream();  // property5_midi_stream.cpp (perf-safe task 4.4)
 bool runProperty6Inbox();  // property6_inbox_stress.cpp (perf-safe task 6.5)
 bool runProperty7Boundary();  // property7_boundary_coalesce.cpp (perf-safe task 7.5)
+bool runProperty8();  // property8_generation_determinism.cpp (generative-engine task 4.3)
 bool runPersistProperty1();  // property1_persist_roundtrip.cpp (persist-settings Property 1)
 bool runPersistProperty2();  // property2_store_roundtrip.cpp (persist-settings Property 2)
 bool runPersistProperty3();  // property3_crc_detection.cpp (persist-settings Property 3)
 bool runPersistProperty4();  // property4_invalid_records.cpp (persist-settings Property 4)
 bool runPersistProperty5();  // property5_capacity_guard.cpp (persist-settings Property 5)
 bool runPersistProperty6();  // property6_load_readonly.cpp (persist-settings Property 6)
+bool runPersistProperty7();  // property7_genparams_roundtrip.cpp (generative-engine task 7.3)
 
 int main() {
     bool ok = true;
@@ -37,11 +39,13 @@ int main() {
     ok &= runProperty5MidiStream();
     ok &= runProperty6Inbox();
     ok &= runProperty7Boundary();
+    ok &= runProperty8();
     ok &= runPersistProperty1();
     ok &= runPersistProperty2();
     ok &= runPersistProperty3();
     ok &= runPersistProperty4();
     ok &= runPersistProperty5();
     ok &= runPersistProperty6();
+    ok &= runPersistProperty7();
     return ok ? 0 : 1;
 }
