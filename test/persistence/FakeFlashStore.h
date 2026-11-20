@@ -19,7 +19,7 @@ class FakeFlashStore : public persistence::IFlashStore {
     std::size_t capacity() const override { return cap_; }
 
     void read(std::size_t off, uint8_t* dst, std::size_t len) const override {
-        std::memcpy(dst, bytes_.data() + off, len);
+        if (len > 0) std::memcpy(dst, bytes_.data() + off, len);
     }
 
     persistence::FlashResult eraseAndProgram(const uint8_t* data,
@@ -33,7 +33,9 @@ class FakeFlashStore : public persistence::IFlashStore {
         }
         writeCount_++;
         std::memset(bytes_.data(), 0xFF, bytes_.size());  // model erase
-        std::memcpy(bytes_.data(), data, len);            // model program
+        // len==0 may come with data==nullptr (empty vector); memcpy with a null
+        // pointer is UB even for zero bytes (UBSan, task 11.1).
+        if (len > 0) std::memcpy(bytes_.data(), data, len);  // model program
         return persistence::FlashResult::OK;
     }
 
@@ -50,7 +52,7 @@ class FakeFlashStore : public persistence::IFlashStore {
             return injected_;
         }
         writeCount_++;
-        std::memcpy(bytes_.data() + off, data, len);  // in-place, no erase
+        if (len > 0) std::memcpy(bytes_.data() + off, data, len);  // in-place, no erase
         return persistence::FlashResult::OK;
     }
 

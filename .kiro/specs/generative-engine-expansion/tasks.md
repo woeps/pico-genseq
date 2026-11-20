@@ -204,11 +204,19 @@ part of this plan.
       (`restoreSequencerFromState` calls `sendPatternGenParams` per pattern; host test
       `test_restore_sends_genparams`). Host round-trip: `genseq_example_genparams_fifo`.
 
-- [ ] 11. Host suite and RP2040 bench acceptance gate
-  - [ ] 11.1 Green the full host suite under sanitizers
+- [x] 11. Host suite and RP2040 bench acceptance gate
+  - [x] 11.1 Green the full host suite under sanitizers
     - All new and existing CTest targets pass under ASan/UBSan; default-equivalence and
       determinism guards included
     - _Requirements: 6.1, 6.3, 1.5, 2.3, 3.3, 4.3_
+    - **Done (2026-11-20):** `cmake -B <dir> -S test -DGENSEQ_SANITIZE=ON` (GCC,
+      `-fsanitize=address,undefined`), then `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+      ASAN_OPTIONS=detect_leaks=1 ctest --test-dir <dir>` → 41/41 on 3 consecutive runs (fresh
+      RapidCheck seeds each run), no ASan/LSan/UBSan reports. Includes property2/property5
+      default-equivalence, property8 + `example_emission_lens` seeded determinism, and
+      `example_genparams_fifo`. The first run caught one UBSan error in the TEST fake only:
+      `FakeFlashStore` passed a null `data()` from an empty vector to `memcpy` with len 0
+      (`property6_load_readonly`); guarded with `len > 0`. No production code has `memcpy`.
   - [x] 11.2 Prove no M2 regression on silicon
     - With Generation Parameters active, re-run the M2 acceptance gates (save transparency, UI-loop
       bound, stuck-note count) and confirm unchanged timing vs the M2 soak under worst-case load
