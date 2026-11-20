@@ -153,6 +153,12 @@ private:
     // reproduce their material from the defined starting position.
     void reseedGenerationState();
 
+    // FALLING-edge stream advance. Unseeded: each stream's own advance() (and
+    // its private RANDOM LCG), unchanged. Seeded: RANDOM-order streams draw
+    // their next position from the Pattern RNG (design §3, Req 4.1).
+    void advanceStreams(size_t patternIndex, common::PitchSet& pitchSet,
+                        common::VelocitySet& velocitySet);
+
     // Fail-closed Timing Fault entry (task 5.3): release all ownership, emit Stop
     // when enabled, stop playback, and latch the cause. Working State (the
     // patterns and their configuration) is preserved; only runtime transport

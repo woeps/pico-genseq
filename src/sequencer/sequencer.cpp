@@ -214,8 +214,7 @@ void Sequencer::serviceTick(bool reconcileOnly) {
             // IS emitted during reconciliation: a note whose release boundary was
             // crossed must be released so it does not hang (task 5.2, Req 3.5).
             noteLifecycle.releasePattern(id);
-            pitchSet.advance();
-            velocitySet.advance();
+            advanceStreams(i, pitchSet, velocitySet);
         }
         const uint32_t nextGatePosition = static_cast<uint32_t>(
             (gateSet.getPosition() + 1) % gateSet.getGates().size());
@@ -309,6 +308,36 @@ Sequencer::EmitResult Sequencer::emitStep(size_t patternIndex, common::PatternId
 
     noteLifecycle.noteOn(id, channel, note, vel);
     return EmitResult::EMITTED;
+}
+
+namespace {
+// Seeded RANDOM-order step (design §3, Req 4.1): same position rule as the
+// stream's own lcgNext() path, but the draw comes from the Pattern RNG so the
+// seed reproduces the order. Non-RANDOM orders keep their own advance().
+template <typename Stream>
+void advanceSeeded(Stream& stream, size_t size, PatternRng& rng) {
+    if (stream.getOrder() != common::PlayingOrder::RANDOM || size <= 1) {
+        stream.advance();
+        return;
+    }
+    const uint8_t draw = static_cast<uint8_t>((rng.next() >> 16) & 0xFF);
+    stream.setPosition(static_cast<uint8_t>(draw % size));
+}
+}  // namespace
+
+void Sequencer::advanceStreams(size_t patternIndex, common::PitchSet& pitchSet,
+                               common::VelocitySet& velocitySet) {
+    const common::GenerationParameters& gp = patterns[patternIndex].getGenerationParameters();
+    if (!gp.seedSet || patternIndex >= patternRng.size()) {
+        // Unseeded: the per-stream LCGs are left exactly as before, so RANDOM
+        // output stays byte-identical to pre-milestone (property2).
+        pitchSet.advance();
+        velocitySet.advance();
+        return;
+    }
+    PatternRng& rng = patternRng[patternIndex];
+    advanceSeeded(pitchSet, pitchSet.getPitches().size(), rng);
+    advanceSeeded(velocitySet, velocitySet.getVelocities().size(), rng);
 }
 
 void Sequencer::reseedGenerationState() {

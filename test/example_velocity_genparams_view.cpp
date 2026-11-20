@@ -24,11 +24,18 @@
 #include <vector>
 
 namespace commands {
+// Records every GEN_PARAMS_SET the reducer would send to core1, so the boot
+// restore test can assert the loaded Generation Parameters reach the engine.
+struct SentGenParams { uint8_t pattern; common::GenerationParameters params; };
+std::vector<SentGenParams> g_sentGenParams;
+
 void sendCommand(Command, uint8_t, uint8_t) {}
 void sendGateSet(uint8_t, const std::vector<bool>&) {}
 void sendPitchSet(uint8_t, uint8_t, common::PlayingOrder, const std::vector<uint8_t>&) {}
 void sendVelocitySet(uint8_t, uint8_t, common::PlayingOrder, const std::vector<uint8_t>&) {}
-void sendGenParams(uint8_t, const common::GenerationParameters&) {}
+void sendGenParams(uint8_t p, const common::GenerationParameters& gp) {
+    g_sentGenParams.push_back({p, gp});
+}
 }  // namespace commands
 
 namespace {
@@ -168,6 +175,36 @@ void test_persist_roundtrip() {
 
 }  // namespace
 
+// Task 11.3 silicon finding: after a boot load, Working State held the saved
+// Generation Parameters but core1 ran defaults, because the boot sync
+// (restoreSequencerFromState) replayed gate/pitch/velocity but never sent
+// GEN_PARAMS_SET. Assert the restore pushes every pattern's loaded gen-params.
+static void test_restore_sends_genparams() {
+    UIState s;
+    s.patternCount = 2;
+    s.gateSetConfigs[0].patternProbability = 50;
+    s.pitchSetConfigs[0].scale = common::ScaleId::MAJOR;
+    s.velocitySetConfigs[0].humanizeRange = 20;
+    s.velocitySetConfigs[0].seedSet = true;
+    s.velocitySetConfigs[0].seed = 7;
+    s.velocitySetConfigs[1].coupling = common::CouplingMode::LOCKED;
+
+    commands::g_sentGenParams.clear();
+    restoreSequencerFromState(s);
+
+    bool saw0 = false, saw1 = false;
+    for (const auto& e : commands::g_sentGenParams) {
+        if (e.pattern == 0) {
+            saw0 = e.params.patternProbability == 50 &&
+                   e.params.scale == common::ScaleId::MAJOR &&
+                   e.params.humanizeRange == 20 && e.params.seedSet && e.params.seed == 7;
+        }
+        if (e.pattern == 1) saw1 = e.params.coupling == common::CouplingMode::LOCKED;
+    }
+    check(saw0, "restore sends pattern 0's loaded gen-params (prob/scale/humanize/seed) to core1");
+    check(saw1, "restore sends pattern 1's loaded gen-params (coupling) to core1");
+}
+
 int main() {
     test_humanize_field();
     test_seed_field();
@@ -175,6 +212,7 @@ int main() {
     test_velocity_navigation();
     test_r10_control_map();
     test_persist_roundtrip();
+    test_restore_sends_genparams();
 
     if (failures == 0) {
         std::printf("example_velocity_genparams_view: all checks passed\n");

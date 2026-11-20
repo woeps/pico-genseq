@@ -631,6 +631,12 @@ void restoreSequencerFromState(const UIState& state) {
         syncGateSet(state, i);
         syncPitchSet(state, i);
         syncVelocitySet(state, i);
+        // Generation Parameters ride their own GEN_PARAMS_SET command (task
+        // 10.4), not the per-stream sync above. Without this, a boot load left
+        // core1 running DEFAULT gen-params while Working State (and the UI)
+        // showed the saved ones -- a saved seed/probability/humanize/scale never
+        // took effect after reboot (task 11.3 silicon finding; R4.3, R6.5).
+        sendPatternGenParams(state, i);
     }
 
     // Align core1's active mask with the restored activePatterns bitmask. Every

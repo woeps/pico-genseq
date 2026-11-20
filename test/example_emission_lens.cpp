@@ -194,6 +194,51 @@ void test_humanization_bounds() {
     check(checked > 0, "at least one humanized onset observed");
 }
 
+// R4.1/R4.3/R4.5: with a Deterministic Seed set, RANDOM playing order is drawn
+// from the Pattern generation RNG, so the pitch order (not only probability and
+// humanization) replays identically after Stop->Play and in a fresh Sequencer
+// given the same seed, and a different seed yields a different order.
+std::vector<uint8_t> seededRandomRun(uint32_t seed, int plays) {
+    Harness h;
+    {
+        commands::CommandMessage m = cmd(commands::Command::PATTERN_PITCH_SET, 0);
+        const std::vector<uint8_t> pitches = {60, 62, 64, 65, 67, 69, 71, 72};
+        m.pitchCount = static_cast<uint8_t>(pitches.size());
+        m.pitchOrder = common::PlayingOrder::RANDOM;
+        m.pitches = pitches;
+        h.seq.processCommand(m);
+    }
+    h.setVelocity({100});
+    std::vector<bool> g;
+    for (int i = 0; i < 48; ++i) g.push_back(i % 2 == 0);
+    h.setGate(g);
+    common::GenerationParameters gp;
+    gp.seedSet = true;
+    gp.seed = seed;
+    gp.humanizeRange = 1;  // non-default so the lens takes the seeded path
+    h.seq.setPatternGenerationParameters(0, gp);
+    std::vector<uint8_t> last;
+    for (int p = 0; p < plays; ++p) {
+        h.out.clear();
+        h.play();
+        for (uint64_t n = 1; n <= 48; ++n) h.tick(n);
+        last = noteOnPitches(h.out.record());
+        h.seq.processCommand(cmd(commands::Command::STOP));
+    }
+    return last;
+}
+
+void test_seeded_random_order_replays() {
+    const std::vector<uint8_t> a = seededRandomRun(7, 1);
+    const std::vector<uint8_t> restart = seededRandomRun(7, 2);  // Stop -> Play
+    const std::vector<uint8_t> reload = seededRandomRun(7, 1);   // fresh core1, same seed
+    const std::vector<uint8_t> other = seededRandomRun(8, 1);
+    check(a.size() >= 20, "seeded RANDOM run emits >= 20 note-ons");
+    check(a == restart, "seeded RANDOM pitch order identical after Stop->Play (R4.5)");
+    check(a == reload, "seeded RANDOM pitch order identical from the same seed (R4.3)");
+    check(a != other, "a different seed yields a different RANDOM pitch order (R4.1)");
+}
+
 }  // namespace
 
 int main() {
@@ -201,6 +246,7 @@ int main() {
     test_default_emits_stored_velocity();
     test_scale_skip_and_nearest();
     test_humanization_bounds();
+    test_seeded_random_order_replays();
 
     if (failures == 0) {
         std::printf("example_emission_lens: all checks passed\n");
