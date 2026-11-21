@@ -1,13 +1,19 @@
 # GenSeq User Manual
 
 GenSeq is a standalone generative MIDI sequencer. It plays up to 15 patterns at
-once on its MIDI output, and each pattern is built from three independent
-streams: a **gate set** (the rhythm), a **pitch set** and a **velocity set**.
-On top of that, every pattern has **generation parameters** that shape the
-material while it plays: step probability, a scale constraint, velocity
-humanization, a deterministic seed and stream coupling.
+once on its MIDI output. Each pattern combines three sets: a **gate set** (the
+rhythm), a **pitch set** (the notes) and a **velocity set**. The sets live in
+three libraries of 16 sets each, and a pattern simply points at one set of each
+kind. Several patterns can use the same set, for example three patterns playing
+the same melody in three different rhythms. Editing a set changes it for every
+pattern that uses it.
 
-This manual covers firmware milestone M3 (generative engine expansion).
+On top of that, the sets carry **generation parameters** that shape the material
+while it plays: step probability (gate set), a scale constraint (pitch set),
+velocity humanization, a deterministic seed and stream coupling (velocity set).
+
+This manual covers firmware milestone M3 (generative engine expansion) with
+shared sets.
 
 ## 1. Connecting
 
@@ -44,6 +50,16 @@ left, the octave on the right, and a single dot at the right edge for a sharp
 | (14,0) green / red | Pitch editor only, when a scale is active: the shown pitch is in / out of the scale. |
 | (13,0) green / dim red | Gate grid only: the selected step's gate is on / off. |
 
+**Set rows** (the two bottom rows, in the GATE, PITCH and VELOCITY editors):
+
+| Row | Meaning |
+|---|---|
+| 15 | **Set map**: one pixel per set of this kind, set 0 at the left, set 15 at the right. Dim green = the set exists, white = the set you are editing, dark = free. |
+| 14 | **Users**: one red pixel per pattern that uses the set you are editing, pattern 1 at the left. Two or more red pixels mean the set is shared, and your edit changes all of those patterns. No red pixel means no pattern uses it. |
+
+A short word in the value area answers a set action that was refused (see
+section 5). It disappears at your next key press.
+
 **Save banners** fill the whole matrix for 1.5 seconds:
 
 | Colour | Meaning | Onboard LED |
@@ -59,7 +75,7 @@ These work in every view.
 | Key | Action |
 |---|---|
 | Space | Play / Stop. Play always starts every pattern from its first step. Stop releases every sounding note. |
-| Ctrl+S | Save the whole setup (patterns, BPM, all parameters) to memory. Playback keeps running. |
+| Ctrl+S | Save the whole setup (patterns, sets, BPM, all parameters) to memory. Playback keeps running. |
 | F1 | TEST view |
 | F2 | SETTINGS view (tempo) |
 | F3 | PATTERNS view |
@@ -73,16 +89,84 @@ columns by 3 rows (pattern 1 top-left, reading order).
 - **Yellow line:** the empty "add" slot after the last pattern.
 - **White pixel:** the selection. Its corner inside the selected square says which
   stream you will open: top-left = GATE, top-right = PITCH, bottom-left = VELOCITY.
+- **Bottom three rows:** which sets the selected pattern uses. Row 13 is the gate
+  library, row 14 the pitch library and row 15 the velocity library, set 0 at the
+  left. Dim green = the set exists, white = the set this pattern uses.
 
 | Key | Action |
 |---|---|
 | Ctrl+Left / Ctrl+Right | Select the previous / next pattern |
 | Ctrl+Up / Ctrl+Down | Select the pattern one row up / down |
 | Up / Down / Left / Right | Choose the stream: from GATE, Right = PITCH and Down = VELOCITY; Left or Up returns to GATE |
-| Enter | Open the editor for the selected stream. On the add slot: add a new pattern. |
-| Delete | Delete the selected pattern |
+| Shift+Left / Shift+Right | Switch the selected stream of this pattern to the previous / next existing set (wraps around). You hear the change at once; the pattern keeps its place in the bar. |
+| Enter | Open the editor on the set this pattern uses for the selected stream. On the add slot: add a new pattern. |
+| Delete | Delete the selected pattern. Its sets stay in the libraries. |
 
-## 5. How editors work
+A **new pattern** starts on the lowest-numbered existing set of each kind, so at
+first it shares those sets with other patterns. To give it its own material, see
+"Giving a pattern its own set" in section 5.
+
+## 5. Sets and sharing
+
+There are three libraries: 16 gate sets, 16 pitch sets and 16 velocity sets,
+numbered 0 to 15. The GATE, PITCH and VELOCITY editors always edit **a set**, not
+a pattern. They open on the set that the selected pattern uses, and the set rows
+at the bottom of the display (section 2) show which set that is and which patterns
+use it.
+
+These keys work in all three editors:
+
+| Key | Action |
+|---|---|
+| Ctrl+Left / Ctrl+Right | Edit the previous / next existing set of this kind (wraps around) |
+| Ctrl+N | Create a new set with default content and edit it |
+| Ctrl+D | Copy the set you are editing into a new set and edit the copy |
+| Ctrl+Delete | Delete the set you are editing |
+| Ctrl+G | Go to a pattern that uses this set |
+
+Switching sets, Ctrl+N and Ctrl+D undo an uncommitted change first, just like
+leaving the editor. Ctrl+D copies the last committed version. Creating, copying
+and deleting a set never changes which sets the patterns use.
+
+**Refused actions.** The value area shows a short word instead:
+
+| Word | Meaning |
+|---|---|
+| `ful` | The library already holds 16 sets. Delete an unused one first. |
+| `use` | The set cannot be deleted because a pattern uses it. Switch those patterns to another set first. |
+| `lst` | The last set of a library cannot be deleted. |
+| `unu` | Ctrl+G: no pattern uses this set. |
+
+**Editing a shared set.** Two or more red pixels in row 14 mean the set is
+shared, so every change you make is heard on all of those patterns at once. The
+patterns still run independently: each one keeps its own position in the set and,
+in `Rnd` order, its own random sequence. Because the generation parameters belong
+to the sets, patterns that share a set also share them. For example, patterns
+using the same pitch set share its scale.
+
+**Go to a pattern (Ctrl+G).** If exactly one pattern uses the set, GenSeq jumps
+straight to it in the PATTERNS view. If several do, a picker opens: the label
+reads `gto`, the number is the pattern (pattern 1 = `001`), and row 14 shows every
+pattern that uses the set, the highlighted one in white. Left/Right (or Up/Down)
+moves between them, Enter goes to the highlighted pattern, Esc closes the picker
+and leaves your editing untouched. Going to a pattern undoes an uncommitted
+change, like leaving the editor.
+
+**Giving a pattern its own set.**
+
+1. In PATTERNS, select the pattern and the stream, then press Enter to open its set.
+2. Press **Ctrl+D**. The editor now shows a copy (a new white pixel in row 15) that
+   no pattern uses yet.
+3. Edit the copy and press Enter to commit it.
+4. Press Esc to return to PATTERNS and use **Shift+Right** (or Shift+Left) until
+   row 13, 14 or 15 shows the copy in white for this pattern.
+
+**Example: one melody, three rhythms.** Add three patterns. They start on the same
+sets. Give patterns 2 and 3 their own gate sets as above and make the three rhythms
+different. Leave all three on the same pitch set: every melody edit is now heard in
+all three rhythms.
+
+## 6. How editors work
 
 Every editor works the same way:
 
@@ -90,7 +174,8 @@ Every editor works the same way:
 - **Up / Down** changes the value. Hold **Shift** for big steps (×10 for numbers,
   an octave for pitches).
 - Changes are **heard immediately** while you edit, so you can tune by ear.
-- **Enter** commits: the change becomes part of the pattern (and is included in the next save).
+- **Enter** commits: the change becomes part of the set, for every pattern that uses it
+  (and is included in the next save).
 - **Esc** undoes everything since the last Enter. Press Esc again (with nothing to
   undo) to go back to PATTERNS. Leaving an editor any other way also undoes
   uncommitted changes.
@@ -99,7 +184,7 @@ Each generation parameter has a "neutral" value that switches the feature off
 (probability 100, scale `cro`, humanize 0, seed `off`, coupling `Ind`). A pattern
 with every parameter neutral plays exactly like a plain step sequence.
 
-## 6. GATE editor (the rhythm)
+## 7. GATE editor (the rhythm)
 
 Opens on `Alg`. Fields from left to right:
 
@@ -128,7 +213,7 @@ Left/Right walks the steps; Left from `s0` goes back to `Prb`.
 Changing `StP`, `PLS` or `rot` regenerates the gate pattern, but keeps every
 per-step probability you set.
 
-## 7. PITCH editor
+## 8. PITCH editor
 
 Opens on `Cnt`. The scale fields are to the left of it, the pitches to the right.
 
@@ -146,14 +231,14 @@ pitch set stays as you entered it, and turning the scale back to `cro` restores
 it exactly. While a scale is active, the pixel at (14,0) shows whether the pitch
 you are looking at is in the scale (green) or will be changed (red).
 
-## 8. VELOCITY editor
+## 9. VELOCITY editor
 
-Opens on `Cnt`. Pattern-wide generation fields are to the left of it.
+Opens on `Cnt`. The generation fields for humanize, seed and coupling are to the left of it.
 
 | Label | Value | Meaning |
 |---|---|---|
 | `Hmn` | 0–64 | **Humanization**: each note's velocity varies randomly by up to ± this amount. Results stay between 1 and 127. |
-| `Sed` | `off`, 0, 1, 2 ... | **Deterministic seed** for this pattern (see below) |
+| `Sed` | `off`, 0, 1, 2 ... | **Deterministic seed** for the patterns using this set (see below) |
 | `Cpl` | `Ind`, `Lck` | **Coupling**: `Ind` = velocity set runs on its own; `Lck` = each pitch position always gets the same velocity |
 | `Cnt` | 1–16 | How many velocities are in the set |
 | `Ord` | `Fwd`, `Bwd`, `Pnd`, `Rnd` | Playing order |
@@ -168,34 +253,43 @@ Opens on `Cnt`. Pattern-wide generation fields are to the left of it.
   numbers give different performances. Changing the seed while playing restarts
   the sequence from that seed.
 - From `off`, Up gives seed 0; below 0 goes back to `off`.
+- The seed belongs to the velocity set, so patterns that share a velocity set use
+  the same seed number. Each pattern still runs its own copy of the generator.
 
 **Coupling** matters when the pitch and velocity sets have different lengths.
 With 4 pitches and 3 velocities, `Ind` lets the accents drift across the melody
 (a 12-step cycle), while `Lck` ties velocity to the pitch position so the first
 pitch is always accented the same way.
 
-## 9. SETTINGS view (F2), label `bPM`
+## 10. SETTINGS view (F2), label `bPM`
 
 Up/Down changes the tempo by 1 BPM, Shift+Up/Down by 10. Range 40–255. The change
 applies immediately and is included in the next save.
 
-## 10. TEST view (F1), label `tst`
+## 11. TEST view (F1), label `tst`
 
 A simple value (0–99) adjusted with Up/Down (Shift = ×10). It has no musical
 effect; it exists to check the keyboard and display. This is the view GenSeq
 starts in.
 
-## 11. Saving and loading
+## 12. Saving and loading
 
-- **Ctrl+S** stores the complete setup: patterns, their three streams, all
-  generation parameters and the tempo. Only committed values are saved, so press
-  Enter in an open editor first.
+- **Ctrl+S** stores the complete setup: patterns, all sets (also the ones no
+  pattern uses), which sets each pattern uses, all generation parameters and the
+  tempo. Patterns that shared a set before saving still share it after loading.
+  Only committed values are saved, so press Enter in an open editor first.
 - Saving does not interrupt playback.
 - At power-up GenSeq loads the last save automatically. If nothing was saved it
   starts with defaults silently. If a save exists but cannot be read, the yellow
   banner appears and defaults are used.
+- **Saves from earlier firmware** (before shared sets) load normally: every pattern
+  gets its own gate, pitch and velocity set, numbered like the pattern (pattern 1
+  uses set 0 of each kind, pattern 2 set 1, and so on), and plays exactly as before.
+  The next Ctrl+S writes the new format. Firmware from before shared sets cannot
+  read that format and starts with defaults, so keep the old firmware file if you
+  might go back.
 
-## 12. Quick start
+## 13. Quick start
 
 1. Connect MIDI OUT to a synth on channel 1, press **F3** (PATTERNS) and then
    **Space**. You hear the
@@ -207,9 +301,16 @@ starts in.
 5. In the velocity editor set `Hmn` to 15 for a looser feel, then `Sed` to a number
    once you like what you hear. Press Enter.
 6. **Ctrl+S** to keep it.
+7. To hear the melody in a second rhythm: Ctrl+Right to the add slot and Enter. The
+   new pattern starts on the same sets, so it plays in unison. Choose its gate stream
+   (Left or Up) and press Enter, then **Ctrl+D** to copy the gate set. Go Right twice
+   to `PLS`, change it and press Enter. Then Esc and **Shift+Right** switch the pattern
+   to the copy (section 5). Both patterns still share the pitch set, so every note you
+   change is heard in both rhythms.
 
-## 13. Not in this version
+## 14. Not in this version
 
 - Muting a single pattern from the keyboard. All patterns play; Delete removes one.
 - Per-pattern MIDI channels. All patterns send on channel 1.
 - Rhythm generators other than Euclidean.
+- Names for sets. Sets are known by their number (0–15) in the set rows.

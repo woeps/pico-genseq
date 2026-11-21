@@ -143,7 +143,7 @@ TEST(setview_picker_replaces_the_display_with_the_candidate_list) {
     hardware::testing::resetMatrix();
     view.render(s);
     CHECK_STREQ(hardware::testing::lastLabel(), "gto");
-    CHECK_EQ(hardware::testing::lastNumber(), 0);
+    CHECK_EQ(hardware::testing::lastNumber(), 1);  // pattern index 0 is shown as pattern 1
     CHECK_EQ(hardware::testing::pixelAt(0, 14), kSelected);  // cursor
     CHECK(hardware::testing::pixelAt(1, 14) != 0);           // other candidate
     CHECK_EQ(hardware::testing::pixelAt(2, 14), 0);          // not a candidate

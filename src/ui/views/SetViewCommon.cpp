@@ -29,7 +29,8 @@ uint8_t selectedSlot(const state::UIState& s, state::SetType type) {
 void drawPicker(hardware::LedMatrix& matrix, const state::UIState& s) {
     matrix.clear();
     matrix.drawLabel("gto", COLOR_LABEL);
-    matrix.drawNumber(s.gotoPicker.cursor, COLOR_VALUE);
+    // Pattern numbers count from 1 on the display (pattern 1 is the top-left square).
+    matrix.drawNumber(s.gotoPicker.cursor + 1, COLOR_VALUE);
     for (uint8_t p = 0; p < state::MAX_PATTERNS; ++p) {
         if (!((s.gotoPicker.candidates >> p) & 1u)) continue;
         matrix.setPixel(p, ROW_USERS, p == s.gotoPicker.cursor ? COLOR_SLOT_SELECTED : COLOR_CANDIDATE);
