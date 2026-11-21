@@ -429,6 +429,7 @@ add_executable(genseq_example_save_combo
     "${EXAMPLE_SAVE_COMBO_SRC}"
     "${SRC_DIR}/ui/state/Reducer.cpp"
     "${SRC_DIR}/ui/state/SetLibrary.cpp"
+    "${SRC_DIR}/ui/state/Instruments.cpp"
 )
 target_include_directories(genseq_example_save_combo PRIVATE
     ${EMISSION_INCLUDE_DIRS}
@@ -1090,6 +1091,7 @@ if(RAPIDCHECK_AVAILABLE)
         "${REDUCER_PROPERTY7_SRC}"
         "${SRC_DIR}/ui/state/Reducer.cpp"
         "${SRC_DIR}/ui/state/SetLibrary.cpp"
+        "${SRC_DIR}/ui/state/Instruments.cpp"
     )
     target_include_directories(genseq_reducer_property_tests PRIVATE
         ${EMISSION_INCLUDE_DIRS}
@@ -1110,6 +1112,7 @@ add_executable(genseq_example_pitchset_scale_view
     "${EXAMPLE_PITCHSET_SCALE_VIEW_SRC}"
     "${SRC_DIR}/ui/state/Reducer.cpp"
     "${SRC_DIR}/ui/state/SetLibrary.cpp"
+    "${SRC_DIR}/ui/state/Instruments.cpp"
     "${SRC_DIR}/ui/state/PersistMapping.cpp"
 )
 target_include_directories(genseq_example_pitchset_scale_view PRIVATE
@@ -1131,6 +1134,7 @@ add_executable(genseq_example_gateset_grid_view
     "${EXAMPLE_GATESET_GRID_VIEW_SRC}"
     "${SRC_DIR}/ui/state/Reducer.cpp"
     "${SRC_DIR}/ui/state/SetLibrary.cpp"
+    "${SRC_DIR}/ui/state/Instruments.cpp"
     "${SRC_DIR}/ui/state/PersistMapping.cpp"
 )
 target_include_directories(genseq_example_gateset_grid_view PRIVATE
@@ -1152,6 +1156,7 @@ add_executable(genseq_example_velocity_genparams_view
     "${EXAMPLE_VELOCITY_GENPARAMS_VIEW_SRC}"
     "${SRC_DIR}/ui/state/Reducer.cpp"
     "${SRC_DIR}/ui/state/SetLibrary.cpp"
+    "${SRC_DIR}/ui/state/Instruments.cpp"
     "${SRC_DIR}/ui/state/PersistMapping.cpp"
 )
 target_include_directories(genseq_example_velocity_genparams_view PRIVATE
@@ -1170,6 +1175,7 @@ add_executable(genseq_example_set_library
     "${EXAMPLE_SET_LIBRARY_SRC}"
     "${SRC_DIR}/ui/state/Reducer.cpp"
     "${SRC_DIR}/ui/state/SetLibrary.cpp"
+    "${SRC_DIR}/ui/state/Instruments.cpp"
 )
 target_include_directories(genseq_example_set_library PRIVATE
     ${EMISSION_INCLUDE_DIRS}
@@ -1203,6 +1209,7 @@ add_executable(genseq_example_sequencer_sharing
     "${EXAMPLE_SEQUENCER_SHARING_SRC}"
     "${SRC_DIR}/ui/state/Reducer.cpp"
     "${SRC_DIR}/ui/state/SetLibrary.cpp"
+    "${SRC_DIR}/ui/state/Instruments.cpp"
 )
 target_include_directories(genseq_example_sequencer_sharing PRIVATE
     ${EMISSION_INCLUDE_DIRS}

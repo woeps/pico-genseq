@@ -58,6 +58,7 @@ void sendPitchSet(uint8_t /*patternIndex*/, uint8_t /*count*/,
 }
 
 void sendGateSetMulti(uint16_t, const std::vector<bool>&) {}
+void sendInstrumentSet(uint8_t, uint8_t, uint16_t) {}
 void sendPitchSetMulti(uint16_t, uint8_t, common::PlayingOrder, const std::vector<uint8_t>&) {}
 void sendVelocitySetMulti(uint16_t, uint8_t, common::PlayingOrder, const std::vector<uint8_t>&) {}
 void sendVelocitySet(uint8_t /*patternIndex*/, uint8_t /*count*/,

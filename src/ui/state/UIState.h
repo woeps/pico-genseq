@@ -5,6 +5,7 @@
 #include <cstdint>
 #include "../../common/pitch_set.h"
 #include "../../common/GenerationParameters.h"
+#include "../../common/InstrumentRouting.h"
 
 namespace ui::state {
 
@@ -214,6 +215,36 @@ enum class SetNotice : uint8_t {
     UNUSED,
 };
 
+// --- Instruments (help-me-brainstorm-an-additional) --------------------------------------
+// An Instrument owns one MIDI channel and decides which patterns sound on it. A pattern may be
+// assigned to several Instruments. Three independent switches decide whether a note sounds:
+// the pattern's active flag, the per-route enable flag, and the Instrument mute.
+constexpr uint8_t MAX_INSTRUMENTS = 16;
+static_assert(MAX_INSTRUMENTS == common::MAX_INSTRUMENTS);
+static_assert(MAX_PATTERNS == common::MAX_ROUTE_PATTERNS);
+
+struct InstrumentConfig {
+    uint8_t channel = 1;     // user channel 1..16, unique among occupied Instruments
+    bool muted = false;
+    uint16_t members = 0;    // bit p: pattern p is assigned to this Instrument
+    uint16_t enabled = 0;    // bit p: the route of pattern p is on (meaningful for members only)
+};
+
+// Transient refusal feedback for Instrument actions; NONE means no notice.
+enum class InstrumentNotice : uint8_t {
+    NONE,
+    FULL,             // all 16 slots occupied
+    LAST_INSTRUMENT,  // cannot delete the only Instrument
+    NO_FREE_CHANNEL,  // no free channel in the stepping direction
+    NOT_MEMBER,       // route toggle on a pattern that is not assigned
+};
+
+constexpr std::array<InstrumentConfig, MAX_INSTRUMENTS> defaultInstruments() {
+    std::array<InstrumentConfig, MAX_INSTRUMENTS> a{};
+    a[0] = InstrumentConfig{1, false, 0x0001, 0x0001};  // channel 1 plays pattern 0
+    return a;
+}
+
 struct PatternRefs {
     uint8_t gate = 0;
     uint8_t note = 0;
@@ -251,6 +282,15 @@ struct UIState {
     uint8_t selectedVelocitySlot = 0;
     SetNotice setNotice = SetNotice::NONE;
     GotoPicker gotoPicker{};
+
+    // Instruments. instrumentOccupied bit s: slot s holds an Instrument (always non-zero).
+    // selectedInstrument is always an occupied slot; instrumentCursor is the pattern cursor of
+    // the Instruments view (0..MAX_PATTERNS-1).
+    std::array<InstrumentConfig, MAX_INSTRUMENTS> instruments = defaultInstruments();
+    uint16_t instrumentOccupied = 0x0001;
+    uint8_t selectedInstrument = 0;
+    uint8_t instrumentCursor = 0;
+    InstrumentNotice instrumentNotice = InstrumentNotice::NONE;
 
     // The set a pattern currently references (patternRefs always points at an
     // occupied slot).

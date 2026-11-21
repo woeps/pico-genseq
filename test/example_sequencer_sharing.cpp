@@ -83,6 +83,14 @@ void sendVelocitySet(uint8_t pattern, uint8_t count, common::PlayingOrder order,
     m.velocities = velocities;
     deliver(m);
 }
+void sendInstrumentSet(uint8_t slot, uint8_t channel, uint16_t mask) {
+    CommandMessage m;
+    m.cmd = Command::INSTRUMENT_SET;
+    m.param1 = slot;
+    m.param2 = channel;
+    m.patternMask = mask;
+    deliver(m);
+}
 void sendGateSetMulti(uint16_t mask, const std::vector<bool>& gates) {
     CommandMessage m;
     m.cmd = Command::PATTERN_GATE_SET_MULTI;
@@ -162,6 +170,7 @@ UIState makeState(bool shared, common::PlayingOrder order) {
     UIState s;
     s.patternCount = 3;
     s.activePatterns = 0b111;
+    s.instruments[0].members = s.instruments[0].enabled = 0b111;  // channel 1 plays all three
     uint8_t slot = 0;
     createSet(s, SetType::GATE, slot);
     createSet(s, SetType::GATE, slot);
@@ -199,7 +208,6 @@ std::vector<uint8_t> runStream(bool shared, common::PlayingOrder order) {
     Rig rig;
     UIState s = makeState(shared, order);
     restoreSequencerFromState(s);  // seed core1 exactly as boot does
-    rig.seq.applyInstrument(0, 0, 0b111);
     rig.base = rig.clock.nowMicros();
     setPlaying(s, true);
     for (uint64_t n = 1; n <= 192; ++n) rig.tick(n);
@@ -250,6 +258,7 @@ struct EditRig {
     EditRig() {
         s.patternCount = 2;
         s.activePatterns = 0b11;
+        s.instruments[0].members = s.instruments[0].enabled = 0b11;
         s.noteLib.slots[0].count = 1;
         s.noteLib.slots[0].pitches[0] = 60;
         s.gateLib.slots[0].steps = 1;
@@ -259,7 +268,6 @@ struct EditRig {
         commitGateSetEdit(s);
         s.patternRefs[1] = s.patternRefs[0];  // patterns 0 and 1 share every slot-0 set
         restoreSequencerFromState(s);
-        rig.seq.applyInstrument(0, 0, 0b11);
         rig.base = rig.clock.nowMicros();
         setPlaying(s, true);
         rig.out.clear();

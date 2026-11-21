@@ -224,6 +224,16 @@ void applyPersistableConfig(UIState& state,
     state.selectedVelocitySlot = state.patternRefs[0].velocity;
 
     state.activePatterns = activeMask;
+    // Interim until the v4 record stores Instruments (instruments task 9): one Instrument on
+    // channel 1 plays every pattern, the pre-Instrument behaviour.
+    {
+        const uint16_t all = static_cast<uint16_t>((1u << count) - 1u);
+        state.instruments = defaultInstruments();
+        state.instruments[0].members = all;
+        state.instruments[0].enabled = all;
+        state.instrumentOccupied = 0x0001;
+        state.selectedInstrument = 0;
+    }
     // Draft / dirty / selection / save-status fields are intentionally left at
     // their defaults (already zero/false from a fresh UIState).
 }

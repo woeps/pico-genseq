@@ -68,6 +68,15 @@ void sendGenParams(uint8_t patternIndex, const common::GenerationParameters&) {
     testing::sentCommands().push_back(msg);
 }
 
+void sendInstrumentSet(uint8_t slot, uint8_t protocolChannel, uint16_t patternMask) {
+    CommandMessage msg;
+    msg.cmd = Command::INSTRUMENT_SET;
+    msg.param1 = slot;
+    msg.param2 = protocolChannel;
+    msg.patternMask = patternMask;
+    testing::sentCommands().push_back(msg);
+}
+
 void sendGateSetMulti(uint16_t mask, const std::vector<bool>& gates) {
     CommandMessage msg;
     msg.cmd = Command::PATTERN_GATE_SET_MULTI;

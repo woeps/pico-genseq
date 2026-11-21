@@ -73,26 +73,26 @@ line endings keep CRLF after editing.
   - [x]* 5.4 Extend `test/example_steady_state_allocation.cpp` to cover `INSTRUMENT_SET`.
     [Design 6]
 
-- [ ] 6. UI state model and reducer
-  - [ ] 6.1 Add `MAX_INSTRUMENTS`, `InstrumentConfig`, `InstrumentNotice` and the instrument
+- [x] 6. UI state model and reducer
+  - [x] 6.1 Add `MAX_INSTRUMENTS`, `InstrumentConfig`, `InstrumentNotice` and the instrument
     fields to `src/ui/state/UIState.h` with the default slot 0 (`{1, false, 0x0001, 0x0001}`).
     Add `validateInstruments()` for tests. [R1.1, R1.2, Design 2]
-  - [ ] 6.2 Create `src/ui/state/Instruments.h/.cpp` (SDK-free where possible, commands behind
+  - [x] 6.2 Create `src/ui/state/Instruments.h/.cpp` (SDK-free where possible, commands behind
     the existing stub in host builds) with `createInstrument`, `deleteInstrument`,
     `stepInstrumentChannel`, `toggleInstrumentMute`, `toggleMember`, `toggleRoute`,
     `selectInstrument`, `moveInstrumentCursor`, `syncInstrument`. [R1.3-1.7, R2.1-2.4, R3.1-3.3,
     R3.10-3.14, R4.1-4.6, R6.1, R6.2]
-  - [ ] 6.3 Hook `addPattern` (add to the selected Instrument and sync), `removePattern`
+  - [x] 6.3 Hook `addPattern` (add to the selected Instrument and sync), `removePattern`
     (`removePatternBit` on every Instrument), and `restoreSequencerFromState` (send
     `INSTRUMENT_SET` for all 16 slots). `togglePatternActive` stays unchanged. [R3.6, R3.7,
     R4.7, Design 3]
-  - [ ]* 6.4 Reducer host tests in `tests/`: notices (full, last, no free channel, not a member),
+  - [x]* 6.4 Reducer host tests in `tests/`: notices (full, last, no free channel, not a member),
     lowest free slot and channel, channel stepping skips used channels and stops at 1 and 16,
     member and route toggles keep the invariants, add and remove pattern update masks, and a
     random operation sequence keeps `validateInstruments()` true. A recording `commands` stub
     checks that each edit sends exactly one `INSTRUMENT_SET` with the folded mask
     (`members & enabled`, or 0 when muted). [R4.9, Design 3]
-  - [ ]* 6.5 Cross-check test: apply the same random pattern removals to the reducer masks and to
+  - [x]* 6.5 Cross-check test: apply the same random pattern removals to the reducer masks and to
     a `RouteTable` and assert equality. [Risks]
 
 - [ ] 7. Function keys, boot view and removal of the test view

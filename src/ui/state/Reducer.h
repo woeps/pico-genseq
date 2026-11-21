@@ -79,6 +79,18 @@ void gotoPickerConfirm(UIState& state);
 // Close the picker; slot, draft and view are unchanged (R10.4).
 void gotoPickerCancel(UIState& state);
 
+// --- Instruments (help-me-brainstorm-an-additional) ---------------------------------------
+// Each action mutates the Instrument list through the pure helpers in Instruments.h and sends the
+// affected slot to core1 as one INSTRUMENT_SET (members AND enabled AND NOT muted). A refused
+// action leaves the state unchanged and sets state.instrumentNotice.
+void syncInstrument(const UIState& state, uint8_t slot);
+void createInstrument(UIState& state);
+void deleteInstrument(UIState& state, uint8_t slot);
+void changeInstrumentChannel(UIState& state, uint8_t slot, int direction);
+void toggleInstrumentMute(UIState& state, uint8_t slot);
+void toggleInstrumentPattern(UIState& state, uint8_t slot, uint8_t pattern);  // assign / unassign
+void toggleInstrumentRoute(UIState& state, uint8_t slot, uint8_t pattern);    // route on / off
+
 void restoreSequencerFromState(const UIState& state);
 
 } // namespace ui::state

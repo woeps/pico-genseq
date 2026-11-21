@@ -1,5 +1,6 @@
 #include "Reducer.h"
 #include "SetLibrary.h"
+#include "Instruments.h"
 #include "../../commands/command.h"
 #include "../../common/gate_set.h"
 #include "../../common/pitch_set.h"
@@ -763,6 +764,10 @@ void addPattern(UIState& state) {
     // The new pattern may reference sets carrying non-default gen-params (scale, humanize,
     // probability); core1 starts it on defaults, so send the referenced ones (R9.3).
     sendPatternGenParams(state, newPattern);
+    // The new pattern joins the selected Instrument (R3.6). core1 holds it without a route until
+    // this command arrives, so it is silent until its material is in place.
+    assignPatternToInstrument(state, state.selectedInstrument, newPattern);
+    syncInstrument(state, state.selectedInstrument);
 }
 
 void removePattern(UIState& state, uint8_t index) {
@@ -777,6 +782,8 @@ void removePattern(UIState& state, uint8_t index) {
         state.patternRefs[i] = state.patternRefs[i + 1];
     }
     state.patternRefs[state.patternCount - 1] = PatternRefs{};
+    // Instrument masks shift the same way; core1 does the same inside PATTERN_REMOVE (R3.7).
+    removePatternFromInstruments(state, index);
     state.patternCount--;
     if (state.selectedPattern > index) state.selectedPattern--;
     state.selectedPattern = std::min(state.selectedPattern,
@@ -1013,7 +1020,42 @@ void restoreSequencerFromState(const UIState& state) {
         }
     }
 
+    // Overwrite core1's boot route table with the restored Instruments (free slots are emptied).
+    for (uint8_t s = 0; s < MAX_INSTRUMENTS; s++) {
+        syncInstrument(state, s);
+    }
+
     commands::sendCommand(commands::Command::BPM_SET, state.bpm);
+}
+
+void syncInstrument(const UIState& state, uint8_t slot) {
+    if (slot >= MAX_INSTRUMENTS) return;
+    commands::sendInstrumentSet(slot, protocolChannelOf(state, slot), effectiveMask(state, slot));
+}
+
+void createInstrument(UIState& state) {
+    uint8_t slot = 0;
+    if (createInstrumentSlot(state, slot)) syncInstrument(state, slot);
+}
+
+void deleteInstrument(UIState& state, uint8_t slot) {
+    if (deleteInstrumentSlot(state, slot)) syncInstrument(state, slot);
+}
+
+void changeInstrumentChannel(UIState& state, uint8_t slot, int direction) {
+    if (stepInstrumentChannel(state, slot, direction)) syncInstrument(state, slot);
+}
+
+void toggleInstrumentMute(UIState& state, uint8_t slot) {
+    if (toggleInstrumentMuteFlag(state, slot)) syncInstrument(state, slot);
+}
+
+void toggleInstrumentPattern(UIState& state, uint8_t slot, uint8_t pattern) {
+    if (toggleInstrumentMember(state, slot, pattern)) syncInstrument(state, slot);
+}
+
+void toggleInstrumentRoute(UIState& state, uint8_t slot, uint8_t pattern) {
+    if (toggleInstrumentRouteFlag(state, slot, pattern)) syncInstrument(state, slot);
 }
 
 namespace {
