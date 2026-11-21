@@ -174,6 +174,7 @@ static void sequencer_task() {
             g_midiMaxPumpGapUs = globalMidiQueue->maxPumpGapUs();
             g_midiPeakBacklog = globalMidiQueue->peakBacklog();
             g_midiFullWaits = globalMidiQueue->fullWaits();
+            g_midiMaxBusyUs = globalMidiQueue->maxBusyUs();
 #endif
 
             // Dual-core stack-overflow guard (BUG A / BUG B-pt2 class): cheap

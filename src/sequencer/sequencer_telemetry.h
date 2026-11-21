@@ -55,7 +55,8 @@ extern volatile uint32_t g_midiWindowUs;       // last UART write - window start
 extern volatile uint32_t g_midiStarvedPumps;   // FIFO found empty while bytes were waiting
 extern volatile uint32_t g_midiMaxPumpGapUs;   // longest gap between two core1 pumps
 extern volatile uint32_t g_midiPeakBacklog;    // highest buffered byte count in the window
-extern volatile uint32_t g_midiFullWaits;      // writes that had to wait for a full buffer
+extern volatile uint32_t g_midiFullWaits;
+extern volatile uint32_t g_midiMaxBusyUs;      // longest time the buffer stayed non-empty      // writes that had to wait for a full buffer
 #endif
 
 }  // namespace sequencer

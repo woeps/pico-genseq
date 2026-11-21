@@ -504,6 +504,7 @@ void HostControl::emitDump() {
     printf("D:maxPumpGapUs=%lu\n", static_cast<unsigned long>(sequencer::g_midiMaxPumpGapUs));
     printf("D:peakBacklog=%lu\n", static_cast<unsigned long>(sequencer::g_midiPeakBacklog));
     printf("D:fullWaits=%lu\n", static_cast<unsigned long>(sequencer::g_midiFullWaits));
+    printf("D:maxBusyUs=%lu\n", static_cast<unsigned long>(sequencer::g_midiMaxBusyUs));
     printf("D:missedTicks=%lu\n", static_cast<unsigned long>(sequencer::g_missedTicks));
     printf("D:batchTimeouts=%lu\n", static_cast<unsigned long>(sequencer::g_batchTimeouts));
     printf("D:end\n");

@@ -289,6 +289,21 @@ line endings keep CRLF after editing.
     the wire and the buffer peaks at 456 bytes, yet one 8 s run latched the overload fault (another
     run of 5 s did not); this load includes a 50% probability pattern, so the bursts vary. Needs a
     look at why the backlog stayed non-empty for a whole beat.
+
+    Investigation (busy-period counter `maxBusyUs`, 30 s runs, same load):
+
+    | Instruments | result | avg wire | longest busy period | peak buffered (delay) |
+    |---|---|---|---|---|
+    | 8 | no fault in 30 s | 44% | 93 ms | 216 B (69 ms) |
+    | 10 | overload at 31.9 s | 54% | 546 ms | 364 B (116 ms) |
+    | 12 | overload at 8.5 s (twice, identical) | 66% | 653 ms | 700 B (224 ms) |
+
+    The fault is deterministic, not a detector bug. The test load is uneven within the bar
+    (four unison patterns retrigger the same key: Note Off + Note On per extra pattern, plus
+    the every-4th-step pattern and the 50% probability pattern), so some stretches need the
+    full cable or more for over half a second while the average is 54-66%. The detector's rule
+    ("buffer never empty for a beat") fires on those stretches, although notes are late by only
+    116-224 ms. The 17.2 table's "no fault up to 10" held only for its 8 s runs.
   - [x] 17.3 Manual: load pixel, overload fault and recovery, measured limits.
 
 - [ ] 13. Final acceptance

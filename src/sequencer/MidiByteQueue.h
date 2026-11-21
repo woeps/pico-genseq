@@ -87,6 +87,13 @@ public:
                 lastPutUs_ = nowUs;
             }
         }
+        // Busy period: how long the buffer has been non-empty without a break.
+        if (count_ + rtCount_ == 0) {
+            busySinceUs_ = 0;
+        } else {
+            if (busySinceUs_ == 0) busySinceUs_ = nowUs;
+            if (nowUs - busySinceUs_ > maxBusyUs_) maxBusyUs_ = static_cast<uint32_t>(nowUs - busySinceUs_);
+        }
         // Queued delay of the newest byte: everything ahead of it must cross the wire first.
         if (static_cast<uint64_t>(count_) * kMidiByteMicros >= kMidiLateThresholdUs) {
             const uint32_t ms = static_cast<uint32_t>(nowUs / 1000u);
@@ -109,6 +116,7 @@ public:
         wireBytes_ = 0;
         starvedPumps_ = 0;
         maxPumpGapUs_ = 0;
+        maxBusyUs_ = 0;
         windowStartUs_ = nowUs;
         lastPutUs_ = nowUs;
         resetPeak();
@@ -116,6 +124,7 @@ public:
     uint32_t wireBytes() const { return wireBytes_; }
     uint32_t starvedPumps() const { return starvedPumps_; }
     uint32_t maxPumpGapUs() const { return maxPumpGapUs_; }
+    uint32_t maxBusyUs() const { return maxBusyUs_; }
     uint64_t windowStartUs() const { return windowStartUs_; }
     uint64_t lastPutUs() const { return lastPutUs_; }
 
@@ -134,6 +143,8 @@ private:
     uint32_t wireBytes_ = 0;
     uint32_t starvedPumps_ = 0;
     uint32_t maxPumpGapUs_ = 0;
+    uint32_t maxBusyUs_ = 0;
+    uint64_t busySinceUs_ = 0;
     uint64_t lastPumpUs_ = 0;
     uint64_t windowStartUs_ = 0;
     uint64_t lastPutUs_ = 0;

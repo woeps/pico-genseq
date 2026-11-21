@@ -68,6 +68,7 @@ volatile uint32_t g_midiStarvedPumps = 0;
 volatile uint32_t g_midiMaxPumpGapUs = 0;
 volatile uint32_t g_midiPeakBacklog = 0;
 volatile uint32_t g_midiFullWaits = 0;
+volatile uint32_t g_midiMaxBusyUs = 0;
 #endif
 
 void MeteredMidiOutput::write(uint8_t byte) {
