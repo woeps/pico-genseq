@@ -176,6 +176,42 @@ line endings keep CRLF after editing.
     BitScope skill; compare with the baseline in `docs/development/baseline/README.md`. [R9.5]
   - [x] 11.5 Read the core1 stack-guard margin on the board. [Risks]
 
+  Hardware results (2026-11-21, RP2040 on the picoprobe, host-control builds of `d1dd86d`
+  (baseline) and this branch, watchdog resets only, no cold power-cycle). 11.4 used the
+  host-control metrics (`maxLatenessUs`, `missedTicks`, `maxUiGapUs`, `lastSaveUs`), not the
+  BitScope.
+
+  - 11.1: the branch boots into `instruments` with `D:ins=0:1:0:0x0003:0x0003` (the saved v3
+    record migrated to one Instrument on channel 1). A 6 s MIDI capture of the saved setup is
+    byte-identical to the baseline firmware (565 bytes, 36 Note On / 36 Note Off, channel 1).
+    The play LED is not observable hands-off; it still needs a look by eye.
+  - 11.3 fan-out before Requirement 11 (6 patterns, every sixteenth, 140 BPM, all patterns in
+    every Instrument, blocking UART writes):
+
+    | Instruments | max lateness | missed ticks | On/Off violations | sounding after Stop |
+    |---|---|---|---|---|
+    | 1 | 18 us | 0 | 0 | 0 |
+    | 2 | 20 us | 0 | 0 | 0 |
+    | 4 | 6491 us | 0 | 0 | 0 |
+    | 6 | 23774 us | 40 | 0 | 0 |
+    | 8 | 41064 us | 74 | 0 | 0 |
+    | 12 | 84609 us | 264 | 0 | 0 |
+    | 16 | 156932 us | 613 | 0 | 0 |
+
+    Gap found: above the wire limit the scheduler fell behind, skipped ticks (their Note Ons
+    and Clock bytes) and the timing fault never latched (one-beat lateness threshold not
+    reached). Fixed by Requirement 11 (tasks 14-16); results in 17.2.
+  - 11.4 (one Instrument, two saves during playback per run, blocking output):
+    saved setup 20 / 20 / 65 us lateness, 6 dense patterns 17 / 19 / 20 us at 40 / 120 /
+    255 BPM; 0 missed ticks, UI gap 14.8 ms, save 11.6-11.7 ms. Within the foundation gates.
+  - 11.5: after 16-Instrument fan-out plus a save, both stack canaries are intact
+    (`0x20041000` = `0x57acc0de`, margin `0x20041400` = `0xc0decafe`,
+    `g_stackGuardTripped` = 0).
+  - The bench saves overwrote the FRAM record three times (gate runs, the 11.5 run, the 17.2
+    gate runs). Each time the original setup (140 BPM, 2 patterns, refs `0.2.0,1.1.0`,
+    pulses 4, one Instrument) was rebuilt and saved; the final capture after a reset is
+    byte-identical to the baseline capture.
+
 - [x] 12. Documentation
   - [x] 12.1 Generate the LED screens for the Instruments view (each cell state, muted tint,
     strip) and the changed Patterns view using the `genseq-led-matrix-doc-screenshots` skill.
@@ -212,11 +248,31 @@ line endings keep CRLF after editing.
     `D:load=` and `D:fault=` cause lines to `H:dump`.
   - [x]* 16.3 Host tests for `loadLevel` (off, amber window, red wins).
 
-- [ ] 17. Verification and documentation (Requirement 11, 10.5)
-  - [ ] 17.1 Host suites under ASan/UBSan and the firmware build.
-  - [ ] 17.2 HW: repeat the 11.3 fan-out table and the 11.1 baseline capture; record lateness,
+- [x] 17. Verification and documentation (Requirement 11, 10.5)
+  - [x] 17.1 Host suites under ASan/UBSan and the firmware build.
+  - [x] 17.2 HW: repeat the 11.3 fan-out table and the 11.1 baseline capture; record lateness,
     missed ticks, fault and load level per Instrument count.
-  - [ ] 17.3 Manual: load pixel, overload fault and recovery, measured limits.
+
+    Results 2026-11-21 (host-control build of `1d9d6ae`, same load as 11.3, 8 s each):
+
+    | Instruments | max lateness | missed ticks | fault | load pixel | On/Off violations |
+    |---|---|---|---|---|---|
+    | 1 | 38 us | 0 | no | off | 0 |
+    | 2 | 36 us | 0 | no | amber | 0 |
+    | 4 | 32 us | 0 | no | amber | 0 |
+    | 6 | 39 us | 0 | no | amber | 0 |
+    | 8 | 37 us | 0 | no | amber | 0 |
+    | 10 | 37 us | 0 | no | amber | 0 |
+    | 12 | 39 us | 0 | MIDI output overload (after 5-8 s) | red | 0 |
+    | 16 | 23 us | 0 | MIDI output overload (after < 2 s) | red | 0 |
+
+    No tick is skipped at any load (before: from 6 Instruments on). The fault sends one MIDI
+    Stop, nothing sounds afterwards, the UI shows `playing=0`, and Space acknowledges it (the
+    fault clears; amber stays for its 2 s hold). The saved-setup capture is still byte-identical
+    to `d1dd86d`. Timing gates with the buffer at 40 / 120 / 255 BPM: saved setup with two saves
+    29-38 us lateness, 0 missed, UI gap 14.8 ms, save 11.6 ms; 6 dense patterns 30-40 us,
+    0 missed, load off.
+  - [x] 17.3 Manual: load pixel, overload fault and recovery, measured limits.
 
 - [ ] 13. Final acceptance
   - [ ] 13.1 Walk the requirements list R1-R10 against the tests and the HW results and record any
