@@ -90,10 +90,25 @@ inline persistence::PersistableConfig genConfig(int minPatterns = 0, bool fat = 
     }
     for (uint8_t i = 0; i < cfg.patternCount; ++i) {
         cfg.patterns[i].active = *rc::gen::inRange<int>(0, 2);
-        cfg.patterns[i].midiChannel = *rc::gen::inRange<int>(1, 17);
         cfg.patterns[i].gateRef = pickOccupied(cfg.gateOccupied);
         cfg.patterns[i].noteRef = pickOccupied(cfg.noteOccupied);
         cfg.patterns[i].velocityRef = pickOccupied(cfg.velocityOccupied);
+    }
+    // Instruments: a non-empty set of slots with pairwise different channels, random pattern
+    // selections inside the existing patterns, and route flags that are a subset of them.
+    cfg.instrumentOccupied = genMask(fat);
+    std::vector<uint8_t> channels;
+    for (uint8_t c = 1; c <= 16; ++c) channels.push_back(c);
+    const uint16_t valid = static_cast<uint16_t>((1u << cfg.patternCount) - 1u);
+    for (uint8_t s = 0; s < persistence::MAX_INSTRUMENTS; ++s) {
+        if (!((cfg.instrumentOccupied >> s) & 1u)) continue;
+        const std::size_t pick = *rc::gen::inRange<std::size_t>(0, channels.size());
+        persistence::InstrumentRecord& in = cfg.instruments[s];
+        in.channel = channels[pick];
+        channels.erase(channels.begin() + pick);
+        in.muted = *rc::gen::inRange<int>(0, 2);
+        in.members = static_cast<uint16_t>(*rc::gen::inRange<int>(0, 0x10000)) & valid;
+        in.enabled = static_cast<uint16_t>(*rc::gen::inRange<int>(0, 0x10000)) & in.members;
     }
     return cfg;
 }

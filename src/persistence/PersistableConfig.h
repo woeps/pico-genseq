@@ -148,10 +148,22 @@ struct VelocitySetRecord {
     uint8_t coupling = 0;                 // common::CouplingMode (0 == INDEPENDENT)
 };
 
-// Durable per-pattern configuration: flags plus one reference per library.
+// Mirrors ui::state::MAX_INSTRUMENTS (one Instrument per MIDI channel).
+constexpr uint8_t MAX_INSTRUMENTS = 16;
+
+// One Instrument: a MIDI channel, a mute flag and two pattern masks (bit p = pattern p).
+// `enabled` is the per-route switch; it may only have bits that are also set in `members`.
+struct InstrumentRecord {
+    uint8_t channel = 1;     // 1..16, unique among occupied Instruments
+    uint8_t muted = 0;       // 0/1
+    uint16_t members = 0;    // patterns assigned to the Instrument
+    uint16_t enabled = 0;    // routes switched on (subset of members)
+};
+
+// Durable per-pattern configuration: flags plus one reference per library. The MIDI channel
+// is no longer stored per pattern: it comes from the Instruments (format v4).
 struct PatternConfig {
     uint8_t active = 0;       // 0/1 (from UIState::activePatterns bit)
-    uint8_t midiChannel = 1;  // 1..16 (reserved; defaulted from convention today)
     uint8_t gateRef = 0;      // slot in gateSets, must be occupied
     uint8_t noteRef = 0;      // slot in noteSets, must be occupied
     uint8_t velocityRef = 0;  // slot in velocitySets, must be occupied
@@ -199,9 +211,14 @@ inline bool operator==(const VelocitySetRecord& a, const VelocitySetRecord& b) {
 inline bool operator!=(const VelocitySetRecord& a, const VelocitySetRecord& b) { return !(a == b); }
 
 inline bool operator==(const PatternConfig& a, const PatternConfig& b) {
-    return a.active == b.active && a.midiChannel == b.midiChannel && a.gateRef == b.gateRef &&
-           a.noteRef == b.noteRef && a.velocityRef == b.velocityRef;
+    return a.active == b.active && a.gateRef == b.gateRef && a.noteRef == b.noteRef &&
+           a.velocityRef == b.velocityRef;
 }
+inline bool operator==(const InstrumentRecord& a, const InstrumentRecord& b) {
+    return a.channel == b.channel && a.muted == b.muted && a.members == b.members &&
+           a.enabled == b.enabled;
+}
+inline bool operator!=(const InstrumentRecord& a, const InstrumentRecord& b) { return !(a == b); }
 inline bool operator!=(const PatternConfig& a, const PatternConfig& b) { return !(a == b); }
 
 // The in-memory snapshot the codec serializes. A plain aggregate derived from UIState,
@@ -217,6 +234,8 @@ struct PersistableConfig {
     NoteSetRecord noteSets[SET_LIBRARY_SIZE];
     VelocitySetRecord velocitySets[SET_LIBRARY_SIZE];
     PatternConfig patterns[MAX_PATTERNS];
+    uint16_t instrumentOccupied = 0x0001;  // bit s set == instruments[s] is present
+    InstrumentRecord instruments[MAX_INSTRUMENTS];
 };
 
 // Compares only the meaningful content: occupied slots and [0, patternCount) patterns.
@@ -240,6 +259,12 @@ inline bool operator==(const PersistableConfig& lhs, const PersistableConfig& rh
     }
     for (uint8_t i = 0; i < lhs.patternCount && i < MAX_PATTERNS; i++) {
         if (lhs.patterns[i] != rhs.patterns[i]) return false;
+    }
+    if (lhs.instrumentOccupied != rhs.instrumentOccupied) return false;
+    for (uint8_t i = 0; i < MAX_INSTRUMENTS; i++) {
+        if (((lhs.instrumentOccupied >> i) & 1u) && lhs.instruments[i] != rhs.instruments[i]) {
+            return false;
+        }
     }
     return true;
 }

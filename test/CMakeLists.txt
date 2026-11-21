@@ -645,6 +645,7 @@ set(EXAMPLE_SET_PERSISTENCE_SRC "${TEST_DIR}/example_set_persistence.cpp")
 set(EXAMPLE_SEQUENCER_SHARING_SRC "${TEST_DIR}/example_sequencer_sharing.cpp")
 set(EXAMPLE_MULTICAST_SETS_SRC "${TEST_DIR}/example_multicast_sets.cpp")
 set(EXAMPLE_INSTRUMENT_ROUTING_SRC "${TEST_DIR}/example_instrument_routing.cpp")
+set(EXAMPLE_INSTRUMENT_PERSISTENCE_SRC "${TEST_DIR}/example_instrument_persistence.cpp")
 set(EXAMPLE_NOTE_BALANCE_SRC "${TEST_DIR}/example_note_balance.cpp")
 add_executable(genseq_example_golden_stream "${EXAMPLE_GOLDEN_STREAM_SRC}")
 target_include_directories(genseq_example_golden_stream PRIVATE ${EMISSION_INCLUDE_DIRS})
@@ -968,6 +969,7 @@ if(RAPIDCHECK_AVAILABLE)
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SEQUENCER_SHARING_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_MULTICAST_SETS_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_INSTRUMENT_ROUTING_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_INSTRUMENT_PERSISTENCE_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_NOTE_BALANCE_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${SMOKE_HOST_COMPILATION_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_HEADER_LAYOUT_SRC}")
@@ -1203,6 +1205,23 @@ target_include_directories(genseq_example_set_persistence PRIVATE
 )
 target_link_libraries(genseq_example_set_persistence PRIVATE genseq_emission)
 add_test(NAME genseq_example_set_persistence COMMAND genseq_example_set_persistence)
+
+# Instrument persistence (instruments task 9.5): v4 block, legacy migration, validation.
+add_executable(genseq_example_instrument_persistence
+    "${EXAMPLE_INSTRUMENT_PERSISTENCE_SRC}"
+    "${SRC_DIR}/ui/state/PersistMapping.cpp"
+    "${SRC_DIR}/persistence/SaveRecord.cpp"
+)
+target_include_directories(genseq_example_instrument_persistence PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}"
+    "${SRC_DIR}/ui"
+    "${SRC_DIR}/ui/state"
+    "${SRC_DIR}/persistence"
+    "${TEST_DIR}"
+)
+target_link_libraries(genseq_example_instrument_persistence PRIVATE genseq_emission)
+add_test(NAME genseq_example_instrument_persistence COMMAND genseq_example_instrument_persistence)
 
 # Shared sets on the real sequencer (tasks 9.1-9.3): reducer fan-out bridged into a Sequencer.
 add_executable(genseq_example_sequencer_sharing

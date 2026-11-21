@@ -68,7 +68,6 @@ persistence::PersistableConfig makeSmallConfig() {
     cfg.velocitySets[0].count = 1;
     cfg.velocitySets[0].order = 0;
     cfg.velocitySets[0].velocities[0] = 100;
-    cfg.patterns[0].midiChannel = 1;
     cfg.patterns[0].active = 1;
 
     return cfg;
@@ -98,7 +97,6 @@ persistence::PersistableConfig makeOversizedConfig() {
             cfg.velocitySets[s].velocities[i] = static_cast<uint8_t>(64 + i);
         }
     }
-    cfg.patterns[0].midiChannel = 1;
     cfg.patterns[0].active = 1;
 
     return cfg;

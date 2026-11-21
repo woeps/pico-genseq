@@ -63,7 +63,6 @@ persistence::PersistableConfig makeKnownConfig() {
     n0.count = 3; n0.order = 0; n0.pitches[0] = 60; n0.pitches[1] = 62; n0.pitches[2] = 64;
     persistence::VelocitySetRecord& v0 = cfg.velocitySets[0];
     v0.count = 2; v0.order = 1; v0.velocities[0] = 100; v0.velocities[1] = 110;
-    cfg.patterns[0].midiChannel = 1;
     cfg.patterns[0].active = 1;
     cfg.patterns[0].gateRef = 0; cfg.patterns[0].noteRef = 0; cfg.patterns[0].velocityRef = 0;
 
@@ -74,9 +73,13 @@ persistence::PersistableConfig makeKnownConfig() {
     persistence::VelocitySetRecord& v1 = cfg.velocitySets[1];
     v1.count = 1; v1.order = 0; v1.velocities[0] = 90;
     // Pattern 1 shares pattern 0's note set but uses its own gate and velocity sets.
-    cfg.patterns[1].midiChannel = 2;
     cfg.patterns[1].active = 0;
     cfg.patterns[1].gateRef = 1; cfg.patterns[1].noteRef = 0; cfg.patterns[1].velocityRef = 1;
+
+    // Two Instruments: channel 1 plays pattern 0, channel 2 plays pattern 1.
+    cfg.instrumentOccupied = 0x0003;
+    cfg.instruments[0].channel = 1; cfg.instruments[0].members = cfg.instruments[0].enabled = 0x0001;
+    cfg.instruments[1].channel = 2; cfg.instruments[1].members = cfg.instruments[1].enabled = 0x0002;
 
     return cfg;
 }

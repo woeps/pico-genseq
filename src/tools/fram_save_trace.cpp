@@ -151,8 +151,15 @@ persistence::PersistableConfig make_worst_case_config() {
         pc.gateRef = p;
         pc.noteRef = static_cast<uint8_t>(15 - p);
         pc.velocityRef = p;
-        pc.midiChannel = static_cast<uint8_t>((p % 16) + 1);
         pc.active = 1;
+    }
+    // Worst case for the Instrument block: all 16 slots, every pattern assigned to each.
+    cfg.instrumentOccupied = 0xFFFF;
+    for (uint8_t s = 0; s < persistence::MAX_INSTRUMENTS; ++s) {
+        auto& in = cfg.instruments[s];
+        in.channel = static_cast<uint8_t>(s + 1);
+        in.muted = 0;
+        in.members = in.enabled = 0x7FFF;
     }
     return cfg;
 }

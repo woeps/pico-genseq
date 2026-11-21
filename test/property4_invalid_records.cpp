@@ -108,6 +108,7 @@ void checkBadVersion() {
     // reason this record is rejected.
     int badVersion = *rc::gen::inRange<int>(0, 256);
     while (badVersion == persistence::FORMAT_VERSION ||
+           badVersion == persistence::FORMAT_VERSION_V3_LEGACY ||
            badVersion == persistence::FORMAT_VERSION_V2_LEGACY ||
            badVersion == persistence::FORMAT_VERSION_V1_LEGACY) {
         badVersion = (badVersion + 1) & 0xFF;  // step to the next u8, wrapping

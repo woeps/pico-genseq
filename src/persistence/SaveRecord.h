@@ -19,7 +19,13 @@ inline constexpr uint8_t MAGIC[2] = {'G', 'S'};  // "GS"
 // the bare per-pattern material. Both are still LOADABLE: each pattern becomes its own
 // Gate/Note/Velocity Set at the same slot index, so a legacy save plays exactly as before
 // (Req 6.5, R7.4).
-inline constexpr uint8_t FORMAT_VERSION = 3;
+//
+// v4 (help-me-brainstorm-an-additional) drops the per-pattern MIDI channel and stores the
+// Instruments instead (channel, mute, Pattern Selection, route enable flags). A v1-v3 record is
+// still LOADABLE: one Instrument is created per distinct pattern channel, in ascending channel
+// order, so the saved MIDI output is unchanged.
+inline constexpr uint8_t FORMAT_VERSION = 4;
+inline constexpr uint8_t FORMAT_VERSION_V3_LEGACY = 3;
 inline constexpr uint8_t FORMAT_VERSION_V2_LEGACY = 2;
 inline constexpr uint8_t FORMAT_VERSION_V1_LEGACY = 1;
 // magic (2) + version (1) + reserved (1) + payloadLength (4) + crc32 (4) = 12
@@ -33,7 +39,8 @@ enum class LoadStatus {
     BAD_VERSION,
     TRUNCATED,     // shorter than header, or shorter than declared payload
     CRC_MISMATCH,
-    INVALID_REFERENCE,  // v3: empty library, or a pattern references a free/out-of-range slot
+    INVALID_REFERENCE,  // v3+: empty library, or a pattern references a free/out-of-range slot;
+                        // v4: an inconsistent Instrument (see deserialize)
 };
 
 // Serialize a snapshot into a full Save_Record (header + payload). Deterministic.

@@ -41,12 +41,16 @@ inline persistence::PersistableConfig makeSentinel() {
     }
     for (uint8_t idx = 0; idx < s.patternCount; ++idx) {
         persistence::PatternConfig& pat = s.patterns[idx];
-        pat.midiChannel = 9;
         pat.active = 1;
         pat.gateRef = idx % 2;
         pat.noteRef = (idx + 1) % 2;
         pat.velocityRef = idx % 2;
     }
+    // One Instrument on channel 9 plays every pattern.
+    const uint16_t all = static_cast<uint16_t>((1u << s.patternCount) - 1u);
+    s.instrumentOccupied = 0x0001;
+    s.instruments[0].channel = 9;
+    s.instruments[0].members = s.instruments[0].enabled = all;
     return s;
 }
 
@@ -162,10 +166,55 @@ inline persistence::PersistableConfig expectedMigration(const LegacyConfig& lega
         v.coupling = lp.genCoupling;
         PatternConfig& p = cfg.patterns[i];
         p.active = lp.active;
-        p.midiChannel = lp.midiChannel;
         p.gateRef = p.noteRef = p.velocityRef = i;
     }
+    // One Instrument per distinct channel (clamped to 1..16), ascending, all routes on, unmuted.
+    cfg.instrumentOccupied = 0;
+    uint8_t slot = 0;
+    for (uint8_t ch = 1; ch <= 16; ++ch) {
+        uint16_t mask = 0;
+        for (uint8_t i = 0; i < legacy.patternCount; ++i) {
+            const uint8_t c = legacy.patterns[i].midiChannel;
+            if ((c < 1 ? 1 : (c > 16 ? 16 : c)) == ch) mask |= static_cast<uint16_t>(1u << i);
+        }
+        if (mask == 0) continue;
+        cfg.instruments[slot].channel = ch;
+        cfg.instruments[slot].members = cfg.instruments[slot].enabled = mask;
+        cfg.instrumentOccupied |= static_cast<uint16_t>(1u << slot);
+        ++slot;
+    }
+    if (cfg.instrumentOccupied == 0) cfg.instrumentOccupied = 0x0001;  // default Instrument, empty
     return cfg;
+}
+
+// A format v3 record of `cfg`: identical to v4 up to the patterns, which carry a MIDI channel
+// byte (`channels[p]`) after the active flag, and no Instrument block. Built from the v4 encoder
+// so the library part cannot drift.
+inline std::vector<uint8_t> serializeV3(const persistence::PersistableConfig& cfg,
+                                        const uint8_t* channels) {
+    using namespace persistence;
+    const std::vector<uint8_t> v4 = serialize(cfg);
+    const std::vector<uint8_t> payload4(v4.begin() + HEADER_SIZE, v4.end());
+    const std::size_t instrumentBytes =
+        2 + 6 * static_cast<std::size_t>(__builtin_popcount(cfg.instrumentOccupied));
+    const std::size_t prefix = payload4.size() - 4u * cfg.patternCount - instrumentBytes;
+    std::vector<uint8_t> payload(payload4.begin(), payload4.begin() + prefix);
+    for (uint8_t p = 0; p < cfg.patternCount; ++p) {
+        payload.push_back(cfg.patterns[p].active);
+        payload.push_back(channels[p]);
+        payload.push_back(cfg.patterns[p].gateRef);
+        payload.push_back(cfg.patterns[p].noteRef);
+        payload.push_back(cfg.patterns[p].velocityRef);
+    }
+    std::vector<uint8_t> rec;
+    rec.push_back(MAGIC[0]);
+    rec.push_back(MAGIC[1]);
+    rec.push_back(FORMAT_VERSION_V3_LEGACY);
+    rec.push_back(0);
+    appendLE(rec, static_cast<uint32_t>(payload.size()), 4);
+    appendLE(rec, crc32(payload.data(), payload.size()), 4);
+    rec.insert(rec.end(), payload.begin(), payload.end());
+    return rec;
 }
 
 }  // namespace persist_test

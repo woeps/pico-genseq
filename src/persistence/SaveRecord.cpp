@@ -164,10 +164,20 @@ std::vector<uint8_t> serialize(const PersistableConfig& cfg) {
     for (uint8_t p = 0; p < cfg.patternCount && p < MAX_PATTERNS; ++p) {
         const PatternConfig& pat = cfg.patterns[p];
         appendU8(payload, pat.active);
-        appendU8(payload, pat.midiChannel);
         appendU8(payload, pat.gateRef);
         appendU8(payload, pat.noteRef);
         appendU8(payload, pat.velocityRef);
+    }
+
+    // Instruments (v4): occupancy, then every occupied Instrument in ascending slot order.
+    appendU16LE(payload, cfg.instrumentOccupied);
+    for (uint8_t s = 0; s < MAX_INSTRUMENTS; ++s) {
+        if (!((cfg.instrumentOccupied >> s) & 1u)) continue;
+        const InstrumentRecord& in = cfg.instruments[s];
+        appendU8(payload, in.channel);
+        appendU8(payload, in.muted);
+        appendU16LE(payload, in.members);
+        appendU16LE(payload, in.enabled);
     }
 
     const uint32_t payloadLength = static_cast<uint32_t>(payload.size());
@@ -179,7 +189,7 @@ std::vector<uint8_t> serialize(const PersistableConfig& cfg) {
 
     appendU8(record, MAGIC[0]);          // 'G'
     appendU8(record, MAGIC[1]);          // 'S'
-    appendU8(record, FORMAT_VERSION);    // version = 3
+    appendU8(record, FORMAT_VERSION);    // version = 4
     appendU8(record, 0u);                // reserved = 0
     appendU32LE(record, payloadLength);  // payload length (bytes)
     appendU32LE(record, payloadCrc);     // CRC-32 over payload
@@ -283,7 +293,6 @@ void migrateLegacyPattern(PersistableConfig& cfg, uint8_t i, const LegacyPattern
 
     PatternConfig& p = cfg.patterns[i];
     p.active = lp.active;
-    p.midiChannel = lp.midiChannel;
     p.gateRef = i;
     p.noteRef = i;
     p.velocityRef = i;
@@ -332,6 +341,56 @@ bool slotPresent(uint16_t mask, uint8_t slot) {
     return slot < SET_LIBRARY_SIZE && ((mask >> slot) & 1u);
 }
 
+// Legacy (v1-v3) records carry a MIDI channel per pattern. Build the Instruments from them: one
+// Instrument per distinct channel in ascending channel order, holding the patterns that used it
+// with every route on, nothing muted. A channel outside 1..16 is clamped like the old emission
+// path clamped it, so the saved output does not change. No patterns -> the default Instrument.
+void deriveInstrumentsFromChannels(PersistableConfig& cfg, const uint8_t* channels,
+                                   uint8_t patternCount) {
+    cfg.instrumentOccupied = 0;
+    for (uint8_t s = 0; s < MAX_INSTRUMENTS; ++s) cfg.instruments[s] = InstrumentRecord{};
+    uint8_t slot = 0;
+    for (uint8_t ch = 1; ch <= 16; ++ch) {
+        uint16_t mask = 0;
+        for (uint8_t p = 0; p < patternCount; ++p) {
+            const uint8_t c = channels[p] < 1 ? 1 : (channels[p] > 16 ? 16 : channels[p]);
+            if (c == ch) mask = static_cast<uint16_t>(mask | (1u << p));
+        }
+        if (mask == 0) continue;
+        InstrumentRecord& in = cfg.instruments[slot];
+        in.channel = ch;
+        in.muted = 0;
+        in.members = mask;
+        in.enabled = mask;
+        cfg.instrumentOccupied = static_cast<uint16_t>(cfg.instrumentOccupied | (1u << slot));
+        ++slot;
+    }
+    if (cfg.instrumentOccupied == 0) {
+        cfg.instrumentOccupied = 0x0001;
+        cfg.instruments[0] = InstrumentRecord{};
+    }
+}
+
+// v4 consistency (R8.5): at least one Instrument, channels 1..16 and unique, masks only name
+// existing patterns, and a route may only be enabled for an assigned pattern.
+bool instrumentsValid(const PersistableConfig& cfg, uint8_t patternCount) {
+    if (cfg.instrumentOccupied == 0) return false;
+    const uint16_t valid = patternCount >= 16 ? static_cast<uint16_t>(0xFFFF)
+                                              : static_cast<uint16_t>((1u << patternCount) - 1u);
+    uint32_t channelsSeen = 0;
+    for (uint8_t s = 0; s < MAX_INSTRUMENTS; ++s) {
+        if (!((cfg.instrumentOccupied >> s) & 1u)) continue;
+        const InstrumentRecord& in = cfg.instruments[s];
+        if (in.channel < 1 || in.channel > 16) return false;
+        if (in.muted > 1) return false;
+        if ((channelsSeen >> in.channel) & 1u) return false;
+        channelsSeen |= 1u << in.channel;
+        if ((in.members & ~valid) != 0) return false;
+        if ((in.enabled & ~in.members) != 0) return false;
+    }
+    return true;
+}
+
 }  // namespace
 
 LoadStatus deserialize(const uint8_t* bytes, std::size_t len,
@@ -353,8 +412,8 @@ LoadStatus deserialize(const uint8_t* bytes, std::size_t len,
     // 3. Version must be one we understand. v3 is current; v1/v2 are legacy but
     //    still loadable (migrated below). Anything else is rejected (Req 6.5).
     const uint8_t version = bytes[2];
-    if (version != FORMAT_VERSION && version != FORMAT_VERSION_V2_LEGACY &&
-        version != FORMAT_VERSION_V1_LEGACY) {
+    if (version != FORMAT_VERSION && version != FORMAT_VERSION_V3_LEGACY &&
+        version != FORMAT_VERSION_V2_LEGACY && version != FORMAT_VERSION_V1_LEGACY) {
         return LoadStatus::BAD_VERSION;
     }
 
@@ -399,7 +458,10 @@ LoadStatus deserialize(const uint8_t* bytes, std::size_t len,
         rawPatternCount > MAX_PATTERNS ? MAX_PATTERNS : rawPatternCount;
     local.patternCount = patternCount;
 
-    if (version == FORMAT_VERSION) {
+    // Channel per pattern of a legacy (v1-v3) record, turned into Instruments below.
+    uint8_t legacyChannels[MAX_PATTERNS] = {0};
+
+    if (version == FORMAT_VERSION || version == FORMAT_VERSION_V3_LEGACY) {
         local.gateOccupied = cur.u16LE();
         local.noteOccupied = cur.u16LE();
         local.velocityOccupied = cur.u16LE();
@@ -416,10 +478,21 @@ LoadStatus deserialize(const uint8_t* bytes, std::size_t len,
         for (uint8_t p = 0; p < patternCount; ++p) {
             PatternConfig& pat = local.patterns[p];
             pat.active = cur.u8();
-            pat.midiChannel = cur.u8();
+            if (version == FORMAT_VERSION_V3_LEGACY) legacyChannels[p] = cur.u8();
             pat.gateRef = cur.u8();
             pat.noteRef = cur.u8();
             pat.velocityRef = cur.u8();
+        }
+        if (version == FORMAT_VERSION) {
+            local.instrumentOccupied = cur.u16LE();
+            for (uint8_t s = 0; s < MAX_INSTRUMENTS; ++s) {
+                if (!((local.instrumentOccupied >> s) & 1u)) continue;
+                InstrumentRecord& in = local.instruments[s];
+                in.channel = cur.u8();
+                in.muted = cur.u8();
+                in.members = cur.u16LE();
+                in.enabled = cur.u16LE();
+            }
         }
         // A payload that claims more bytes than it holds is truncated, whatever the refs say.
         if (!cur.ok()) return LoadStatus::TRUNCATED;
@@ -437,6 +510,11 @@ LoadStatus deserialize(const uint8_t* bytes, std::size_t len,
                 return LoadStatus::INVALID_REFERENCE;
             }
         }
+        if (version == FORMAT_VERSION) {
+            if (!instrumentsValid(local, patternCount)) return LoadStatus::INVALID_REFERENCE;
+        } else {
+            deriveInstrumentsFromChannels(local, legacyChannels, patternCount);
+        }
     } else {
         // v1/v2: per-pattern inline material -> pattern i owns set i of each library.
         for (uint8_t p = 0; p < patternCount; ++p) {
@@ -444,7 +522,9 @@ LoadStatus deserialize(const uint8_t* bytes, std::size_t len,
             readLegacyPattern(cur, version, legacy);
             if (!cur.ok()) return LoadStatus::TRUNCATED;
             migrateLegacyPattern(local, p, legacy);
+            legacyChannels[p] = legacy.midiChannel;
         }
+        deriveInstrumentsFromChannels(local, legacyChannels, patternCount);
         // Slots 0..patternCount-1 are occupied; an empty save keeps the default set 0.
         const uint16_t owned = patternCount == 0
                                    ? static_cast<uint16_t>(0x0001)

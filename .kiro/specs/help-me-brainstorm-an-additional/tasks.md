@@ -132,19 +132,19 @@ line endings keep CRLF after editing.
     strip shows free/occupied/muted/selected, the Patterns view markers, and every key reaches the
     intended reducer function. [R6]
 
-- [ ] 9. Persistence format v4
-  - [ ] 9.1 In `PersistableConfig.h` remove `PatternConfig::midiChannel`, add `InstrumentRecord`,
+- [x] 9. Persistence format v4
+  - [x] 9.1 In `PersistableConfig.h` remove `PatternConfig::midiChannel`, add `InstrumentRecord`,
     `instrumentOccupied` and `instruments[16]` with the default slot 0; extend `operator==` for
     occupied slots. [R8.1, R8.3, Design 9]
-  - [ ] 9.2 In `SaveRecord.cpp` set `FORMAT_VERSION = 4`, write the v4 layout, and add the v4
+  - [x] 9.2 In `SaveRecord.cpp` set `FORMAT_VERSION = 4`, write the v4 layout, and add the v4
     decode with the validation rules (channel range, unique channels, masks within the pattern
     count, `enabled` a subset of `members`, at least one Instrument). Failures use the existing
     corrupt-record result. [R8.1, R8.5]
-  - [ ] 9.3 Add `deriveInstrumentsFromChannels` and call it from the v1, v2 and v3 decode paths
+  - [x] 9.3 Add `deriveInstrumentsFromChannels` and call it from the v1, v2 and v3 decode paths
     (collect the per-pattern channels into a local array first). [R8.4]
-  - [ ] 9.4 Update `PersistMapping.cpp` (in place, no by-value config) and `fram_save_trace.cpp`.
+  - [x] 9.4 Update `PersistMapping.cpp` (in place, no by-value config) and `fram_save_trace.cpp`.
     Reset `selectedInstrument` and `instrumentCursor` on load. [R8.2]
-  - [ ]* 9.5 Extend `PersistGen.h`, `PersistTestSupport.h` and `property1_persist_roundtrip.cpp`
+  - [x]* 9.5 Extend `PersistGen.h`, `PersistTestSupport.h` and `property1_persist_roundtrip.cpp`
     to generate Instruments; add examples: v1/v2/v3 fixtures decode to one Instrument per channel
     with all routes enabled and nothing muted; the MIDI stream of a migrated record equals the
     stream of the same state described by channels; each corrupt variant is rejected and boots
@@ -152,13 +152,13 @@ line endings keep CRLF after editing.
     `example_header_layout`, `example_outcome_mapping`, `example_banner_mapping`,
     `example_set_persistence` and `property7_genparams_roundtrip` for the format change.
     [R8.4-8.6]
-  - [ ] 9.6 Confirm the save path timing code needs no change: the instrument block is inside the
+  - [x] 9.6 Confirm the save path timing code needs no change: the instrument block is inside the
     same transactional record. [R8.6]
 
-- [ ] 10. Host suite and firmware build checkpoint
-  - [ ] 10.1 Run the full `test/` and `tests/` suites under ASan and UBSan and fix failures.
-  - [ ] 10.2 Build the release firmware (`build/release/`) and confirm it links.
-  - [ ] 10.3 Commit; the next step needs the board.
+- [x] 10. Host suite and firmware build checkpoint
+  - [x] 10.1 Run the full `test/` and `tests/` suites under ASan and UBSan and fix failures.
+  - [x] 10.2 Build the release firmware (`build/release/`) and confirm it links.
+  - [x] 10.3 Commit; the next step needs the board.
 
 - [ ] 11. Hardware verification (HW)
   - [ ] 11.1 Flash the release build; verify boot into the Instruments view with the

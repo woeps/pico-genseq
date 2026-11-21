@@ -4,17 +4,12 @@ namespace ui::state {
 
 namespace {
 
-// Convention (documented, no UI field exists for these today):
-//   midiChannel      -> 1 for every pattern. This matches common::Pattern's
-//                       default midiChannel (1) that the sequencer uses today;
-//                       UIState carries no per-pattern channel, so we persist
-//                       the current firmware default. The schema reserves the
-//                       field so a future UI can edit it without a format bump.
+// Convention (documented, no UI field exists for this today):
 //   midiClockEnabled -> 1. MIDI clock is enabled by the current firmware
 //                       convention and UIState has no field for it.
-constexpr uint8_t DEFAULT_MIDI_CHANNEL = 1;
 constexpr uint8_t DEFAULT_MIDI_CLOCK_ENABLED = 1;
 static_assert(SET_LIBRARY_SIZE == persistence::SET_LIBRARY_SIZE, "library sizes must match");
+static_assert(MAX_INSTRUMENTS == persistence::MAX_INSTRUMENTS, "Instrument counts must match");
 
 } // namespace
 
@@ -163,10 +158,23 @@ void toPersistableConfig(const UIState& state, persistence::PersistableConfig& c
     for (uint8_t i = 0; i < count; i++) {
         persistence::PatternConfig& p = cfg.patterns[i];
         p.active = static_cast<uint8_t>((state.activePatterns >> i) & 0x1);
-        p.midiChannel = DEFAULT_MIDI_CHANNEL;
         p.gateRef = state.patternRefs[i].gate;
         p.noteRef = state.patternRefs[i].note;
         p.velocityRef = state.patternRefs[i].velocity;
+    }
+
+    // Instruments: channel, mute, Pattern Selection and route enable flags. Masks are limited
+    // to the patterns that exist so the record always passes its own validation.
+    const uint16_t valid = static_cast<uint16_t>((1u << count) - 1u);
+    cfg.instrumentOccupied = state.instrumentOccupied;
+    for (uint8_t s = 0; s < MAX_INSTRUMENTS; ++s) {
+        if (!((state.instrumentOccupied >> s) & 1u)) continue;
+        const InstrumentConfig& in = state.instruments[s];
+        persistence::InstrumentRecord& r = cfg.instruments[s];
+        r.channel = in.channel;
+        r.muted = in.muted ? 1 : 0;
+        r.members = static_cast<uint16_t>(in.members & valid);
+        r.enabled = static_cast<uint16_t>(in.enabled & r.members);
     }
 }
 
@@ -224,15 +232,39 @@ void applyPersistableConfig(UIState& state,
     state.selectedVelocitySlot = state.patternRefs[0].velocity;
 
     state.activePatterns = activeMask;
-    // Interim until the v4 record stores Instruments (instruments task 9): one Instrument on
-    // channel 1 plays every pattern, the pre-Instrument behaviour.
+    // Instruments. The codec guarantees a consistent record; a hand-built config with no
+    // occupied Instrument (or no saved patterns) gets one Instrument on channel 1 playing every
+    // pattern, the pre-Instrument behaviour.
     {
-        const uint16_t all = static_cast<uint16_t>((1u << count) - 1u);
-        state.instruments = defaultInstruments();
-        state.instruments[0].members = all;
-        state.instruments[0].enabled = all;
-        state.instrumentOccupied = 0x0001;
+        const uint16_t valid = static_cast<uint16_t>((1u << count) - 1u);
+        if (cfg.instrumentOccupied == 0 || cfg.patternCount == 0) {
+            const uint16_t all = valid;
+            state.instruments = defaultInstruments();
+            state.instruments[0].members = all;
+            state.instruments[0].enabled = all;
+            state.instrumentOccupied = 0x0001;
+        } else {
+            state.instruments = defaultInstruments();
+            state.instrumentOccupied = cfg.instrumentOccupied;
+            for (uint8_t s = 0; s < MAX_INSTRUMENTS; ++s) {
+                if (!((cfg.instrumentOccupied >> s) & 1u)) {
+                    state.instruments[s] = InstrumentConfig{};
+                    continue;
+                }
+                const persistence::InstrumentRecord& r = cfg.instruments[s];
+                InstrumentConfig& in = state.instruments[s];
+                in.channel = static_cast<uint8_t>(r.channel < 1 ? 1 : (r.channel > 16 ? 16 : r.channel));
+                in.muted = r.muted != 0;
+                in.members = static_cast<uint16_t>(r.members & valid);
+                in.enabled = static_cast<uint16_t>(r.enabled & in.members);
+            }
+        }
         state.selectedInstrument = 0;
+        for (uint8_t s = 0; s < MAX_INSTRUMENTS; ++s) {
+            if ((state.instrumentOccupied >> s) & 1u) { state.selectedInstrument = s; break; }
+        }
+        state.instrumentCursor = 0;
+        state.instrumentNotice = InstrumentNotice::NONE;
     }
     // Draft / dirty / selection / save-status fields are intentionally left at
     // their defaults (already zero/false from a fresh UIState).
