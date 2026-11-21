@@ -70,6 +70,19 @@ void regenerateGateStates(GateSetConfig& config) {
     }
 }
 
+// A gate config whose per-step states were never set (all zero although the generator would
+// produce pulses: a fresh default, a new library set, or a record saved before the grid existed)
+// plays and edits as its Euclidean seed. Used by BOTH the wire expansion and the editor, so what
+// is heard always matches what the gate editor shows. (Before, only the editor draft was seeded,
+// so an unopened new set or new pattern was silent while its editor showed hits.)
+bool gateStatesUnset(const GateSetConfig& config) {
+    if (config.pulses == 0) return false;
+    for (uint8_t i = 0; i < MAX_GRID_STEPS; ++i) {
+        if (config.gateStates[i]) return false;
+    }
+    return true;
+}
+
 // Expand the explicit per-step gate states (config.gateStates, R9) into the
 // tick-level boolean gate array the sequencer consumes. This is the manual-edit-
 // aware replacement for calling createEuclidean directly: the generator seeds
@@ -77,7 +90,10 @@ void regenerateGateStates(GateSetConfig& config) {
 // the wire gate array from whatever gateStates now holds. The high-tick gate-
 // length shaping matches createEuclidean so a generator-only config is
 // byte-identical to the old output (R9.7).
-std::vector<bool> expandGateStates(const GateSetConfig& config) {
+std::vector<bool> expandGateStates(const GateSetConfig& input) {
+    GateSetConfig seeded = input;
+    if (gateStatesUnset(seeded)) regenerateGateStates(seeded);
+    const GateSetConfig& config = seeded;
     const uint8_t steps = config.steps;
     const uint8_t stepLen = noteLengthTicks(config.noteLength);
     if (steps == 0 || stepLen == 0) return {};
@@ -360,18 +376,13 @@ void setCurrentView(UIState& state, ViewId viewId) {
 
 void beginGateSetEdit(UIState& state) {
     if (!slotOccupied(state, SetType::GATE, state.selectedGateSlot)) return;
-    state.gateSetDraft = state.gateLib.slots[state.selectedGateSlot];
-    // Seed the per-step gate states from the generator if they were never set
-    // (all-zero but the generator would produce pulses) — e.g. a config created
-    // before the R9 grid existed, or a fresh default. A config with manual edits
-    // already has non-zero gateStates and is left as-is.
-    bool anyGate = false;
-    for (uint8_t i = 0; i < MAX_GRID_STEPS; ++i) {
-        if (state.gateSetDraft.gateStates[i]) { anyGate = true; break; }
-    }
-    if (!anyGate && state.gateSetDraft.pulses > 0) {
-        regenerateGateStates(state.gateSetDraft);
-    }
+    // Seed the per-step gate states from the generator if they were never set (see
+    // gateStatesUnset). Seed the COMMITTED set itself, not only the draft: it already sounds
+    // seeded (expandGateStates), and seeding only the draft left the editor permanently
+    // "dirty" because the draft could never equal the all-zero committed config again.
+    GateSetConfig& committed = state.gateLib.slots[state.selectedGateSlot];
+    if (gateStatesUnset(committed)) regenerateGateStates(committed);
+    state.gateSetDraft = committed;
     state.selectedGateSetProperty = GateSetProperty::ALGORITHM;
     state.selectedGateStep = 0;
     state.gateSetDirty = false;

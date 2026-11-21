@@ -424,3 +424,59 @@ TEST(goto_works_from_note_and_velocity_views) {
     s = test::reduced(s, key(KeyId::G, mod::CTRL), nullptr);
     CHECK(s.gotoPicker.type == state::SetType::VELOCITY);
 }
+
+// --- Never-seeded gate sets (found in the UI bench prep) --------------------------------------
+
+namespace {
+
+int countHits(const std::vector<bool>& gates) {
+    int n = 0;
+    bool prev = gates.empty() ? false : gates.back();
+    for (bool g : gates) { if (g && !prev) ++n; prev = g; }
+    return n;
+}
+
+}  // namespace
+
+TEST(new_pattern_on_a_default_gate_set_sends_its_euclidean_hits) {
+    commands::testing::reset();
+    state::UIState s;  // default gate set, never opened in the editor
+    state::addPattern(s);
+    bool sawGate = false;
+    for (const auto& c : commands::testing::sentCommands()) {
+        if (c.cmd == Command::PATTERN_GATE_SET && c.param1 == 1) {
+            sawGate = true;
+            CHECK_EQ(countHits(c.gates), 4);  // 4 pulses over 16 steps, not silence
+        }
+    }
+    CHECK(sawGate);
+}
+
+TEST(a_new_library_set_plays_its_hits_when_a_pattern_switches_to_it) {
+    state::UIState s;
+    s.currentView = state::ViewId::GATE_SET;
+    state::beginGateSetEdit(s);
+    state::createSetInView(s, state::SetType::GATE);  // slot 1, default content
+    commands::testing::reset();
+    state::assignSetRef(s, 0, state::SetType::GATE, 1);
+    bool sawGate = false;
+    for (const auto& c : commands::testing::sentCommands()) {
+        if (c.cmd == Command::PATTERN_GATE_SET) {
+            sawGate = true;
+            CHECK_EQ(countHits(c.gates), 4);
+        }
+    }
+    CHECK(sawGate);
+}
+
+TEST(opening_an_unseeded_gate_set_is_not_dirty_and_edit_back_clears_dirty) {
+    state::UIState s;
+    state::beginGateSetEdit(s);  // seeds the committed set too
+    CHECK(!s.gateSetDirty);
+    CHECK(s.gateSetDraft == s.gateLib.slots[0]);
+    s.selectedGateSetProperty = state::GateSetProperty::PULSES;
+    state::adjustGateSetValue(s, 1);
+    CHECK(s.gateSetDirty);
+    state::adjustGateSetValue(s, -1);
+    CHECK(!s.gateSetDirty);
+}
