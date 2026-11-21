@@ -46,7 +46,7 @@ KeyId keyFromName(const char* name) {
     static const Entry table[] = {
         {"s", KeyId::S}, {"space", KeyId::SPACE},
         {"n", KeyId::N}, {"d", KeyId::D}, {"g", KeyId::G},  // set-library: new / copy / go to
-        {"e", KeyId::E}, {"m", KeyId::M},  // Instruments view: route on/off, mute
+        {"m", KeyId::M},  // Instruments view: mute
         {"up", KeyId::UP}, {"down", KeyId::DOWN},
         {"left", KeyId::LEFT}, {"right", KeyId::RIGHT},
         {"f1", KeyId::F1}, {"f2", KeyId::F2}, {"f3", KeyId::F3},
@@ -420,13 +420,13 @@ void HostControl::emitDump() {
     // ambiguity and can diff two dumps field-by-field (the 12.3 round-trip
     // check: dump -> set -> save -> reset -> dump -> compare).
     printf("D:view=%s\n", viewName(s.currentView));
-    // One line per occupied Instrument: slot:channel:muted:members:enabled (masks in hex).
+    // One line per occupied Instrument: slot:channel:muted:members (mask in hex).
     for (uint8_t i = 0; i < ui::state::MAX_INSTRUMENTS; ++i) {
         if (!((s.instrumentOccupied >> i) & 1u)) continue;
         const ui::state::InstrumentConfig& in = s.instruments[i];
-        printf("D:ins=%u:%u:%u:0x%04x:0x%04x\n", static_cast<unsigned>(i),
+        printf("D:ins=%u:%u:%u:0x%04x\n", static_cast<unsigned>(i),
                static_cast<unsigned>(in.channel), in.muted ? 1u : 0u,
-               static_cast<unsigned>(in.members), static_cast<unsigned>(in.enabled));
+               static_cast<unsigned>(in.members));
     }
     printf("D:bpm=%u\n", static_cast<unsigned>(s.bpm));
     printf("D:playing=%u\n", s.playing ? 1u : 0u);

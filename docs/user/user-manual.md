@@ -159,9 +159,8 @@ A pattern square says how that pattern relates to the selected Instrument:
 
 | Square | Meaning |
 |---|---|
-| Green | Assigned, route on, pattern active: it sounds on this channel. |
-| Blue | Assigned, route on, but the pattern itself is stopped. |
-| Red | Assigned, but its **route is off**: it stays in the Instrument and is silent here only. |
+| Green | Assigned and active: it sounds on this channel. |
+| Blue | Assigned, but the pattern itself is stopped. |
 | Faint grey | Not in this Instrument. |
 | (dark) | No such pattern. |
 
@@ -172,7 +171,7 @@ half brightness.
 ![INSTRUMENTS view: Instrument 1, Instrument 2, Instrument 2 muted, a refused action](img/instruments.svg)
 
 Five patterns and two Instruments. Instrument 1 (channel 1) plays patterns 1 to 4: pattern 3 is
-stopped (blue) and the route of pattern 4 is off (red, with the cursor on it). Instrument 2
+stopped (blue), and pattern 4 is not assigned (grey, with the cursor on it). Instrument 2
 (channel 2) plays patterns 1 and 5, so pattern 1 sounds on both channels. Third picture: Instrument 2 muted. Fourth
 picture: the strip turns red when an action is refused; it clears at your next key.
 
@@ -181,32 +180,24 @@ picture: the strip turns red when an action is refused; it clears at your next k
 | Arrow keys | Move the cursor over the patterns |
 | Ctrl+Left / Ctrl+Right | Select the previous / next Instrument |
 | Enter | Add the pattern under the cursor to the Instrument, or remove it |
-| E | Switch the route of that pattern in this Instrument on or off |
 | M | Mute or unmute the Instrument |
 | Shift+Left / Shift+Right | Change the Instrument's MIDI channel (channels used by another Instrument are skipped; no wrap-around) |
 | Ctrl+N | New Instrument on the lowest free channel (16 at most) |
 | Delete | Delete the selected Instrument (not the last one). Its patterns stay and are silent if no other Instrument plays them. |
 
-**Three switches decide whether a note sounds.** It sounds on a channel only if all three allow
-it:
-
-1. the **pattern** is active (a pattern is active from the moment it is created; this version has
-   no key to stop one, so use the route switch or the mute),
-2. the pattern's **route** in that Instrument is on (key E),
-3. the **Instrument** is not muted (key M).
-
-Changing one switch never changes the others. Unmuting an Instrument brings back exactly the
-routes that were on.
+**When a note sounds.** A pattern sounds on an Instrument's channel when it is assigned to the
+Instrument (Enter) and the Instrument is not muted (M). The pattern must also be active, which it
+is from the moment it is created (this version has no key to stop a pattern). To take one pattern
+out of a part for a while, press Enter to unassign it and Enter again to bring it back. To silence
+the whole part, mute the Instrument: unmuting brings back exactly the patterns that are assigned.
 
 **What a shared pattern does.** A pattern plays one note per step, and every Instrument that
 plays it sends that same note, with the same velocity and length, on its own channel. The pattern
 has one position, not one per Instrument, and a pattern with random elements draws the same
 random numbers whether it plays on one channel, several or none, so a seeded pattern repeats
-exactly in all cases. Switching a route on again resumes the pattern where it is, in step with
-the rest.
+exactly in all cases. Assigning a pattern again resumes it where it is, in step with the rest.
 
-**Changing things while playing.** Muting, switching a route off, removing a pattern from an
-Instrument, changing a channel and deleting an Instrument all release the sounding notes of the
+**Changing things while playing.** Muting, removing a pattern from an Instrument, changing a channel and deleting an Instrument all release the sounding notes of the
 affected channel at once (the Note Off goes to the channel the note was started on), so nothing
 is left hanging.
 
@@ -455,8 +446,8 @@ three on the same pitch set: every melody edit is now heard in all three rhythms
 
 ## 14. Saving and loading
 
-- **Ctrl+S** stores the complete setup: the Instruments (channel, mute, which patterns, which
-  routes are on), the patterns, all sets (also the ones no pattern uses), which sets each pattern
+- **Ctrl+S** stores the complete setup: the Instruments (channel, mute, which patterns), the
+  patterns, all sets (also the ones no pattern uses), which sets each pattern
   uses, all generation parameters and the tempo. Patterns that shared a set before saving still
   share it after loading. Only committed values are saved, so press Enter in an open editor
   first.
@@ -473,7 +464,10 @@ three on the same pitch set: every melody edit is now heard in all three rhythms
   the pattern (pattern 1 uses set 0 of each kind, pattern 2 set 1, and so on).
 - From before Instruments: these saves stored a MIDI channel per pattern, so GenSeq creates one
   Instrument per channel in use (lowest channel first) and puts the patterns that used it into it,
-  with every route on and nothing muted.
+  with nothing muted.
+- Saves from the first Instruments firmware could switch a pattern off inside one Instrument
+  (key E, since removed). Such a pattern loads as not assigned to that Instrument, so it stays
+  silent there as before.
 
 The next Ctrl+S writes the current format, which older firmware cannot read (it starts with
 defaults). Keep the old firmware file if you might go back.
@@ -492,11 +486,11 @@ The load pixel at the right end of row 4 (section 4) shows the load in every vie
 | Pixel | Meaning |
 |---|---|
 | off | Normal. |
-| amber | In the last 2 seconds a note waited 10 ms or more on the cable: big chords or many shared routes are smearing. |
+| amber | In the last 2 seconds a note waited 10 ms or more on the cable: big chords or many shared patterns are smearing. |
 | red | Overload: a note would have left the cable 250 ms or more late. GenSeq stopped, released every note and sent MIDI Stop. |
 
 Shorter surges only smear the timing and show amber. After a red pixel, reduce the load (mute an
-Instrument, switch routes off) and press **Space** to play again; the pixel goes off.
+Instrument, unassign patterns) and press **Space** to play again; the pixel goes off.
 
 Measured with 6 patterns that each play every sixteenth note at 140 BPM, all in every Instrument:
 10 Instruments play for 30 seconds without stopping (amber from 2 Instruments on, notes at most
@@ -505,8 +499,8 @@ Lighter or less uniform patterns leave room for more.
 
 ## 16. Not in this version
 
-- A key to stop a single pattern everywhere (the pattern's own active switch). Use the route
-  switch (E) in one Instrument, or mute the Instrument. Delete removes a pattern.
+- A key to stop a single pattern everywhere (the pattern's own active switch). Unassign it from
+  its Instruments (Enter), or mute the Instrument. Delete removes a pattern.
 - Names for Instruments. Instruments are known by their MIDI channel.
 - Two Instruments on one MIDI channel. To play two parts on one channel, put both patterns into
   one Instrument.

@@ -38,8 +38,11 @@ Decisions taken in this draft (each can be changed during review):
 - A pattern that belongs to no Instrument is allowed and is silent.
 - F4, F5 and F6 open the Gate, Note and Velocity Set views. After a restart the UI starts in the
   Instruments view. (Chosen by the user.)
-- A pattern can be switched off in two ways: for all Instruments with its active flag, or for
-  one Instrument only with a per-route enable flag. (Chosen by the user.)
+- A pattern sounds on an Instrument's channel when it is active, assigned to the Instrument and
+  the Instrument is not muted. (Changed after hardware review on 2026-11-21: the separate
+  per-route enable flag and its key E were removed because their MIDI result was identical to
+  unassigning the pattern. Criteria 3.10-3.14 are withdrawn and the criteria below that named the
+  flag are updated.)
 
 ## Glossary
 
@@ -49,9 +52,6 @@ Decisions taken in this draft (each can be changed during review):
   occupied or free.
 - **Pattern Selection**: The set of patterns assigned to an Instrument, stored as a bitmask over
   the 15 patterns.
-- **Route enable flag**: A per-Instrument, per-pattern flag, stored as a second bitmask over the
-  15 patterns. It switches one pattern off in one Instrument only, without removing it from the
-  Pattern Selection. Its value is meaningful only for patterns in the Pattern Selection.
 - **Member Instrument**: An Instrument whose Pattern Selection contains a given pattern.
 - **Pattern**: As defined in `separate-velocity-set-gate-set-and-note-set`, except that it has
   no MIDI channel of its own.
@@ -60,8 +60,7 @@ Decisions taken in this draft (each can be changed during review):
 - **Instrument Mute**: A per-Instrument flag that silences that Instrument without changing the
   active flag of any pattern.
 - **Audible route**: A pair (pattern, Instrument) where the pattern's active flag is set, the
-  Instrument is a Member Instrument of the pattern, the route enable flag of the pair is set,
-  and the Instrument is not muted. Each Audible route sends the pattern's notes on the
+  Instrument is a Member Instrument of the pattern, and the Instrument is not muted. Each Audible route sends the pattern's notes on the
   Instrument's channel.
 - **Working State**: The in-RAM state edited by the UI (`UIState`) and mirrored to core1.
 - **Save Record**: The persisted configuration written by Ctrl+S (`persistence::` format).
@@ -141,21 +140,14 @@ several channels.
 8. WHEN a toggle removes a pattern from an Instrument while a note sent for that route is
    sounding, THE Sequencer SHALL send the Note Off for it on the channel used for the Note On.
 9. THE total number of patterns SHALL NOT exceed MAX_PATTERNS = 15.
-10. WHEN a pattern is added to an Instrument's Pattern Selection, THE route enable flag of that
-    pair SHALL be set. WHEN it is removed, THE flag SHALL be cleared.
-11. WHEN the user disables the route of a pattern in an Instrument, THE pattern SHALL stay in
-    that Instrument's Pattern Selection and THE Sequencer SHALL stop emitting new Note On
-    messages for that pair on the Instrument's channel, applying the operation boundary
-    (immediate, beat or bar) that a per-pattern deactivation uses today. Notes sounding for
-    that pair SHALL get their Note Off on the channel used for the Note On.
-12. WHEN the user disables a route, THE Working State SHALL NOT change the pattern's active
-    flag, the same pattern's route in any other Instrument, any Instrument mute flag, or the
-    pattern's generation state.
-13. WHEN the user enables a route again, THE pattern SHALL resume on that Instrument's channel
-    at the pattern's current step and SHALL NOT restart.
-14. IF the user toggles the route enable flag of a pattern that is not in the Instrument's
-    Pattern Selection, THEN THE UI SHALL ignore the request and leave the Working State
-    unchanged.
+10. (Withdrawn 2026-11-21: per-route enable flag removed; see Introduction.)
+11. WHEN a pattern is assigned to an Instrument again, THE pattern SHALL resume on that
+    Instrument's channel at the pattern's current step and SHALL NOT restart.
+12. WHEN the user assigns or unassigns a pattern, THE Working State SHALL NOT change the
+    pattern's active flag, its assignment in any other Instrument, any Instrument mute flag, or
+    the pattern's generation state.
+13. (Withdrawn 2026-11-21.)
+14. (Withdrawn 2026-11-21.)
 
 ### Requirement 4: Instrument Mute
 
@@ -178,14 +170,14 @@ can drop a whole part out and bring it back with the same patterns playing as be
    Instrument's mute flag, when an Instrument is muted or unmuted.
 7. WHEN the user changes a pattern's active flag, THE new flag SHALL apply to the pattern in
    every Member Instrument. A pattern whose active flag is cleared SHALL be silent on all
-   channels, regardless of Instrument mute flags and route enable flags. The active flag of
-   a pattern SHALL be kept when its routes are enabled or disabled, and the route enable
-   flags SHALL be kept when the active flag changes.
+   channels, regardless of Instrument mute flags. The active flag of a pattern SHALL be kept
+   when it is assigned or unassigned, and the assignments SHALL be kept when the active flag
+   changes.
 8. THE UI SHALL show a muted Instrument differently from an unmuted one, and SHALL show
    patterns that have at least one Audible route differently from patterns that have none.
-9. THE three switches SHALL combine by AND: a pattern sounds on a channel only when the pattern
-   is active, the route is enabled and the Instrument is not muted. Changing one switch SHALL
-   NOT change the other two.
+9. THE switches SHALL combine by AND: a pattern sounds on a channel only when the pattern is
+   active, assigned to the Instrument and the Instrument is not muted. Changing one SHALL NOT
+   change the others.
 
 ### Requirement 5: Shared set libraries
 
@@ -217,13 +209,11 @@ channels, mutes, and which patterns each Instrument plays.
    occupied Instruments, create and delete an Instrument, mute and unmute it, change its
    channel, and toggle patterns in its Pattern Selection.
 3. THE Instruments view SHALL show for the selected Instrument its slot number, MIDI channel,
-   mute state, and each of the 15 patterns in one of four states: not in the Pattern
-   Selection, in the Pattern Selection with the route enabled and the pattern active (sounding),
-   in the Pattern Selection with the route enabled but the pattern inactive, and in the Pattern
-   Selection with the route disabled.
-   3a. THE Instruments view SHALL let the user move a pattern cursor over the 15 patterns, add or
-   remove the pattern under the cursor in the Pattern Selection, and enable or disable its
-   route, each with its own key.
+   mute state, and each of the 15 patterns in one of three states: not in the Pattern
+   Selection, in the Pattern Selection and active (sounding), and in the Pattern Selection but
+   inactive.
+   3a. THE Instruments view SHALL let the user move a pattern cursor over the 15 patterns and add
+   or remove the pattern under the cursor in the Pattern Selection.
 4. THE Instruments view SHALL show an overview of all 16 Instrument Slots (free, occupied,
    muted, selected).
 5. THE UI SHALL render every new state on the 16x16 LED matrix without text, using colours and
@@ -267,14 +257,16 @@ channels survive a power cycle.
 #### Acceptance Criteria
 
 1. THE Save Record SHALL store the Instrument occupancy and, per occupied Instrument, its MIDI
-   channel, mute flag, Pattern Selection and route enable flags.
+   channel, mute flag and Pattern Selection. (The v4 record keeps an `enabled` mask from the
+   withdrawn route flag; it is written equal to the Pattern Selection, and a pattern whose bit is
+   cleared in a loaded record loads as not assigned, so older saves sound the same.)
 2. WHEN the user saves and the device later restores the record, THE Working State SHALL equal
-   the saved state, including Instrument channels, mute flags, Pattern Selections and route enable flags.
+   the saved state, including Instrument channels, mute flags and Pattern Selections.
 3. THE Save Record SHALL NOT store a MIDI channel per pattern.
 4. WHEN the device loads a Legacy Record, THE Working State SHALL create one Instrument per
    distinct pattern MIDI channel, in ascending channel order, SHALL put each pattern in the
-   Pattern Selection of the Instrument with its former channel, SHALL set the route enable flag
-   of every such pair, and SHALL set every Instrument to not muted. The resulting MIDI output SHALL equal the output the Legacy Record produced
+   Pattern Selection of the Instrument with its former channel, and SHALL set every Instrument to
+   not muted. The resulting MIDI output SHALL equal the output the Legacy Record produced
    before this feature.
 5. IF a loaded record has an occupied Instrument with a channel outside 1..16, two occupied
    Instruments with the same channel, a Pattern Selection or route enable mask containing a
@@ -363,8 +355,8 @@ that I can use them without reading code.
 #### Acceptance Criteria
 
 1. THE user manual SHALL describe Instruments, the channel setting, Instrument mute, sharing a
-   pattern between Instruments, the three switches (pattern active, route enable, Instrument
-   mute) and how they combine, and what happens to an old save.
+   pattern between Instruments, when a pattern sounds (active, assigned, Instrument not muted),
+   and what happens to an old save.
 2. THE user manual SHALL describe the function-key map F1 to F6 and remove any reference to the
    test view.
 3. THE user manual SHALL include LED-matrix screens generated from the real view code for the

@@ -10,8 +10,8 @@
 
 namespace ui::state {
 
-// Effective pattern mask of a slot as core1 sees it: members AND enabled AND NOT muted, limited to
-// existing patterns. A free slot gives 0.
+// Effective pattern mask of a slot as core1 sees it: members AND NOT muted, limited to existing
+// patterns. A free slot gives 0.
 uint16_t effectiveMask(const UIState& state, uint8_t slot);
 
 // Protocol channel (0..15) of a slot.
@@ -37,14 +37,10 @@ bool stepInstrumentChannel(UIState& state, uint8_t slot, int direction);
 
 bool toggleInstrumentMuteFlag(UIState& state, uint8_t slot);
 
-// Assign / unassign pattern `p` (sets or clears both its members and enabled bit).
-// False when the slot is free or p >= patternCount.
+// Assign / unassign pattern `p`. False when the slot is free or p >= patternCount.
 bool toggleInstrumentMember(UIState& state, uint8_t slot, uint8_t p);
 
-// Flip the route enable bit of pattern `p`. False + NOT_MEMBER notice when p is not a member.
-bool toggleInstrumentRouteFlag(UIState& state, uint8_t slot, uint8_t p);
-
-// Add pattern `p` to the Pattern Selection of `slot` (route on). Used when a pattern is created.
+// Add pattern `p` to the Pattern Selection of `slot`. Used when a pattern is created.
 void assignPatternToInstrument(UIState& state, uint8_t slot, uint8_t p);
 
 // Pattern `index` was removed: shift every Instrument's masks (common::removePatternBit).

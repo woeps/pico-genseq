@@ -20,7 +20,7 @@ One byte takes 320 us on the wire (10 bits), a three-byte Note On 960 us. The ca
 | Message | Bytes | When |
 |---|---|---|
 | Note On | `0x9n note velocity` (velocity 1-127) | rising gate edge of a pattern, once per route of the pattern |
-| Note Off | `0x8n note 0` | falling gate edge, Stop, fault, a route removed / muted / channel changed, pattern removed or deactivated |
+| Note Off | `0x8n note 0` | falling gate edge, Stop, fault, a pattern unassigned / Instrument muted / channel changed, pattern removed or deactivated |
 | Timing Clock | `0xF8` | every tick (24 per quarter note) while playing |
 | Start | `0xFA` | Play |
 | Stop | `0xFC` | Stop, and the timing fault |
@@ -36,8 +36,8 @@ boundary (`midi_channel::fromUserChannel`).
    velocity: step probability, scale quantize/skip, velocity humanize, coupling. It draws its random
    numbers once per step, so a seeded pattern repeats the same notes whatever its routes are.
 3. The note goes to every route in `RouteTable::routes[pattern]` in ascending Instrument slot
-   order, each on that Instrument's channel. A pattern without a route still advances and draws,
-   so it stays in phase when a route is switched on.
+   order, each on that Instrument's channel. A pattern without a route (not assigned, or all its
+   Instruments muted) still advances and draws, so it stays in phase when it is assigned again.
 4. `NoteLifecycle::noteOn(pattern, route, channel, note, velocity)` records the voice and writes the
    bytes. If the voice already holds a note, it is released first (monophonic per route). If another
    voice already sounds the same (channel, key), a Note Off is sent before the new Note On, so the

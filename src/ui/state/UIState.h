@@ -218,8 +218,8 @@ enum class SetNotice : uint8_t {
 
 // --- Instruments (help-me-brainstorm-an-additional) --------------------------------------
 // An Instrument owns one MIDI channel and decides which patterns sound on it. A pattern may be
-// assigned to several Instruments. Three independent switches decide whether a note sounds:
-// the pattern's active flag, the per-route enable flag, and the Instrument mute.
+// assigned to several Instruments. A note sounds on an Instrument's channel when the pattern is
+// active, assigned to the Instrument, and the Instrument is not muted.
 constexpr uint8_t MAX_INSTRUMENTS = 16;
 static_assert(MAX_INSTRUMENTS == common::MAX_INSTRUMENTS);
 static_assert(MAX_PATTERNS == common::MAX_ROUTE_PATTERNS);
@@ -228,7 +228,6 @@ struct InstrumentConfig {
     uint8_t channel = 1;     // user channel 1..16, unique among occupied Instruments
     bool muted = false;
     uint16_t members = 0;    // bit p: pattern p is assigned to this Instrument
-    uint16_t enabled = 0;    // bit p: the route of pattern p is on (meaningful for members only)
 };
 
 // Transient refusal feedback for Instrument actions; NONE means no notice.
@@ -237,12 +236,11 @@ enum class InstrumentNotice : uint8_t {
     FULL,             // all 16 slots occupied
     LAST_INSTRUMENT,  // cannot delete the only Instrument
     NO_FREE_CHANNEL,  // no free channel in the stepping direction
-    NOT_MEMBER,       // route toggle on a pattern that is not assigned
 };
 
 constexpr std::array<InstrumentConfig, MAX_INSTRUMENTS> defaultInstruments() {
     std::array<InstrumentConfig, MAX_INSTRUMENTS> a{};
-    a[0] = InstrumentConfig{1, false, 0x0001, 0x0001};  // channel 1 plays pattern 0
+    a[0] = InstrumentConfig{1, false, 0x0001};  // channel 1 plays pattern 0
     return a;
 }
 

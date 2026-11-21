@@ -33,7 +33,7 @@ See the [GenSeq v1 Product Charter](docs/product/genseq-v1-product-charter.md) f
 - The USB keyboard is a prototyping interface, not the intended final control surface.
 - The LED matrix is the only planned display; older LCD and encoder references describe a previous direction.
 - Connectivity is currently limited to one serial MIDI output; MIDI input is a possible later extension.
-- A pattern cannot yet be stopped on its own from the keyboard (use an Instrument route or mute).
+- A pattern cannot yet be stopped on its own from the keyboard (unassign it from its Instruments or mute them).
 - Scenes, arrangement and projects (milestone 5) are not implemented.
 
 ## Documentation

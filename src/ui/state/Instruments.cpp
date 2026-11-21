@@ -36,7 +36,7 @@ uint16_t effectiveMask(const UIState& state, uint8_t slot) {
     if (!occupied(state, slot)) return 0;
     const InstrumentConfig& in = state.instruments[slot];
     if (in.muted) return 0;
-    return static_cast<uint16_t>(in.members & in.enabled & patternMask(state));
+    return static_cast<uint16_t>(in.members & patternMask(state));
 }
 
 uint8_t protocolChannelOf(const UIState& state, uint8_t slot) {
@@ -73,7 +73,7 @@ bool createInstrumentSlot(UIState& state, uint8_t& newSlot) {
         state.instrumentNotice = InstrumentNotice::FULL;
         return false;
     }
-    state.instruments[slot] = InstrumentConfig{channel, false, 0, 0};
+    state.instruments[slot] = InstrumentConfig{channel, false, 0};
     state.instrumentOccupied = static_cast<uint16_t>(state.instrumentOccupied | (1u << slot));
     state.selectedInstrument = static_cast<uint8_t>(slot);
     newSlot = static_cast<uint8_t>(slot);
@@ -120,27 +120,7 @@ bool toggleInstrumentMember(UIState& state, uint8_t slot, uint8_t p) {
     state.instrumentNotice = InstrumentNotice::NONE;
     if (!occupied(state, slot) || p >= state.patternCount) return false;
     InstrumentConfig& in = state.instruments[slot];
-    const uint16_t bit = static_cast<uint16_t>(1u << p);
-    if (in.members & bit) {
-        in.members = static_cast<uint16_t>(in.members & ~bit);
-        in.enabled = static_cast<uint16_t>(in.enabled & ~bit);
-    } else {
-        in.members = static_cast<uint16_t>(in.members | bit);
-        in.enabled = static_cast<uint16_t>(in.enabled | bit);
-    }
-    return true;
-}
-
-bool toggleInstrumentRouteFlag(UIState& state, uint8_t slot, uint8_t p) {
-    state.instrumentNotice = InstrumentNotice::NONE;
-    if (!occupied(state, slot) || p >= state.patternCount) return false;
-    InstrumentConfig& in = state.instruments[slot];
-    const uint16_t bit = static_cast<uint16_t>(1u << p);
-    if (!(in.members & bit)) {
-        state.instrumentNotice = InstrumentNotice::NOT_MEMBER;
-        return false;
-    }
-    in.enabled = static_cast<uint16_t>(in.enabled ^ bit);
+    in.members = static_cast<uint16_t>(in.members ^ (1u << p));
     return true;
 }
 
@@ -148,13 +128,11 @@ void assignPatternToInstrument(UIState& state, uint8_t slot, uint8_t p) {
     if (!occupied(state, slot) || p >= MAX_PATTERNS) return;
     const uint16_t bit = static_cast<uint16_t>(1u << p);
     state.instruments[slot].members = static_cast<uint16_t>(state.instruments[slot].members | bit);
-    state.instruments[slot].enabled = static_cast<uint16_t>(state.instruments[slot].enabled | bit);
 }
 
 void removePatternFromInstruments(UIState& state, uint8_t index) {
     for (uint8_t s = 0; s < MAX_INSTRUMENTS; ++s) {
         state.instruments[s].members = common::removePatternBit(state.instruments[s].members, index);
-        state.instruments[s].enabled = common::removePatternBit(state.instruments[s].enabled, index);
     }
 }
 
@@ -190,7 +168,6 @@ bool validateInstruments(const UIState& state) {
         if (in.channel < 1 || in.channel > 16) return false;
         if (channelUsedByOther(state, i, in.channel)) return false;
         if (in.members & ~valid) return false;
-        if (in.enabled & ~in.members) return false;
     }
     return true;
 }

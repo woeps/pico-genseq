@@ -168,26 +168,37 @@ void test_ui_mapping_round_trips_instruments() {
     UIState s;
     s.patternCount = 4;
     s.activePatterns = 0b1011;
-    s.instruments[0] = InstrumentConfig{1, false, 0b0011, 0b0001};
-    s.instruments[3] = InstrumentConfig{12, true, 0b1010, 0b1010};
+    s.instruments[0] = InstrumentConfig{1, false, 0b0011};
+    s.instruments[3] = InstrumentConfig{12, true, 0b1010};
     s.instrumentOccupied = 0b1001;
     s.selectedInstrument = 3;
 
     PersistableConfig cfg{};
     toPersistableConfig(s, cfg);
+    check(cfg.instruments[0].enabled == cfg.instruments[0].members, "enabled is written equal to members");
     PersistableConfig loaded{};
     check(decode(encode(cfg), loaded) == LoadStatus::OK, "mapped config encodes and loads");
 
     UIState t;
     applyPersistableConfig(t, loaded);
     check(t.instrumentOccupied == 0b1001, "occupancy restored");
-    check(t.instruments[0].channel == 1 && t.instruments[0].members == 0b0011 &&
-              t.instruments[0].enabled == 0b0001 && !t.instruments[0].muted,
+    check(t.instruments[0].channel == 1 && t.instruments[0].members == 0b0011 && !t.instruments[0].muted,
           "Instrument 0 restored");
-    check(t.instruments[3].channel == 12 && t.instruments[3].members == 0b1010 &&
-              t.instruments[3].enabled == 0b1010 && t.instruments[3].muted,
-          "Instrument 3 restored (muted, pattern 1 shared with Instrument 0)");
+    check(t.instruments[3].channel == 12 && t.instruments[3].members == 0b1010 && t.instruments[3].muted,
+          "Instrument 3 restored (muted, pattern 2 shared with Instrument 0)");
     check(t.selectedInstrument == 0, "selection resets to the lowest occupied slot");
+}
+
+// A v4 save from before the route switch was removed: a pattern whose route was off loads as
+// not assigned, so it stays silent on that Instrument exactly as before.
+void test_route_off_in_an_older_v4_save_loads_as_unassigned() {
+    using namespace ui::state;
+    PersistableConfig c = sample();              // Instrument 0: members 0b0000111, enabled 0b0000101
+    PersistableConfig loaded{};
+    check(decode(encode(c), loaded) == LoadStatus::OK, "older v4 record loads");
+    UIState t;
+    applyPersistableConfig(t, loaded);
+    check(t.instruments[0].members == 0b0000101, "route-off pattern is no longer assigned");
 }
 
 }  // namespace
@@ -201,6 +212,7 @@ int main() {
     test_corrupt_v4_records_are_rejected();
     test_worst_case_record_fits_half_of_the_fram_region();
     test_ui_mapping_round_trips_instruments();
+    test_route_off_in_an_older_v4_save_loads_as_unassigned();
     if (failures == 0) std::printf("example_instrument_persistence: all checks passed\n");
     return failures == 0 ? 0 : 1;
 }

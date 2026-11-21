@@ -33,17 +33,17 @@ Instrument (16 slots)              Pattern (up to 15)                Set librari
  channel 1..16 (unique)             active flag                       Gate Sets   (rhythm)
  muted                              gate / note / velocity reference ─► Note Sets   (pitches, scale)
  members  (pattern bitmask)  ──►                                      Velocity Sets (velocities,
- enabled  (route bitmask)                                                            humanize, seed)
+                                                                                    humanize, seed)
 ```
 
 - **Sets** live in three global libraries (`SetLibrary<…>` in `UIState.h`). A pattern holds one
   slot reference per library, so several patterns can share a set; editing a set changes every
   pattern that references it.
-- **Instruments** (`InstrumentConfig`) hold one MIDI channel and two pattern bitmasks: `members`
-  (assigned) and `enabled` (route switched on). A pattern may be a member of several Instruments
-  and then plays the same notes on each channel.
-- A note sounds on an Instrument's channel only if the pattern is active, its route is enabled
-  and the Instrument is not muted. core0 folds `members & enabled & !muted` into one effective
+- **Instruments** (`InstrumentConfig`) hold one MIDI channel, a mute flag and the `members`
+  bitmask of assigned patterns. A pattern may be a member of several Instruments and then plays
+  the same notes on each channel; each (pattern, Instrument) pair is a *route* on core1.
+- A note sounds on an Instrument's channel only if the pattern is active, assigned to the
+  Instrument, and the Instrument is not muted. core0 folds `members & !muted` into one effective
   mask per Instrument before sending it to core1.
 - Generation parameters (probability, scale, humanize, seed, coupling) are stored with the set
   that hosts them and reach core1 per pattern through `GEN_PARAMS_SET`.

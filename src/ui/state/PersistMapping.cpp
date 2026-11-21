@@ -163,8 +163,9 @@ void toPersistableConfig(const UIState& state, persistence::PersistableConfig& c
         p.velocityRef = state.patternRefs[i].velocity;
     }
 
-    // Instruments: channel, mute, Pattern Selection and route enable flags. Masks are limited
-    // to the patterns that exist so the record always passes its own validation.
+    // Instruments: channel, mute and Pattern Selection. Masks are limited to the patterns that
+    // exist so the record always passes its own validation. The record's `enabled` mask (format
+    // v4 had a per-route switch, since removed) is written equal to `members`.
     const uint16_t valid = static_cast<uint16_t>((1u << count) - 1u);
     cfg.instrumentOccupied = state.instrumentOccupied;
     for (uint8_t s = 0; s < MAX_INSTRUMENTS; ++s) {
@@ -174,7 +175,7 @@ void toPersistableConfig(const UIState& state, persistence::PersistableConfig& c
         r.channel = in.channel;
         r.muted = in.muted ? 1 : 0;
         r.members = static_cast<uint16_t>(in.members & valid);
-        r.enabled = static_cast<uint16_t>(in.enabled & r.members);
+        r.enabled = r.members;
     }
 }
 
@@ -241,7 +242,6 @@ void applyPersistableConfig(UIState& state,
             const uint16_t all = valid;
             state.instruments = defaultInstruments();
             state.instruments[0].members = all;
-            state.instruments[0].enabled = all;
             state.instrumentOccupied = 0x0001;
         } else {
             state.instruments = defaultInstruments();
@@ -255,8 +255,9 @@ void applyPersistableConfig(UIState& state,
                 InstrumentConfig& in = state.instruments[s];
                 in.channel = static_cast<uint8_t>(r.channel < 1 ? 1 : (r.channel > 16 ? 16 : r.channel));
                 in.muted = r.muted != 0;
-                in.members = static_cast<uint16_t>(r.members & valid);
-                in.enabled = static_cast<uint16_t>(r.enabled & in.members);
+                // A pattern whose route was switched off (older v4 saves) was silent on this
+                // Instrument; it loads as not assigned, so the output stays the same.
+                in.members = static_cast<uint16_t>(r.members & r.enabled & valid);
             }
         }
         state.selectedInstrument = 0;

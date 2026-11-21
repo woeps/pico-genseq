@@ -15,8 +15,7 @@ namespace ui {
 //   row 15     Instrument strip, one pixel per slot
 //
 // Keys: arrows move the pattern cursor, Ctrl+Left/Right select the previous/next Instrument,
-// Enter assigns or unassigns the pattern under the cursor, E switches its route on or off,
-// M mutes or unmutes the Instrument, Shift+Left/Right change the MIDI channel, Ctrl+N creates an
+// Enter assigns or unassigns the pattern under the cursor, M mutes or unmutes the Instrument, Shift+Left/Right change the MIDI channel, Ctrl+N creates an
 // Instrument, Delete deletes the selected one.
 class InstrumentsView : public IView {
 public:
@@ -36,9 +35,8 @@ public:
     //                                                 0xXXGGRRBB
     static constexpr uint32_t COLOR_LABEL          = 0xFFFFEE00;  // yellow
     static constexpr uint32_t COLOR_LABEL_MUTED    = 0x0000FF00;  // red
-    static constexpr uint32_t COLOR_SOUNDING       = 0x00FF0000;  // green: member, route on, pattern active
-    static constexpr uint32_t COLOR_PATTERN_OFF    = 0x000000FF;  // blue: member, route on, pattern inactive
-    static constexpr uint32_t COLOR_ROUTE_OFF      = 0x0000FF00;  // red: member, route off
+    static constexpr uint32_t COLOR_SOUNDING       = 0x00FF0000;  // green: assigned, pattern active
+    static constexpr uint32_t COLOR_PATTERN_OFF    = 0x000000FF;  // blue: assigned, pattern inactive
     static constexpr uint32_t COLOR_NOT_MEMBER     = 0x00101010;  // faint grey
     static constexpr uint32_t COLOR_CURSOR         = 0x00FFFFFF;  // white
     static constexpr uint32_t COLOR_STRIP_OCCUPIED = 0x00000040;  // dim blue

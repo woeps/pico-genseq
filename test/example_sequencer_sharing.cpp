@@ -170,7 +170,7 @@ UIState makeState(bool shared, common::PlayingOrder order) {
     UIState s;
     s.patternCount = 3;
     s.activePatterns = 0b111;
-    s.instruments[0].members = s.instruments[0].enabled = 0b111;  // channel 1 plays all three
+    s.instruments[0].members = 0b111;  // channel 1 plays all three
     uint8_t slot = 0;
     createSet(s, SetType::GATE, slot);
     createSet(s, SetType::GATE, slot);
@@ -258,7 +258,7 @@ struct EditRig {
     EditRig() {
         s.patternCount = 2;
         s.activePatterns = 0b11;
-        s.instruments[0].members = s.instruments[0].enabled = 0b11;
+        s.instruments[0].members = 0b11;
         s.noteLib.slots[0].count = 1;
         s.noteLib.slots[0].pitches[0] = 60;
         s.gateLib.slots[0].steps = 1;

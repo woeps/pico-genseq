@@ -57,7 +57,7 @@ public:
 
     // Replace one Instrument route slot (INSTRUMENT_SET application point, public so host tests
     // can route patterns directly). `protocolChannel` is 0..15; `mask` is the EFFECTIVE set of
-    // patterns that sound on that slot (members AND enabled AND NOT muted, folded by core0).
+    // patterns that sound on that slot (members AND NOT muted, folded by core0).
     // Voices of patterns that leave the mask, and every voice of the slot when its channel
     // changes, are released first, with the Note Off on the channel recorded at Note On.
     void applyInstrument(uint8_t slot, uint8_t protocolChannel, uint16_t mask);

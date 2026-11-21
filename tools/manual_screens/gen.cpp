@@ -59,7 +59,7 @@ static UIState base() {
     s.velocityLib.occupied = 0x0001;
     s.patternRefs[2].gate = 1;
     s.gateLib.slots[0].steps = 16; s.gateLib.slots[0].pulses = 5;
-    s.instruments[0].members = s.instruments[0].enabled = 0x7;  // one Instrument plays all three
+    s.instruments[0].members = 0x7;  // one Instrument plays all three
     return s;
 }
 static void gateEdit(UIState& s, state::GateSetProperty p) {
@@ -228,17 +228,17 @@ int main(int argc, char** argv) {
     }
     // --- Instruments (section 5a) ---
     {
-        // Five patterns. Instrument 1 (channel 1): patterns 1-4 assigned, pattern 3 stopped
-        // (inactive), pattern 4's route switched off. Instrument 2 (channel 2): patterns 1 and 5.
+        // Five patterns. Instrument 1 (channel 1): patterns 1-3 assigned, pattern 3 stopped
+        // (inactive), pattern 4 not assigned. Instrument 2 (channel 2): patterns 1 and 5.
         // Pattern 1 is therefore shared between both Instruments.
         UIState s = base();
         s.currentView = state::ViewId::INSTRUMENTS;
         s.patternCount = 5;
         s.activePatterns = 0b11011;
-        s.instruments[0].members = 0b01111; s.instruments[0].enabled = 0b00111;
+        s.instruments[0].members = 0b00111;
         uint8_t slot = 0;
         state::createInstrumentSlot(s, slot);
-        s.instruments[1].members = s.instruments[1].enabled = 0b10001;
+        s.instruments[1].members = 0b10001;
         s.selectedInstrument = 0;
         s.instrumentCursor = 3;
         matrix.clear();  // as InstrumentsView::onEnter does on the device
@@ -249,7 +249,7 @@ int main(int argc, char** argv) {
         s.instruments[1].muted = true;
         Frame c = grab("Instrument 2 muted", instruments, s);
         s.instruments[1].muted = false;
-        s.instrumentNotice = state::InstrumentNotice::NOT_MEMBER;
+        s.instrumentNotice = state::InstrumentNotice::LAST_INSTRUMENT;
         s.instrumentCursor = 2;
         Frame n = grab("Refused action", instruments, s);
         writeSvg(d, "instruments", {a, b, c, n});

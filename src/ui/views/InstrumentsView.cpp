@@ -48,9 +48,6 @@ void InstrumentsView::handleEvent(state::UIState& state, const events::Event& ev
         case combo(KeyId::ENTER):
             if (pressed) state::toggleInstrumentPattern(state, slot, cursor);
             break;
-        case combo(KeyId::E):
-            if (pressed) state::toggleInstrumentRoute(state, slot, cursor);
-            break;
         case combo(KeyId::M):
             if (pressed) state::toggleInstrumentMute(state, slot);
             break;
@@ -79,7 +76,6 @@ void InstrumentsView::render(const state::UIState& state)
         const uint8_t y = GRID_START_Y + (i / GRID_COLS) * (SQUARE_SIZE + GRID_GAP);
         const bool exists = i < state.patternCount;
         const bool member = exists && ((in.members >> i) & 1u);
-        const bool routeOn = member && ((in.enabled >> i) & 1u);
         const bool active = ((state.activePatterns >> i) & 1u) != 0;
 
         // One colour per cell, so the state stays readable when the cursor takes a pixel.
@@ -88,8 +84,6 @@ void InstrumentsView::render(const state::UIState& state)
             color = 0;
         } else if (!member) {
             color = COLOR_NOT_MEMBER;
-        } else if (!routeOn) {
-            color = COLOR_ROUTE_OFF;
         } else {
             color = active ? COLOR_SOUNDING : COLOR_PATTERN_OFF;
         }

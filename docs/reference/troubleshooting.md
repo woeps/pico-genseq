@@ -169,7 +169,7 @@ wiring (GPIO 10-13) with the FRAM bring-up firmware (`-DGENSEQ_BUILD_FRAM_BRINGU
 ### Red Load Pixel / Playback Stops
 
 The MIDI output was overloaded: notes would have left the cable 250 ms or more late. Mute an
-Instrument or switch routes off and press Space. An amber pixel only means notes are being
+Instrument or unassign patterns and press Space. An amber pixel only means notes are being
 smeared by 10 ms or more. See the user manual, section 15 (MIDI output load).
 
 ## Hardware Issues

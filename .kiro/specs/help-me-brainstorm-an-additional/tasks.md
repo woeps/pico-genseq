@@ -324,6 +324,13 @@ line endings keep CRLF after editing.
     | 16 | overload after about 3 s | 938 ms | 972 B (311 ms) |
   - [x] 17.3 Manual: load pixel, overload fault and recovery, measured limits.
 
+- [x] 18. Remove the per-route enable flag (review decision 2026-11-21)
+  - [x] 18.1 Drop `InstrumentConfig::enabled`, key E, `toggleInstrumentRoute`, the route-off cell
+    colour and the `NOT_MEMBER` notice; fold `members & !muted`.
+  - [x] 18.2 Keep the v4 `enabled` field: write it equal to `members`; load `members & enabled`.
+  - [x]* 18.3 Update reducer and view tests; add `test_route_off_in_an_older_v4_save_loads_as_unassigned`.
+  - [x] 18.4 Update the manual, the generated screens, the developer docs and requirements.
+
 - [x] 13. Final acceptance
   - [x] 13.1 Walk the requirements list R1-R10 against the tests and the HW results and record any
     gap in this file.

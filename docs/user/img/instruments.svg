@@ -91,7 +91,7 @@
 <circle cx="117" cy="89" r="5.6" fill="#0000ff"/>
 <circle cx="131" cy="89" r="4.2" fill="#1c1c20"/>
 <circle cx="145" cy="89" r="5.6" fill="#ffffff"/>
-<circle cx="159" cy="89" r="5.6" fill="#ff0000"/>
+<circle cx="159" cy="89" r="5.6" fill="#303030"/>
 <circle cx="173" cy="89" r="4.2" fill="#1c1c20"/>
 <circle cx="187" cy="89" r="5.6" fill="#303030"/>
 <circle cx="201" cy="89" r="5.6" fill="#303030"/>
@@ -106,8 +106,8 @@
 <circle cx="103" cy="103" r="5.6" fill="#0000ff"/>
 <circle cx="117" cy="103" r="5.6" fill="#0000ff"/>
 <circle cx="131" cy="103" r="4.2" fill="#1c1c20"/>
-<circle cx="145" cy="103" r="5.6" fill="#ff0000"/>
-<circle cx="159" cy="103" r="5.6" fill="#ff0000"/>
+<circle cx="145" cy="103" r="5.6" fill="#303030"/>
+<circle cx="159" cy="103" r="5.6" fill="#303030"/>
 <circle cx="173" cy="103" r="4.2" fill="#1c1c20"/>
 <circle cx="187" cy="103" r="5.6" fill="#303030"/>
 <circle cx="201" cy="103" r="5.6" fill="#303030"/>

@@ -38,7 +38,7 @@ namespace commands {
         PATTERN_VELOCITY_SET_MULTI,
         // Instrument routing: replace one route slot. Wire: header word (param1 = slot,
         // param2 = protocol channel 0..15), then the mask word (effective set of patterns that
-        // sound on the slot: members AND enabled AND NOT muted, folded by core0). One command is
+        // sound on the slot: members AND NOT muted, folded by core0). One command is
         // atomic on core1, so no batch frame is needed.
         INSTRUMENT_SET,
         // Add more commands as needed

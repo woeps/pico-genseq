@@ -152,7 +152,9 @@ struct VelocitySetRecord {
 constexpr uint8_t MAX_INSTRUMENTS = 16;
 
 // One Instrument: a MIDI channel, a mute flag and two pattern masks (bit p = pattern p).
-// `enabled` is the per-route switch; it may only have bits that are also set in `members`.
+// `enabled` was a per-route switch that has been removed from the UI. The field stays in the
+// format so existing v4 saves keep loading: it is written equal to `members`, a pattern with a
+// cleared bit loads as not assigned, and it may only have bits that are also set in `members`.
 struct InstrumentRecord {
     uint8_t channel = 1;     // 1..16, unique among occupied Instruments
     uint8_t muted = 0;       // 0/1

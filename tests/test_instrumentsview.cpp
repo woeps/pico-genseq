@@ -29,8 +29,7 @@ state::UIState sample() {
     state::UIState s;
     s.patternCount = 4;
     s.activePatterns = 0b1011;                // pattern 2 inactive
-    s.instruments[0].members = 0b0111;        // patterns 0,1,2 assigned
-    s.instruments[0].enabled = 0b0101;        // route of pattern 1 off
+    s.instruments[0].members = 0b0101;        // patterns 0 and 2 assigned, 1 and 3 not
     return s;
 }
 
@@ -45,7 +44,7 @@ TEST(instrumentsview_label_shows_the_selected_channel) {
     CHECK(std::strcmp(hardware::testing::lastLabel(), "c07") == 0);
 }
 
-TEST(instrumentsview_draws_the_five_pattern_cell_states) {
+TEST(instrumentsview_draws_the_four_pattern_cell_states) {
     Fixture f;
     hardware::testing::resetMatrix();
     f.view.render(sample());
@@ -54,9 +53,9 @@ TEST(instrumentsview_draws_the_five_pattern_cell_states) {
     CHECK_EQ(pixelAt(1, 5), InstrumentsView::COLOR_SOUNDING);
     CHECK_EQ(pixelAt(0, 6), InstrumentsView::COLOR_SOUNDING);
     CHECK_EQ(pixelAt(1, 6), InstrumentsView::COLOR_SOUNDING);
-    // pattern 1: assigned, route off -> red 2x2
+    // pattern 1: not assigned -> faint grey 2x2
     for (uint8_t y = 5; y <= 6; ++y)
-        for (uint8_t x = 3; x <= 4; ++x) CHECK_EQ(pixelAt(x, y), InstrumentsView::COLOR_ROUTE_OFF);
+        for (uint8_t x = 3; x <= 4; ++x) CHECK_EQ(pixelAt(x, y), InstrumentsView::COLOR_NOT_MEMBER);
     // pattern 2: assigned, route on, pattern inactive -> blue
     CHECK_EQ(pixelAt(6, 5), InstrumentsView::COLOR_PATTERN_OFF);
     CHECK_EQ(pixelAt(7, 6), InstrumentsView::COLOR_PATTERN_OFF);
@@ -70,17 +69,17 @@ TEST(instrumentsview_cursor_is_the_white_top_left_pixel_of_the_cell) {
     Fixture f;
     hardware::testing::resetMatrix();
     state::UIState s = sample();
-    s.instrumentCursor = 1;            // pattern 2, route off (red)
+    s.instrumentCursor = 2;            // pattern 3: assigned, stopped (blue)
     f.view.render(s);
-    CHECK_EQ(pixelAt(3, 5), InstrumentsView::COLOR_CURSOR);
-    CHECK_EQ(pixelAt(4, 5), InstrumentsView::COLOR_ROUTE_OFF);   // the state stays visible
-    CHECK_EQ(pixelAt(3, 6), InstrumentsView::COLOR_ROUTE_OFF);
+    CHECK_EQ(pixelAt(6, 5), InstrumentsView::COLOR_CURSOR);
+    CHECK_EQ(pixelAt(7, 5), InstrumentsView::COLOR_PATTERN_OFF);  // the state stays visible
+    CHECK_EQ(pixelAt(6, 6), InstrumentsView::COLOR_PATTERN_OFF);
     CHECK_EQ(pixelAt(0, 5), InstrumentsView::COLOR_SOUNDING);    // pattern 1 without cursor
     for (uint8_t x = 0; x < 15; ++x) CHECK_EQ(pixelAt(x, 7), 0);  // gap row stays dark
 
     s.instrumentCursor = 7;            // row 1, column 2: cell at x 6..7, y 8..9 (no pattern)
     f.view.render(s);
-    CHECK_EQ(pixelAt(3, 5), InstrumentsView::COLOR_ROUTE_OFF);   // the old cursor is erased
+    CHECK_EQ(pixelAt(6, 5), InstrumentsView::COLOR_PATTERN_OFF);  // the old cursor is erased
     CHECK_EQ(pixelAt(6, 8), InstrumentsView::COLOR_CURSOR);       // shown on an empty cell too
 }
 
@@ -129,31 +128,29 @@ TEST(instrumentsview_arrows_move_the_cursor_and_ctrl_arrows_select_instruments) 
     CHECK_EQ(test::handle(f.view, s, press(KeyId::LEFT, mod::CTRL)).selectedInstrument, 0);
 }
 
-TEST(instrumentsview_enter_e_and_m_edit_the_selected_instrument) {
+TEST(instrumentsview_enter_and_m_edit_the_selected_instrument) {
     Fixture f;
     commands::testing::reset();
     state::UIState s = sample();
-    s.instrumentCursor = 3;  // pattern 3: not assigned
+    s.instrumentCursor = 3;  // pattern 4: not assigned
 
     auto a = test::handle(f.view, s, press(KeyId::ENTER));
-    CHECK_EQ(a.instruments[0].members, 0b1111);
-    CHECK_EQ(a.instruments[0].enabled, 0b1101);   // route of pattern 3 on, pattern 1 still off
-
-    auto b = test::handle(f.view, a, press(KeyId::E));
-    CHECK_EQ(b.instruments[0].enabled, 0b0101);   // route of pattern 3 off
-
-    a.instrumentCursor = 0;
-    auto c = test::handle(f.view, a, press(KeyId::E));
-    CHECK_EQ(c.instruments[0].enabled, 0b1100);
+    CHECK_EQ(a.instruments[0].members, 0b1101);   // assigned
+    auto b = test::handle(f.view, a, press(KeyId::ENTER));
+    CHECK_EQ(b.instruments[0].members, 0b0101);   // unassigned again
 
     auto d = test::handle(f.view, s, press(KeyId::M));
     CHECK(d.instruments[0].muted);
-    CHECK(commands::testing::countOf(commands::Command::INSTRUMENT_SET) >= 4);
+    CHECK_EQ(commands::testing::countOf(commands::Command::INSTRUMENT_SET), 3);
+}
 
-    // E on a pattern that is not assigned is refused with a notice.
-    s.instrumentCursor = 3;
-    auto e = test::handle(f.view, s, press(KeyId::E));
-    CHECK(e.instrumentNotice == state::InstrumentNotice::NOT_MEMBER);
+TEST(instrumentsview_e_has_no_function) {
+    Fixture f;
+    commands::testing::reset();
+    state::UIState s = sample();
+    const auto next = test::handle(f.view, s, press(KeyId::E));
+    CHECK_EQ(next.instruments[0].members, s.instruments[0].members);
+    CHECK_EQ(commands::testing::sentCommands().size(), 0);
 }
 
 TEST(instrumentsview_shift_arrows_change_the_channel) {
@@ -193,9 +190,9 @@ TEST(patternsview_marks_patterns_outside_the_selected_instrument_and_unassigned_
     s.patternCount = 3;
     s.activePatterns = 0b111;
     s.selectedPattern = 0;
-    s.instruments[0].members = s.instruments[0].enabled = 0b001;   // selected Instrument: pattern 0
+    s.instruments[0].members = 0b001;   // selected Instrument: pattern 0
     state::createInstrument(s);                                   // slot 1
-    s.instruments[1].members = s.instruments[1].enabled = 0b010;   // pattern 1 is in Instrument 1
+    s.instruments[1].members = 0b010;   // pattern 1 is in Instrument 1
     s.selectedInstrument = 0;                                     // pattern 2 is in none
 
     view.render(s);

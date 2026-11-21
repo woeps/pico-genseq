@@ -33,7 +33,7 @@ value-style adapters in `tests/helpers.h`.
 | ViewId | Key | Class | Shows / edits |
 |---|---|---|---|
 | `SETTINGS` | F1 | `SettingsView` | BPM |
-| `INSTRUMENTS` | F2 (boot view) | `InstrumentsView` | channel, mute, pattern assignment and route switch of each Instrument |
+| `INSTRUMENTS` | F2 (boot view) | `InstrumentsView` | channel, mute and pattern assignment of each Instrument |
 | `PATTERNS` | F3 | `PatternsView` | pattern grid, stream selection, set references, Instrument membership markers |
 | `GATE_SET` | F4 | `GateSetView` | the gate set the selected pattern references |
 | `PITCH_SET` | F5 | `PitchSetView` | the note set the selected pattern references |

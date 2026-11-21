@@ -1063,9 +1063,6 @@ void toggleInstrumentPattern(UIState& state, uint8_t slot, uint8_t pattern) {
     if (toggleInstrumentMember(state, slot, pattern)) syncInstrument(state, slot);
 }
 
-void toggleInstrumentRoute(UIState& state, uint8_t slot, uint8_t pattern) {
-    if (toggleInstrumentRouteFlag(state, slot, pattern)) syncInstrument(state, slot);
-}
 
 namespace {
 

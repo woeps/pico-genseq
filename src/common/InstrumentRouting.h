@@ -6,7 +6,7 @@
 // See .kiro/specs/help-me-brainstorm-an-additional/design.md section 1.
 //
 // An Instrument owns one MIDI channel and the patterns that sound on it. core0 folds the
-// per-Instrument "members AND enabled AND NOT muted" into ONE effective mask per slot and sends it
+// per-Instrument "members AND NOT muted" into ONE effective mask per slot and sends it
 // with INSTRUMENT_SET; core1 keeps only the RouteTable below. Header-only and SDK-free so it
 // compiles unchanged in the firmware and the host test builds.
 

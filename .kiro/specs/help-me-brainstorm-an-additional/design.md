@@ -1,5 +1,14 @@
 # Design Document
 
+> **Change after review (2026-11-21).** The per-route enable flag (`InstrumentConfig::enabled`,
+> key E, `toggleInstrumentRoute`, the red "route off" cell, the `NOT_MEMBER` notice) was removed:
+> its MIDI result was the same as unassigning the pattern. core0 now folds `members AND NOT muted`.
+> The v4 save record keeps its `enabled` field for compatibility: it is written equal to
+> `members`, and on load `members & enabled` becomes the Pattern Selection, so a pattern that was
+> switched off in an older v4 save loads as not assigned and stays silent. The `D:ins=` dump line
+> is now `slot:ch:muted:members`. Sections below that mention `enabled` or E describe the first
+> implementation.
+
 ## Overview
 
 An **Instrument** is a new layer above patterns. It owns one MIDI channel, one mute flag and two

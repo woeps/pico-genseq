@@ -43,7 +43,6 @@ TEST(default_state_has_one_instrument_on_channel_1_with_pattern_0) {
     CHECK_EQ(s.instrumentOccupied, 0x0001);
     CHECK_EQ(s.instruments[0].channel, 1);
     CHECK_EQ(s.instruments[0].members, 0x0001);
-    CHECK_EQ(s.instruments[0].enabled, 0x0001);
     CHECK_EQ(s.selectedInstrument, 0);
 }
 
@@ -122,46 +121,22 @@ TEST(channel_change_sends_the_new_protocol_channel_with_the_folded_mask) {
     if (m) { CHECK_EQ(m->param2, 1); CHECK_EQ(m->patternMask, 0x0001); }
 }
 
-TEST(member_toggle_sets_and_clears_membership_and_route_together) {
+TEST(member_toggle_assigns_and_unassigns_one_pattern) {
     state::UIState s = threePatterns();
+    commands::testing::reset();
     state::toggleInstrumentPattern(s, 0, 2);
     CHECK_EQ(s.instruments[0].members, 0b101);
-    CHECK_EQ(s.instruments[0].enabled, 0b101);
+    const auto* m = lastSet(0);
+    CHECK(m != nullptr);
+    if (m) CHECK_EQ(m->patternMask, 0b101);
     state::toggleInstrumentPattern(s, 0, 2);
     CHECK_EQ(s.instruments[0].members, 0b001);
-    CHECK_EQ(s.instruments[0].enabled, 0b001);
+    CHECK_EQ(s.activePatterns, 0b111);  // unassigning never touches the active flag
     // A pattern may be a member of several Instruments.
     state::createInstrument(s);
     state::toggleInstrumentPattern(s, 1, 0);
     CHECK_EQ(state::instrumentsOf(s, 0), 0b11);
     CHECK(state::validateInstruments(s));
-}
-
-TEST(route_toggle_disables_one_instrument_only_and_keeps_the_active_flag) {
-    state::UIState s = threePatterns();
-    state::createInstrument(s);
-    state::toggleInstrumentPattern(s, 1, 0);  // pattern 0 in both Instruments
-    commands::testing::reset();
-    state::toggleInstrumentRoute(s, 1, 0);
-    CHECK_EQ(s.instruments[1].members, 0b001);
-    CHECK_EQ(s.instruments[1].enabled, 0b000);
-    CHECK_EQ(s.instruments[0].enabled, 0b001);
-    CHECK_EQ(s.activePatterns, 0b111);
-    const auto* m = lastSet(1);
-    CHECK(m != nullptr);
-    if (m) CHECK_EQ(m->patternMask, 0);
-    CHECK_EQ(commands::testing::countOf(Command::INSTRUMENT_SET), 1);  // exactly one command
-    state::toggleInstrumentRoute(s, 1, 0);  // back on
-    CHECK_EQ(s.instruments[1].enabled, 0b001);
-}
-
-TEST(route_toggle_on_a_non_member_is_refused) {
-    state::UIState s = threePatterns();
-    commands::testing::reset();
-    state::toggleInstrumentRoute(s, 0, 2);
-    CHECK(s.instrumentNotice == InstrumentNotice::NOT_MEMBER);
-    CHECK_EQ(s.instruments[0].enabled, 0b001);
-    CHECK_EQ(commands::testing::sentCommands().size(), 0);
 }
 
 TEST(mute_sends_an_empty_mask_and_keeps_every_other_switch) {
@@ -171,7 +146,6 @@ TEST(mute_sends_an_empty_mask_and_keeps_every_other_switch) {
     state::toggleInstrumentMute(s, 0);
     CHECK(s.instruments[0].muted);
     CHECK_EQ(s.instruments[0].members, 0b011);
-    CHECK_EQ(s.instruments[0].enabled, 0b011);
     CHECK_EQ(s.activePatterns, 0b111);
     const auto* m = lastSet(0);
     CHECK(m != nullptr);
@@ -181,12 +155,10 @@ TEST(mute_sends_an_empty_mask_and_keeps_every_other_switch) {
     if (m) CHECK_EQ(m->patternMask, 0b011);
 }
 
-TEST(three_switches_combine_by_and_in_the_effective_mask) {
+TEST(effective_mask_is_members_unless_muted) {
     state::UIState s = threePatterns();
     state::createInstrument(s);                 // slot 1
     state::toggleInstrumentPattern(s, 1, 0);
-    state::toggleInstrumentPattern(s, 1, 1);
-    state::toggleInstrumentRoute(s, 1, 1);      // route of pattern 1 off
     CHECK_EQ(state::effectiveMask(s, 1), 0b001);
     state::toggleInstrumentMute(s, 1);
     CHECK_EQ(state::effectiveMask(s, 1), 0);
@@ -203,7 +175,6 @@ TEST(add_pattern_joins_the_selected_instrument_and_sends_its_route_last) {
     state::addPattern(s);
     CHECK_EQ(s.patternCount, 2);
     CHECK_EQ(s.instruments[1].members, 0b10);
-    CHECK_EQ(s.instruments[1].enabled, 0b10);
     CHECK_EQ(s.instruments[0].members, 0b01);
     const auto& v = commands::testing::sentCommands();
     CHECK(!v.empty());
@@ -220,13 +191,10 @@ TEST(remove_pattern_shifts_every_instrument_mask) {
     state::toggleInstrumentPattern(s, 0, 1);
     state::toggleInstrumentPattern(s, 0, 2);   // slot 0: patterns 0,1,2
     state::toggleInstrumentPattern(s, 1, 2);   // slot 1: pattern 2
-    state::toggleInstrumentRoute(s, 0, 2);     // slot 0: route of pattern 2 off
     state::removePattern(s, 1);
     CHECK_EQ(s.patternCount, 2);
     CHECK_EQ(s.instruments[0].members, 0b11);
-    CHECK_EQ(s.instruments[0].enabled, 0b01);
     CHECK_EQ(s.instruments[1].members, 0b10);
-    CHECK_EQ(s.instruments[1].enabled, 0b10);
     CHECK(state::validateInstruments(s));
 }
 
@@ -286,7 +254,7 @@ TEST(random_operations_keep_invariants_and_ui_masks_match_the_route_table) {
                 case 2: state::changeInstrumentChannel(s, slot, rng.next(2) ? 1 : -1); break;
                 case 3: state::toggleInstrumentMute(s, slot); break;
                 case 4: state::toggleInstrumentPattern(s, slot, p); break;
-                case 5: state::toggleInstrumentRoute(s, slot, p); break;
+                case 5: state::selectInstrumentStep(s, rng.next(2) ? 1 : -1); break;
                 case 6: if (s.patternCount < state::MAX_PATTERNS) state::addPattern(s); break;
                 case 7:
                     if (s.patternCount > 1) {
