@@ -9,9 +9,10 @@
 
 namespace ui::state {
 
+// Order matches the function keys: F1 Settings, F2 Instruments, F3 Patterns, F4-F6 the three sets.
 enum class ViewId : uint8_t {
-    INIT,
     SETTINGS,
+    INSTRUMENTS,
     PATTERNS,
     GATE_SET,
     PITCH_SET,
@@ -266,10 +267,9 @@ struct GotoPicker {
 };
 
 struct UIState {
-    ViewId currentView = ViewId::INIT;
+    ViewId currentView = ViewId::INSTRUMENTS;
     uint8_t bpm = 120;
     bool playing = false;
-    int value = 0;
     uint8_t patternCount = 1;
     uint16_t activePatterns = 0x0001;
     uint8_t selectedPattern = 0;

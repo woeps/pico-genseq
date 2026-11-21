@@ -9,7 +9,6 @@ set(SRC ${CMAKE_CURRENT_LIST_DIR}/../src)
 add_executable(genseq_tests
     main.cpp
     test_types.cpp
-    test_initview.cpp
     test_reducer.cpp
     test_decoder.cpp
     test_patternsview.cpp
@@ -26,7 +25,7 @@ add_executable(genseq_tests
     ${SRC}/ui/state/Reducer.cpp
     ${SRC}/ui/state/SetLibrary.cpp
     ${SRC}/ui/state/Instruments.cpp
-    ${SRC}/ui/views/InitView.cpp
+    ${SRC}/ui/views/InstrumentsView.cpp
     ${SRC}/ui/views/PatternsView.cpp
     ${SRC}/ui/views/GateSetView.cpp
     ${SRC}/ui/views/PitchSetView.cpp

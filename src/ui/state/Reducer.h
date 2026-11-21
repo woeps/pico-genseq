@@ -13,7 +13,6 @@ void reduce(UIState& state, const events::Event& event, ui::IView* activeView);
 void setBpm(UIState& state, int bpm);
 void setPlaying(UIState& state, bool playing);
 void setCurrentView(UIState& state, ViewId viewId);
-void setValue(UIState& state, int value);
 void beginGateSetEdit(UIState& state);
 void moveGateSetProperty(UIState& state, int direction);
 void adjustGateSetValue(UIState& state, int delta, bool coarse = false);
@@ -52,6 +51,11 @@ void selectSlotsOfSelectedPattern(UIState& state);
 // Switch a set view to `slot` of its library: an uncommitted draft is discarded (and the
 // committed set re-sent to its users), then the slot's draft is begun. No-op on a free slot.
 void selectSetSlot(UIState& state, SetType type, uint8_t slot);
+// Open the set view of `type` for the selected pattern (F4-F6 and Enter in the Patterns view): leaves
+// the current view (an uncommitted draft there is dropped), points the set views at the sets the
+// pattern references and begins the edit. No-op without a selected pattern or when that set view
+// is already open.
+void openSetView(UIState& state, SetType type);
 // Step the selected slot to the previous/next occupied slot (wraps).
 void stepSetSlot(UIState& state, SetType type, int direction);
 // Library actions for the set views. A refused action leaves the libraries untouched and

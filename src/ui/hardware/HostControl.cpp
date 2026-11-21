@@ -48,6 +48,7 @@ KeyId keyFromName(const char* name) {
         {"up", KeyId::UP}, {"down", KeyId::DOWN},
         {"left", KeyId::LEFT}, {"right", KeyId::RIGHT},
         {"f1", KeyId::F1}, {"f2", KeyId::F2}, {"f3", KeyId::F3},
+        {"f4", KeyId::F4}, {"f5", KeyId::F5}, {"f6", KeyId::F6},
         {"enter", KeyId::ENTER}, {"escape", KeyId::ESCAPE},
         {"delete", KeyId::DELETE_KEY},
     };
@@ -68,8 +69,8 @@ uint8_t modFromName(const char* name) {
 
 const char* viewName(ui::state::ViewId v) {
     switch (v) {
-        case ui::state::ViewId::INIT:         return "init";
         case ui::state::ViewId::SETTINGS:     return "settings";
+        case ui::state::ViewId::INSTRUMENTS:  return "instruments";
         case ui::state::ViewId::PATTERNS:     return "patterns";
         case ui::state::ViewId::GATE_SET:     return "gate";
         case ui::state::ViewId::PITCH_SET:    return "pitch";
@@ -189,10 +190,11 @@ void HostControl::dispatchLine(const char* raw) {
         return;
     }
 
-    if (strcasecmp(verb, "view") == 0) {        // 1->F1 2->F2 3->F3
+    if (strcasecmp(verb, "view") == 0) {        // 1..6 -> F1..F6
         if (a1 == nullptr) { printf("H:err view_needs_index\n"); return; }
         const int n = atoi(a1);
-        KeyId f = n == 1 ? KeyId::F1 : n == 2 ? KeyId::F2 : n == 3 ? KeyId::F3 : KeyId::NONE;
+        static const KeyId fkeys[] = {KeyId::F1, KeyId::F2, KeyId::F3, KeyId::F4, KeyId::F5, KeyId::F6};
+        const KeyId f = (n >= 1 && n <= 6) ? fkeys[n - 1] : KeyId::NONE;
         if (f == KeyId::NONE) { printf("H:err view_range\n"); return; }
         tapKey(f, ui::mod::NONE);
         printf("H:ok view\n");
@@ -225,11 +227,11 @@ void HostControl::dispatchLine(const char* raw) {
         int target = atoi(a1);
         if (target < 40) target = 40;
         if (target > 255) target = 255;
-        // Go to SETTINGS (F2) where UP/DOWN step BPM, then walk to the target
+        // Go to SETTINGS (F1) where UP/DOWN step BPM, then walk to the target
         // via coarse (shift = +/-10) + fine steps. Faithful to the real path:
         // every step is a synthesized keypress through the reducer, which emits
         // the BPM_SET command to core1 exactly as a human would.
-        tapKey(KeyId::F2, ui::mod::NONE);
+        tapKey(KeyId::F1, ui::mod::NONE);
         int cur = static_cast<int>(ui::state::getStateManager().getState().bpm);
         int guard = 0;
         while (cur != target && guard++ < 512) {
@@ -415,6 +417,14 @@ void HostControl::emitDump() {
     // ambiguity and can diff two dumps field-by-field (the 12.3 round-trip
     // check: dump -> set -> save -> reset -> dump -> compare).
     printf("D:view=%s\n", viewName(s.currentView));
+    // One line per occupied Instrument: slot:channel:muted:members:enabled (masks in hex).
+    for (uint8_t i = 0; i < ui::state::MAX_INSTRUMENTS; ++i) {
+        if (!((s.instrumentOccupied >> i) & 1u)) continue;
+        const ui::state::InstrumentConfig& in = s.instruments[i];
+        printf("D:ins=%u:%u:%u:0x%04x:0x%04x\n", static_cast<unsigned>(i),
+               static_cast<unsigned>(in.channel), in.muted ? 1u : 0u,
+               static_cast<unsigned>(in.members), static_cast<unsigned>(in.enabled));
+    }
     printf("D:bpm=%u\n", static_cast<unsigned>(s.bpm));
     printf("D:playing=%u\n", s.playing ? 1u : 0u);
     printf("D:patternCount=%u\n", static_cast<unsigned>(s.patternCount));

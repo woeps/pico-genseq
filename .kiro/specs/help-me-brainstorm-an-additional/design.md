@@ -469,3 +469,11 @@ stacks are separate: core1 stack `[0x20040800, 0x20041000)`, gap `[0x20041000, 0
 stack `[0x20041800, 0x20042000)`. The 2 KB `NoteLifecycle` growth lands in BSS and cannot reduce
 either stack or the gap; the risk row "core1 RAM +2 KB" is therefore low. Task 7.6 still compares
 `__bss_end__` and the guard symbols after the change.
+
+### Firmware size after task 7 (task 7.6)
+
+Release build at the end of task 7: text 203484, bss 25296 (was 22240 at the baseline, so +3056 B,
+of which 2 KB is `NoteLifecycle` voices). `__bss_end__` = `0x20008958`; the stack and gap symbols are
+unchanged (`__StackOneBottom` `0x20040800`, `__StackOneTop` `0x20041000`, `__StackBottom`
+`0x20041800`, `__StackTop` `0x20042000`), so the BSS growth cannot reduce a stack or the guard gap.
+The on-board stack-guard read stays in task 11.5.

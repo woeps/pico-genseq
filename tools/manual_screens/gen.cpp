@@ -8,7 +8,6 @@
 #include "ui/views/PitchSetView.h"
 #include "ui/views/VelocitySetView.h"
 #include "ui/views/SettingsView.h"
-#include "ui/views/InitView.h"
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -29,7 +28,6 @@ static GateSetView gate{matrix};
 static PitchSetView pitch{matrix};
 static VelocitySetView velocity{matrix};
 static SettingsView settings{led, matrix};
-static InitView init{led, matrix};
 
 static Frame grab(const std::string& cap, IView& v, const UIState& s) {
     v.render(s);
@@ -226,9 +224,8 @@ int main(int argc, char** argv) {
     // --- Sections 10, 11 ---
     {
         UIState s = base(); s.bpm = 120; s.currentView = state::ViewId::SETTINGS;
-        Frame a = grab("SETTINGS (F2)", settings, s);
-        s.value = 42; Frame b = grab("TEST (F1)", init, s);
-        writeSvg(d, "settings-test", {a, b});
+        Frame a = grab("SETTINGS (F1)", settings, s);
+        writeSvg(d, "settings-test", {a});
     }
     return 0;
 }

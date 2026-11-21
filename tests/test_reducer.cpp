@@ -20,7 +20,7 @@ public:
     void handleEvent(state::UIState& state, const events::Event& event) override {
         ++eventsSeen;
         lastKey = event.data.key.id;
-        state.value = 42;           // sentinel: the view ran
+        state.bpm = 77;            // sentinel: the view ran
     }
 
     void render(const state::UIState&) override {}
@@ -32,20 +32,70 @@ events::Event press(KeyId id, uint8_t mods = mod::NONE) {
 
 } // namespace
 
-TEST(reduce_f1_switches_to_init_view) {
+TEST(reduce_f1_switches_to_settings_view) {
     FakeView view;
-    state::UIState s;
-    s.currentView = state::ViewId::SETTINGS;
-    const auto next = test::reduced(s, press(KeyId::F1), &view);
-    CHECK(next.currentView == state::ViewId::INIT);
+    const auto next = test::reduced(state::UIState{}, press(KeyId::F1), &view);
+    CHECK(next.currentView == state::ViewId::SETTINGS);
     CHECK_EQ(view.eventsSeen, 0);
 }
 
-TEST(reduce_f2_switches_to_settings_view) {
+TEST(reduce_f2_switches_to_instruments_view) {
     FakeView view;
-    const auto next = test::reduced(state::UIState{}, press(KeyId::F2), &view);
-    CHECK(next.currentView == state::ViewId::SETTINGS);
+    state::UIState s;
+    s.currentView = state::ViewId::PATTERNS;
+    const auto next = test::reduced(s, press(KeyId::F2), &view);
+    CHECK(next.currentView == state::ViewId::INSTRUMENTS);
     CHECK_EQ(view.eventsSeen, 0);
+}
+
+TEST(boot_view_is_instruments) {
+    state::UIState s;
+    CHECK(s.currentView == state::ViewId::INSTRUMENTS);
+}
+
+TEST(reduce_f4_f5_f6_open_the_set_views_of_the_selected_pattern) {
+    state::UIState s;
+    s.patternCount = 2;
+    s.selectedPattern = 1;
+    s.patternRefs[1] = state::PatternRefs{0, 0, 0};
+    const struct { KeyId key; state::ViewId view; } cases[] = {
+        {KeyId::F4, state::ViewId::GATE_SET},
+        {KeyId::F5, state::ViewId::PITCH_SET},
+        {KeyId::F6, state::ViewId::VELOCITY_SET},
+    };
+    for (const auto& c : cases) {
+        state::UIState t = s;
+        t.currentView = state::ViewId::PATTERNS;
+        const auto next = test::reduced(t, press(c.key), nullptr);
+        CHECK(next.currentView == c.view);
+    }
+}
+
+TEST(set_view_function_keys_do_nothing_without_a_selected_pattern) {
+    state::UIState s;
+    s.currentView = state::ViewId::PATTERNS;
+    s.patternCount = 1;
+    s.selectedPattern = 1;  // the "add" slot
+    const auto next = test::reduced(s, press(KeyId::F4), nullptr);
+    CHECK(next.currentView == state::ViewId::PATTERNS);
+}
+
+TEST(set_view_function_key_matches_enter_in_the_patterns_view_and_does_not_restart_the_draft) {
+    state::UIState s;
+    s.currentView = state::ViewId::PATTERNS;
+    s.patternCount = 2;
+    s.selectedPattern = 1;
+    state::createSetInView(s, state::SetType::GATE);   // slot 1
+    s.patternRefs[1].gate = 1;
+    const auto opened = test::reduced(s, press(KeyId::F4), nullptr);
+    CHECK(opened.currentView == state::ViewId::GATE_SET);
+    CHECK_EQ(opened.selectedGateSlot, 1);
+    state::UIState edited = opened;
+    edited.gateSetDraft.steps = 9;
+    edited.gateSetDirty = true;
+    const auto again = test::reduced(edited, press(KeyId::F4), nullptr);   // already open: no-op
+    CHECK_EQ(again.gateSetDraft.steps, 9);
+    CHECK(again.gateSetDirty);
 }
 
 TEST(reduce_f3_switches_to_patterns_view) {
@@ -59,7 +109,7 @@ TEST(reduce_consumes_unbound_function_keys_without_effect) {
     FakeView view;
     state::UIState s;
     s.currentView = state::ViewId::SETTINGS;
-    for (uint8_t usage = static_cast<uint8_t>(KeyId::F4);
+    for (uint8_t usage = static_cast<uint8_t>(KeyId::F7);
          usage <= static_cast<uint8_t>(KeyId::F12); ++usage) {
         const auto next = test::reduced(s, press(static_cast<KeyId>(usage)), &view);
         CHECK(next.currentView == state::ViewId::SETTINGS);
@@ -114,16 +164,16 @@ TEST(reduce_absorbs_release_and_repeat_of_reserved_keys) {
 TEST(reduce_delegates_unreserved_keys_to_the_active_view) {
     FakeView view;
     const auto next = test::reduced(state::UIState{}, press(KeyId::UP), &view);
-    CHECK_EQ(next.value, 42);
+    CHECK_EQ(next.bpm, 77);
     CHECK_EQ(view.eventsSeen, 1);
     CHECK(view.lastKey == KeyId::UP);
 }
 
 TEST(reduce_returns_state_unchanged_without_an_active_view) {
     state::UIState s;
-    s.value = 7;
+    s.bpm = 7;
     const auto next = test::reduced(s, press(KeyId::UP), nullptr);
-    CHECK_EQ(next.value, 7);
+    CHECK_EQ(next.bpm, 7);
 }
 
 TEST(remove_pattern_compacts_active_bits_and_sends_index) {
@@ -249,7 +299,7 @@ TEST(leaving_dirty_gate_set_view_restores_committed_preview) {
 
     const auto next = test::reduced(s, press(KeyId::F1), nullptr);
 
-    CHECK(next.currentView == state::ViewId::INIT);
+    CHECK(next.currentView == state::ViewId::SETTINGS);
     CHECK(!next.gateSetDirty);
     CHECK_EQ(next.gateSetDraft.steps, 16);
     CHECK_EQ(commands::testing::countOf(commands::Command::PATTERN_GATE_SET), 1);
@@ -264,7 +314,7 @@ TEST(leaving_dirty_pitch_set_view_restores_committed_preview) {
 
     const auto next = test::reduced(s, press(KeyId::F1), nullptr);
 
-    CHECK(next.currentView == state::ViewId::INIT);
+    CHECK(next.currentView == state::ViewId::SETTINGS);
     CHECK(!next.pitchSetDirty);
     CHECK_EQ(next.pitchSetDraft.pitches[0], 60);
     CHECK_EQ(commands::testing::countOf(commands::Command::PATTERN_PITCH_SET), 1);

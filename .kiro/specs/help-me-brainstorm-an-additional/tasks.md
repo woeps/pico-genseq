@@ -95,25 +95,26 @@ line endings keep CRLF after editing.
   - [x]* 6.5 Cross-check test: apply the same random pattern removals to the reducer masks and to
     a `RouteTable` and assert equality. [Risks]
 
-- [ ] 7. Function keys, boot view and removal of the test view
-  - [ ] 7.1 Replace `ViewId::INIT` with `ViewId::INSTRUMENTS` in `UIState.h` (order: SETTINGS,
+- [x] 7. Function keys, boot view and removal of the test view
+  - [x] 7.1 Replace `ViewId::INIT` with `ViewId::INSTRUMENTS` in `UIState.h` (order: SETTINGS,
     INSTRUMENTS, PATTERNS, GATE_SET, PITCH_SET, VELOCITY_SET); set the default `currentView`
     to INSTRUMENTS; update `FUNCTION_KEY_VIEWS` and its comment. [R7.1-7.6]
-  - [ ] 7.2 Factor the Enter path of `PatternsView` into
+  - [x] 7.2 Factor the Enter path of `PatternsView` into
     `openSetViewForSelectedPattern(state, SetType)` in the reducer; bind F4-F6 to it as global
     keys (no effect without a selected pattern; no restart when already in that set view).
     [R7.4, R7.9, Design 4]
-  - [ ] 7.3 Delete `InitView.h/.cpp` and its entries in `tests/CMakeLists.txt` and the firmware
+  - [x] 7.3 Delete `InitView.h/.cpp` and its entries in `tests/CMakeLists.txt` and the firmware
     CMake; move the play LED blink/off logic from `InitView::render` into `UIController`'s render
     dispatch; remove `UIState::value`/`setValue` if unused. [R7.6, Design 4]
-  - [ ] 7.4 Update `HostControl`: `H:view` accepts 1..6, `viewName` names `instruments` and drops
+  - [x] 7.4 Update `HostControl`: `H:view` accepts 1..6, `viewName` names `instruments` and drops
     `init`, and the usage comment; add `D:ins=<slot>:<ch>:<m>:<members>:<enabled>` lines to the
     dump; fix every script found in 1.2 that used the old `H:view 1`. [R7.8, Design 4]
-  - [ ]* 7.5 Host tests: F1-F6 select the views, F7-F12 and modified F-keys are swallowed, the
-    boot view is INSTRUMENTS, F4 and Enter in the Patterns view produce the same state; a fake
-    LED shows blinking while playing in every view. Update the expectations on `ViewId::INIT` in
+  - [x]* 7.5 Host tests: F1-F6 select the views, F7-F12 and modified F-keys are swallowed, the
+    boot view is INSTRUMENTS, F4 and Enter in the Patterns view produce the same state. (The play
+    LED lives in the firmware-only `UIController`; it is verified on hardware in 11.1 instead of
+    with a host fake.) Update the expectations on `ViewId::INIT` in
     `tests/test_reducer.cpp` and `tests/test_patternsview.cpp`. [R7]
-  - [ ] 7.6 Build the firmware, read the link map and record the core1 stack-guard margin and
+  - [x] 7.6 Build the firmware, read the link map and record the core1 stack-guard margin and
     `.bss` growth against the values from 1.3. Stop and report if the margin falls below the
     documented guard. [Risks]
 

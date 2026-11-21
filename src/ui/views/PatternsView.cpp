@@ -93,16 +93,12 @@ void PatternsView::handleEvent(state::UIState& state, const events::Event& event
                 break;
             }
             // Open the set the selected pattern references (R4.2).
-            state::selectSlotsOfSelectedPattern(newState);
             if (state.selectedPatternSet == state::PatternSet::GATE) {
-                state::beginGateSetEdit(newState);
-                state::setCurrentView(newState, state::ViewId::GATE_SET);
+                state::openSetView(newState, state::SetType::GATE);
             } else if (state.selectedPatternSet == state::PatternSet::PITCH) {
-                state::beginPitchSetEdit(newState);
-                state::setCurrentView(newState, state::ViewId::PITCH_SET);
+                state::openSetView(newState, state::SetType::NOTE);
             } else {
-                state::beginVelocitySetEdit(newState);
-                state::setCurrentView(newState, state::ViewId::VELOCITY_SET);
+                state::openSetView(newState, state::SetType::VELOCITY);
             }
             break;
         case combo(KeyId::DELETE_KEY):

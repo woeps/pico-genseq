@@ -357,10 +357,6 @@ void setPlaying(UIState& state, bool playing) {
     }
 }
 
-void setValue(UIState& state, int value) {
-    state.value = std::max(0, std::min(99, value));
-}
-
 void setCurrentView(UIState& state, ViewId viewId) {
     state.gotoPicker.active = false;  // a view change always closes the go-to picker
     if (state.currentView == ViewId::GATE_SET && viewId != ViewId::GATE_SET) {
@@ -845,6 +841,19 @@ void selectSlotsOfSelectedPattern(UIState& state) {
     state.selectedVelocitySlot = refs.velocity;
 }
 
+void openSetView(UIState& state, SetType type) {
+    if (state.selectedPattern >= state.patternCount) return;
+    ViewId target = ViewId::VELOCITY_SET;
+    PatternSet kind = PatternSet::VELOCITY;
+    if (type == SetType::GATE) { target = ViewId::GATE_SET; kind = PatternSet::GATE; }
+    if (type == SetType::NOTE) { target = ViewId::PITCH_SET; kind = PatternSet::PITCH; }
+    if (state.currentView == target) return;
+    setCurrentView(state, target);  // leave the old view first: drops its uncommitted draft
+    state.selectedPatternSet = kind;
+    selectSlotsOfSelectedPattern(state);
+    beginEdit(state, type);
+}
+
 void selectSetSlot(UIState& state, SetType type, uint8_t slot) {
     if (!slotOccupied(state, type, slot)) return;
     discardDraft(state, type);  // R4.6: leaving a slot drops its uncommitted draft
@@ -1063,9 +1072,11 @@ namespace {
 constexpr uint8_t F1_USAGE  = static_cast<uint8_t>(KeyId::F1);
 constexpr uint8_t F12_USAGE = static_cast<uint8_t>(KeyId::F12);
 
-// F1 -> INIT, F2 -> SETTINGS. Keys past the end of this table are reserved
-// for future views: consumed, traced, but without effect.
-constexpr ViewId FUNCTION_KEY_VIEWS[] = { ViewId::INIT, ViewId::SETTINGS, ViewId::PATTERNS };
+// F1 Settings, F2 Instruments, F3 Patterns, F4 Gate Set, F5 Note Set, F6 Velocity Set: the
+// hierarchy of the instrument. Keys past the end of this table are reserved for future views:
+// consumed, traced, but without effect.
+constexpr ViewId FUNCTION_KEY_VIEWS[] = { ViewId::SETTINGS, ViewId::INSTRUMENTS, ViewId::PATTERNS,
+                                          ViewId::GATE_SET, ViewId::PITCH_SET, ViewId::VELOCITY_SET };
 
 bool isFunctionKey(KeyId id) {
     const uint8_t usage = static_cast<uint8_t>(id);
@@ -1100,7 +1111,13 @@ void applyGlobal(UIState& state, KeyId id) {
 
     const size_t index = static_cast<size_t>(static_cast<uint8_t>(id) - F1_USAGE);
     if (index < (sizeof(FUNCTION_KEY_VIEWS) / sizeof(FUNCTION_KEY_VIEWS[0]))) {
-        setCurrentView(state, FUNCTION_KEY_VIEWS[index]);
+        switch (FUNCTION_KEY_VIEWS[index]) {
+            // A set view needs its draft begun, so it goes through openSetView.
+            case ViewId::GATE_SET:     openSetView(state, SetType::GATE); break;
+            case ViewId::PITCH_SET:    openSetView(state, SetType::NOTE); break;
+            case ViewId::VELOCITY_SET: openSetView(state, SetType::VELOCITY); break;
+            default:                   setCurrentView(state, FUNCTION_KEY_VIEWS[index]); break;
+        }
     } else {
         printf("F%u pressed - no view bound\n", static_cast<unsigned>(index + 1));
     }

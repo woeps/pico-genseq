@@ -100,7 +100,7 @@ TEST(patternsview_enter_adds_when_add_slot_is_selected) {
 
     CHECK_EQ(next.patternCount, 4);
     CHECK_EQ(next.selectedPattern, 3);
-    CHECK(next.currentView == state::ViewId::INIT);
+    CHECK(next.currentView == state::ViewId::INSTRUMENTS);  // unchanged (default view)
 }
 
 TEST(patternsview_delete_removes_selected_real_pattern) {

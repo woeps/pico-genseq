@@ -8,7 +8,7 @@
 #include "hardware/UsbKeyboard.h"
 #include "hardware/HostControl.h"
 #include "views/IView.h"
-#include "views/InitView.h"
+#include "views/InstrumentsView.h"
 #include "views/SettingsView.h"
 #include "views/PatternsView.h"
 #include "views/GateSetView.h"
@@ -52,7 +52,7 @@ private:
     hardware::HostControl hostControl;
 
     // Views (heap-allocated but fixed at initialization, no dynamic allocation after)
-    std::unique_ptr<InitView> initView;
+    std::unique_ptr<InstrumentsView> instrumentsView;
     std::unique_ptr<SettingsView> settingsView;
     std::unique_ptr<PatternsView> patternsView;
     std::unique_ptr<GateSetView> gateSetView;
@@ -105,6 +105,7 @@ private:
     // between 1 s and 2 s after it appeared (Req 7.3). Populated here so the
     // Display-rendering seam in 7.3 only has to read them.
     bool bannerActive = false;
+    bool playLedOn_ = false;  // play indicator currently applied to the board LED
     uint32_t bannerSetMs = 0;
 
     // Tracks whether the currently-active banner has already been rendered to

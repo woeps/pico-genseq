@@ -23,7 +23,7 @@
 //   H:key <name> [mods]   synth KEY_PRESSED+KEY_RELEASED (e.g. "H:key s ctrl")
 //   H:save                = Ctrl+S  (sets saveRequested; the real commit path)
 //   H:play                = SPACE   (toggles transport)
-//   H:view <1..3>         = F1/F2/F3 (INIT/SETTINGS/PATTERNS)
+//   H:view <1..6>         = F1..F6 (SETTINGS/INSTRUMENTS/PATTERNS/GATE/NOTE/VELOCITY)
 //   H:up|down|left|right [coarse]   navigation in the active view
 //   H:bpm <40..255>       go to SETTINGS and step BPM to the target value
 //   H:pattern <i> on|off  activate / deactivate pattern i (PATTERNS view)

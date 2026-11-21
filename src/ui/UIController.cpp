@@ -120,7 +120,7 @@ void UIController::initialize()
     ui::setUiPump(&UIController::pumpTrampoline);
 
     // Create views (allocated once at initialization)
-    initView = std::make_unique<InitView>(*led, *ledMatrix);
+    instrumentsView = std::make_unique<InstrumentsView>(*ledMatrix);
     settingsView = std::make_unique<SettingsView>(*led, *ledMatrix);
     patternsView = std::make_unique<PatternsView>(*ledMatrix);
     gateSetView = std::make_unique<GateSetView>(*ledMatrix);
@@ -128,7 +128,7 @@ void UIController::initialize()
     velocitySetView = std::make_unique<VelocitySetView>(*ledMatrix);
 
     // Initialize view array
-    views[static_cast<size_t>(state::ViewId::INIT)] = initView.get();
+    views[static_cast<size_t>(state::ViewId::INSTRUMENTS)] = instrumentsView.get();
     views[static_cast<size_t>(state::ViewId::SETTINGS)] = settingsView.get();
     views[static_cast<size_t>(state::ViewId::PATTERNS)] = patternsView.get();
     views[static_cast<size_t>(state::ViewId::GATE_SET)] = gateSetView.get();
@@ -357,6 +357,17 @@ void UIController::onStateChanged(const state::UIState& newState)
     }
     
     activeView->render(newState);
+
+    // Play indicator on the board LED, independent of the active view. A banner owns the LED while
+    // it is shown; the state change after its dismissal re-applies this.
+    if (!bannerActive && newState.playing != playLedOn_) {
+        playLedOn_ = newState.playing;
+        if (playLedOn_) {
+            led->blink(500, 500);
+        } else {
+            led->off();
+        }
+    }
 }
 
 void UIController::drainSaveRequest()
@@ -467,6 +478,7 @@ void UIController::updateSaveBanner()
         // Stop any banner-driven onboard LED activity so the LED returns to a
         // neutral state before the active view takes over again.
         led->off();
+        playLedOn_ = false;  // the next state change below re-applies the play indicator
 
         // The banner filled the ENTIRE matrix via fill(). The active view's
         // render() only draws its own sparse pixels and does NOT clear the

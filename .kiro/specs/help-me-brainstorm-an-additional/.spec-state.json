@@ -1,0 +1,89 @@
+{
+ "decisions": [
+  {
+   "id": "pattern-ownership",
+   "title": "Can a pattern belong to more than one instrument?",
+   "options": [
+    "Exactly one instrument per pattern",
+    "Patterns can be shared by several instruments"
+   ],
+   "recommended": "Exactly one instrument per pattern",
+   "answer": "Patterns can be shared by several instruments"
+  },
+  {
+   "id": "channel-uniqueness",
+   "title": "May two instruments use the same MIDI channel?",
+   "options": [
+    "Yes, allowed",
+    "No, channels are unique per instrument"
+   ],
+   "recommended": "Yes, allowed",
+   "answer": "No, channels are unique per instrument (for now)"
+  },
+  {
+   "id": "instrument-mute",
+   "title": "Does an instrument have its own mute that is separate from each pattern's active flag?",
+   "options": [
+    "Yes, separate Instrument mute",
+    "No, only per-pattern active flags"
+   ],
+   "recommended": "Yes, separate Instrument mute",
+   "answer": "Yes, separate Instrument mute"
+  },
+  {
+   "id": "fkey-map",
+   "title": "Function key map",
+   "options": [
+    "F1 Settings, F2 Instruments, F3 Patterns, F4 Gate, F5 Note, F6 Velocity",
+    "F4 opens one Sets view that cycles the three set types"
+   ],
+   "recommended": "F1 Settings, F2 Instruments, F3 Patterns, F4 Gate, F5 Note, F6 Velocity",
+   "answer": "F1 Settings, F2 Instruments, F3 Patterns, F4 Gate, F5 Note, F6 Velocity"
+  },
+  {
+   "id": "shared-pattern-notes",
+   "title": "When a pattern is in several instruments, do all channels get the same notes?",
+   "options": [
+    "Same notes on every channel (one generation per step)",
+    "Independent random draws per channel"
+   ],
+   "recommended": "Same notes on every channel (one generation per step)",
+   "answer": "Same notes on every channel (one generation per step)"
+  },
+  {
+   "id": "boot-view",
+   "title": "Boot view",
+   "options": [
+    "Patterns",
+    "Instruments",
+    "Settings"
+   ],
+   "recommended": "Instruments",
+   "answer": "Instruments"
+  },
+  {
+   "id": "route-disable",
+   "title": "Per-instrument temporary disable of a pattern",
+   "options": [
+    "Per-route enable flag",
+    "None"
+   ],
+   "recommended": "Per-route enable flag",
+   "answer": "Per-route enable flag"
+  },
+  {
+   "id": "instrument-keys",
+   "title": "Key bindings of the Instruments view",
+   "options": [
+    "Arrows cursor, Ctrl+arrows select instrument, Enter assign, E route, M mute, Shift+arrows channel, Ctrl+N new, Delete remove",
+    "Other"
+   ],
+   "recommended": "Arrows cursor, Ctrl+arrows select instrument, Enter assign, E route, M mute, Shift+arrows channel, Ctrl+N new, Delete remove",
+   "answer": "Arrows cursor, Ctrl+arrows select instrument, Enter assign, E route, M mute, Shift+arrows channel, Ctrl+N new, Delete remove"
+  }
+ ],
+ "blocking": "Waiting for the user to review tasks.md.",
+ "context": {
+  "template": "separate-velocity-set-gate-set-and-note-set"
+ }
+}
