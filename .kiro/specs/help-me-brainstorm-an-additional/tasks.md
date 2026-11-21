@@ -323,8 +323,27 @@ line endings keep CRLF after editing.
     | 16 | overload after about 3 s | 938 ms | 972 B (311 ms) |
   - [x] 17.3 Manual: load pixel, overload fault and recovery, measured limits.
 
-- [ ] 13. Final acceptance
-  - [ ] 13.1 Walk the requirements list R1-R10 against the tests and the HW results and record any
+- [x] 13. Final acceptance
+  - [x] 13.1 Walk the requirements list R1-R10 against the tests and the HW results and record any
     gap in this file.
-  - [ ] 13.2 Run the full host suite and the firmware build once more, then open a pull request
+  - [x] 13.2 Run the full host suite and the firmware build once more, then open a pull request
     from the feature branch with the evidence from 11.
+
+  Acceptance walk (2026-11-21, branch `feature/instruments` on `origin/master` `d1dd86d`):
+
+  | Req | Evidence | Status |
+  |---|---|---|
+  | R1 Instrument list | `tests/test_instruments.cpp` (create/delete/full/last, invariants, random ops) | met |
+  | R2 Channel | channel stepping and folding tests; `example_instrument_routing` (Note Off on the recorded channel after a channel change) | met |
+  | R3 Pattern Selection, shared patterns, route enable | reducer and view tests; routing example (fan-out order, draws independent of routes); 11.2 on hardware | met |
+  | R4 Instrument mute, three switches | `mute_sends_an_empty_mask...`, `three_switches_combine_by_and...`; 11.2 (muted ch3 silent across a power-cycle) | met |
+  | R5 Shared set libraries | existing set-library suites unchanged and passing | met |
+  | R6 Instruments view | `tests/test_instrumentsview.cpp`; generated screens in the manual | met |
+  | R7 F1-F6, boot view, test view removed | `tests/test_reducer.cpp` F-key tests; 11.1 boots into `instruments`; play LED confirmed by the user | met |
+  | R8 Persistence v4 and migration | `example_instrument_persistence`, property 1/7 round trips, corrupt-record rejection; 11.1 (v3 save migrated); 11.2 (cold power-cycle) | met |
+  | R9 Real-time safety | note lifecycle property test; golden stream unchanged; 11.4 and 17.2 timing gates | met, with one deviation: 11.4 used the host-control timing counters, not a BitScope capture |
+  | R10 Documentation | manual sections 3, 4, 4a, 11, 13; charter gap table; roadmap | met |
+  | R11 MIDI output load | `example_midi_byte_queue`, `tests/test_loadindicator.cpp`; 17.2 table (no skipped ticks at any load, fault at 250 ms delay) | met, except that the load pixel has not been checked by eye on the device |
+
+  Final run: 52 host test programs under ASan/UBSan pass, 163 UI tests pass, the release
+  firmware builds.
