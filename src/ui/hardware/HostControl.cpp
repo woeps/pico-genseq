@@ -335,6 +335,7 @@ void HostControl::dispatchLine(const char* raw) {
         // timingFault are live state, not reset.)
         ui::g_maxUiGapMicros = 0;
         ui::g_lastSaveMicros = 0;
+        sequencer::g_midiStatsResetRequest = 1;  // core1 loop restarts the wire window
         sequencer::g_resetMetricsRequest = 1;  // core1 clears its scheduler metrics next update()
         printf("H:ok resetmetrics\n");
         return;
@@ -497,6 +498,12 @@ void HostControl::emitDump() {
     }
     printf("\n");
     printf("D:maxLatenessUs=%lu\n", static_cast<unsigned long>(sequencer::g_maxLatenessUs));
+    printf("D:wireBytes=%lu\n", static_cast<unsigned long>(sequencer::g_midiWireBytes));
+    printf("D:wireWindowUs=%lu\n", static_cast<unsigned long>(sequencer::g_midiWindowUs));
+    printf("D:starvedPumps=%lu\n", static_cast<unsigned long>(sequencer::g_midiStarvedPumps));
+    printf("D:maxPumpGapUs=%lu\n", static_cast<unsigned long>(sequencer::g_midiMaxPumpGapUs));
+    printf("D:peakBacklog=%lu\n", static_cast<unsigned long>(sequencer::g_midiPeakBacklog));
+    printf("D:fullWaits=%lu\n", static_cast<unsigned long>(sequencer::g_midiFullWaits));
     printf("D:missedTicks=%lu\n", static_cast<unsigned long>(sequencer::g_missedTicks));
     printf("D:batchTimeouts=%lu\n", static_cast<unsigned long>(sequencer::g_batchTimeouts));
     printf("D:end\n");

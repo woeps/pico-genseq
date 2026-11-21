@@ -160,6 +160,21 @@ static void sequencer_task() {
             BB_REGION(10);
             globalMidiQueue->pump(globalClock->nowMicros());
             g_midiLateMs = globalMidiQueue->lastLateMs();
+#if GENSEQ_HOST_CONTROL
+            // Wire-utilisation window: restart on H:resetmetrics (own flag, so the scheduler's
+            // reset cannot clear it first), then publish.
+            if (g_midiStatsResetRequest) {
+                globalMidiQueue->resetStats(globalClock->nowMicros());
+                g_midiStatsResetRequest = 0;
+            }
+            g_midiWireBytes = globalMidiQueue->wireBytes();
+            g_midiWindowUs = static_cast<uint32_t>(globalMidiQueue->lastPutUs() -
+                                                   globalMidiQueue->windowStartUs());
+            g_midiStarvedPumps = globalMidiQueue->starvedPumps();
+            g_midiMaxPumpGapUs = globalMidiQueue->maxPumpGapUs();
+            g_midiPeakBacklog = globalMidiQueue->peakBacklog();
+            g_midiFullWaits = globalMidiQueue->fullWaits();
+#endif
 
             // Dual-core stack-overflow guard (BUG A / BUG B-pt2 class): cheap
             // sentinel check of the inter-stack gap. If a core0 boot-path stack

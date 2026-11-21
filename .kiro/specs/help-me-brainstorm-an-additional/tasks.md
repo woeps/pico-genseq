@@ -272,6 +272,23 @@ line endings keep CRLF after editing.
     to `d1dd86d`. Timing gates with the buffer at 40 / 120 / 255 BPM: saved setup with two saves
     29-38 us lateness, 0 missed, UI gap 14.8 ms, save 11.6 ms; 6 dense patterns 30-40 us,
     0 missed, load off.
+
+    Wire utilisation (2026-11-21, question "would DMA help?"; host-control counters
+    `wireBytes`, `wireWindowUs`, `maxPumpGapUs`, `peakBacklog`):
+
+    | load | wire bytes/s | wire busy | longest gap between pumps | peak buffered |
+    |---|---|---|---|---|
+    | 16 Instruments (saturated) | 3120 | 99.8% | 697 us | 550 B |
+    | 12 Instruments | 2247 | 72% | 622 us | 456 B |
+    | 12 Instruments + gate-set edit storm | - | - | 727 us | 456 B |
+    | 6 Instruments | - | - | 474 us | 162 B |
+
+    At saturation the polled pump keeps the cable 99.8% busy, and the longest core1 loop gap
+    (0.73 ms, with edits) is shorter than the 1.28 ms a 4-byte refill takes to send, so the wire
+    never idles. DMA would not raise throughput. Open question: 12 Instruments use only 72% of
+    the wire and the buffer peaks at 456 bytes, yet one 8 s run latched the overload fault (another
+    run of 5 s did not); this load includes a 50% probability pattern, so the bursts vary. Needs a
+    look at why the backlog stayed non-empty for a whole beat.
   - [x] 17.3 Manual: load pixel, overload fault and recovery, measured limits.
 
 - [ ] 13. Final acceptance

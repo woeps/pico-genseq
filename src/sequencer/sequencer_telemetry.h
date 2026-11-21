@@ -46,6 +46,16 @@ extern volatile uint32_t g_maxLatenessUs;     // max scheduler lateness since th
 extern volatile uint32_t g_missedTicks;       // logical ticks missed since the last reset
 extern volatile uint32_t g_batchTimeouts;     // command batches abandoned since the last reset
 extern volatile uint32_t g_resetMetricsRequest;
+
+// MIDI wire utilisation (bench diagnostics, published by the core1 loop). Window starts at the
+// last H:resetmetrics. Times are us since boot, truncated to 32 bits (wrap ~71 min).
+extern volatile uint32_t g_midiStatsResetRequest;  // set by core0 (H:resetmetrics), cleared by the core1 loop
+extern volatile uint32_t g_midiWireBytes;      // bytes handed to the UART in the window
+extern volatile uint32_t g_midiWindowUs;       // last UART write - window start
+extern volatile uint32_t g_midiStarvedPumps;   // FIFO found empty while bytes were waiting
+extern volatile uint32_t g_midiMaxPumpGapUs;   // longest gap between two core1 pumps
+extern volatile uint32_t g_midiPeakBacklog;    // highest buffered byte count in the window
+extern volatile uint32_t g_midiFullWaits;      // writes that had to wait for a full buffer
 #endif
 
 }  // namespace sequencer

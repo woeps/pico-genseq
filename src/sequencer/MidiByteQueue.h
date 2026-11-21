@@ -63,8 +63,14 @@ public:
 
     // Move buffered bytes to the UART. Call from core1's main loop as often as possible.
     void pump(uint64_t nowUs) {
+        if (lastPumpUs_ != 0 && nowUs - lastPumpUs_ > maxPumpGapUs_) {
+            maxPumpGapUs_ = static_cast<uint32_t>(nowUs - lastPumpUs_);
+        }
+        lastPumpUs_ = nowUs;
         nowUs_ = nowUs;
         if (sink_.txEmpty()) {
+            // The FIFO ran dry while bytes were waiting: the wire may have idled.
+            if (count_ + rtCount_ > 0) ++starvedPumps_;
             for (uint32_t i = 0; i < kBurst; ++i) {
                 if (rtCount_ > 0) {
                     sink_.put(rt_[rtHead_]);
@@ -77,6 +83,8 @@ public:
                 } else {
                     break;
                 }
+                ++wireBytes_;
+                lastPutUs_ = nowUs;
             }
         }
         // Queued delay of the newest byte: everything ahead of it must cross the wire first.
@@ -94,6 +102,23 @@ public:
     uint32_t fullWaits() const { return fullWaits_; }
     void resetPeak() { peak_ = count_; fullWaits_ = 0; }
 
+    // Wire-utilisation measurement (bench diagnostics). Between resetStats() and lastPutUs():
+    // wireBytes() bytes went to the UART; at saturation bytes x 320 us / window is the share of
+    // time the wire was busy. maxPumpGapUs() is the longest time between two pump() calls.
+    void resetStats(uint64_t nowUs) {
+        wireBytes_ = 0;
+        starvedPumps_ = 0;
+        maxPumpGapUs_ = 0;
+        windowStartUs_ = nowUs;
+        lastPutUs_ = nowUs;
+        resetPeak();
+    }
+    uint32_t wireBytes() const { return wireBytes_; }
+    uint32_t starvedPumps() const { return starvedPumps_; }
+    uint32_t maxPumpGapUs() const { return maxPumpGapUs_; }
+    uint64_t windowStartUs() const { return windowStartUs_; }
+    uint64_t lastPutUs() const { return lastPutUs_; }
+
 private:
     Sink& sink_;
     uint8_t ring_[kCapacity] = {0};
@@ -106,6 +131,12 @@ private:
     uint32_t lastLateMs_ = 0;
     uint32_t peak_ = 0;
     uint32_t fullWaits_ = 0;
+    uint32_t wireBytes_ = 0;
+    uint32_t starvedPumps_ = 0;
+    uint32_t maxPumpGapUs_ = 0;
+    uint64_t lastPumpUs_ = 0;
+    uint64_t windowStartUs_ = 0;
+    uint64_t lastPutUs_ = 0;
 };
 
 }  // namespace sequencer
