@@ -6,7 +6,6 @@
 #include "IMidiOutput.h"
 #include "IMonotonicClock.h"
 #include "NoteLifecycle.h"
-#include "OverloadDetector.h"
 #include "PatternRng.h"
 #include "PerformanceFault.h"
 #include "PerformanceMetrics.h"
@@ -114,8 +113,6 @@ private:
     PerformanceFault fault;
     // Instrument routing (core1's copy): which channels each pattern sounds on.
     common::RouteTable routeTable;
-    // Sustained MIDI output backlog detector (Requirement 11.6).
-    OverloadDetector overload;
 
     void play();
     void stop();

@@ -229,11 +229,13 @@ The pixel at the right end of row 4 (column 16) shows the load in every view:
 | amber | In the last 2 seconds a note waited 10 ms or more on the cable: big chords or many shared routes are smearing. |
 | red | Overload: the cable could not keep up for a whole beat. GenSeq stopped, released every note and sent MIDI Stop. |
 
-After a red pixel, reduce the load (mute an Instrument, switch routes off) and press **Space**
-to play again; the pixel goes off. Measured with 6 patterns that each play every sixteenth note
-at 140 BPM, all in every Instrument: up to 10 Instruments play without a skipped beat (amber
-from 2 Instruments on), 12 or more stop with the red pixel. Lighter patterns leave room for
-more.
+GenSeq stops (red) once a note would leave the cable a quarter of a second (250 ms) or more
+late. Shorter surges only smear the timing and show amber. After a red pixel, reduce the load
+(mute an Instrument, switch routes off) and press **Space** to play again; the pixel goes off.
+Measured with 6 patterns that each play every sixteenth note at 140 BPM, all in every
+Instrument: 10 Instruments play for 30 seconds without stopping (amber from 2 Instruments on,
+notes at most about 90 ms late), 12 Instruments stop after about half a minute, 16 within a few
+seconds. Lighter or less uniform patterns leave room for more.
 
 ## 5. Sets and sharing
 

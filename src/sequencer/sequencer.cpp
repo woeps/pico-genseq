@@ -1,4 +1,5 @@
 #include "sequencer.h"
+#include "MidiByteQueue.h"
 #include "midi_messages.h"
 #include "Scheduler.h"
 #include "sequencer_telemetry.h"
@@ -202,12 +203,11 @@ void Sequencer::update() {
         return;
     }
 
-    // Sustained MIDI output overload (Requirement 11.6): the output buffer has not emptied for
-    // a whole beat, so the average load is more than the cable carries. Fail closed.
+    // MIDI output overload (Requirement 11.6): the buffered bytes would leave the wire 250 ms or
+    // more late. Short surges below that only smear the timing (and show amber); a load the
+    // cable cannot carry keeps growing the buffer and reaches it. Fail closed.
     const uint32_t backlog = meteredOutput.backlog();
-    const uint64_t oneBeatUs =
-        timeline.currentTickDurationMicros() * static_cast<uint64_t>(timeline.ticksPerBeat());
-    if (overload.observe(backlog, clock.nowMicros(), oneBeatUs)) {
+    if (backlog >= kMidiOverloadBacklogBytes) {
         enterTimingFault(PerformanceFaultCause::MIDI_OUTPUT_OVERLOAD, backlog);
     }
 }
@@ -762,7 +762,6 @@ void Sequencer::play() {
     if (ack.acknowledged) {
         instrumentation::PerformanceTrace::setFault(false);
     }
-    overload.reset();  // a new overload window starts with this Play
 
     // Deterministic repeated Play (Req 5.10): a Play while already playing does
     // NOT abandon existing ownership and does NOT emit an unmatched Start/Stop.

@@ -338,9 +338,12 @@ one-beat timing fault never latched.
    behaviour) and SHALL NOT drop any byte.
 5. WHEN a burst of notes is produced at one tick and the average load fits the cable, THE
    Sequencer SHALL NOT skip ticks because of the burst.
-6. WHEN the output buffer has been non-empty without interruption for one beat while playing,
-   THE Sequencer SHALL enter the timing fault with cause MIDI output overload: stop the
-   transport, release every sounding note and send MIDI Stop, as the existing timing fault does.
+6. WHEN the bytes in the output buffer would reach the wire 250 ms or more after they were
+   produced (782 buffered bytes) while playing, THE Sequencer SHALL enter the timing fault with
+   cause MIDI output overload: stop the transport, release every sounding note and send MIDI
+   Stop, as the existing timing fault does. A surge that keeps the buffer busy but stays under
+   250 ms of delay SHALL NOT fault. (Chosen after task 17.2: the earlier "buffer non-empty for
+   one beat" rule stopped uneven but sustainable loads with notes only 116-224 ms late.)
 7. THE core1 timing fault state and its cause SHALL be published to core0. WHEN core1 latches
    a fault, THE UI SHALL set its fault flag and mark the transport as stopped, so that the next
    Space press is a Play that acknowledges the fault.

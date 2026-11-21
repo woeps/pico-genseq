@@ -226,12 +226,17 @@ void test_sustained_backlog_latches_overload() {
     r.play();
     r.sink.autoDrain = false;
     auto slowTick = [&](uint64_t n) { r.sink.empty = true; r.tick(n); };
-    slowTick(1);  // 16 Note Ons queued
-    check(!r.seq.timingFaultLatched(), "no fault at once");
-    for (uint64_t n = 2; n <= 24; ++n) slowTick(n);
-    check(!r.seq.timingFaultLatched(), "no fault before one beat (24 ticks) of backlog");
-    for (uint64_t n = 25; n <= 27; ++n) slowTick(n);
-    check(r.seq.timingFaultLatched(), "fault after one beat of backlog");
+    // The buffer grows each tick; the fault must latch exactly when it first holds 250 ms of
+    // bytes (782), never before.
+    bool early = false;
+    uint64_t n = 1;
+    for (; n <= 200 && !r.seq.timingFaultLatched(); ++n) {
+        slowTick(n);
+        if (r.seq.timingFaultLatched() && r.q.peakBacklog() < sequencer::kMidiOverloadBacklogBytes) early = true;
+        if (!r.seq.timingFaultLatched() && r.q.backlog() >= sequencer::kMidiOverloadBacklogBytes + 100) early = true;
+    }
+    check(!early, "the fault latches at 782 buffered bytes (250 ms), not before");
+    check(r.seq.timingFaultLatched(), "fault once 250 ms of bytes are waiting");
     check(r.seq.timingFaultCause() == sequencer::PerformanceFaultCause::MIDI_OUTPUT_OVERLOAD,
           "cause is MIDI output overload");
 

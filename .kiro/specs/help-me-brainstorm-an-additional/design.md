@@ -396,10 +396,13 @@ order bytes were produced (real-time bytes may reach the wire slightly earlier t
 `sequencer_task` calls `midiOutput.pump(now)` on every loop iteration and publishes
 `g_midiLateMs = midiOutput.lastLateMs()`.
 
-**Overload fault.** `Sequencer::update()` calls `overload.observe(output.backlog(), now,
-oneBeatUs)` while playing (the existing `OverloadDetector`). When it reports overloaded the
-sequencer calls `enterTimingFault(MIDI_OUTPUT_OVERLOAD, backlog)`. `play()` resets the detector
-together with the fault acknowledgement. The fault releases all notes and sends Stop into the
+**Overload fault.** `Sequencer::update()` compares `output.backlog()` with
+`kMidiOverloadBacklogBytes` (782 bytes = 250 ms of wire time) while playing and calls
+`enterTimingFault(MIDI_OUTPUT_OVERLOAD, backlog)` when it is reached. A fixed delay is used, not
+"non-empty for a beat" (`OverloadDetector`, now unused): the bench showed uneven loads that keep
+the buffer busy for over a beat with notes only 116-224 ms late, and 250 ms is clearly late at
+any tempo. A load above the cable's capacity grows the buffer without bound and reaches the limit
+quickly. The fault releases all notes and sends Stop into the
 same buffer, behind the bytes already queued, so order and note balance are kept.
 
 **Publishing the fault.** `Sequencer::update()` publishes `g_timingFaultLatched` and

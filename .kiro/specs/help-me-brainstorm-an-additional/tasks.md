@@ -304,6 +304,15 @@ line endings keep CRLF after editing.
     full cable or more for over half a second while the average is 54-66%. The detector's rule
     ("buffer never empty for a beat") fires on those stretches, although notes are late by only
     116-224 ms. The 17.2 table's "no fault up to 10" held only for its 8 s runs.
+
+    Decision (user): fault at a fixed 250 ms delay (782 buffered bytes). Re-run, 30 s each:
+
+    | Instruments | result | longest busy period | peak buffered (delay) |
+    |---|---|---|---|
+    | 8 | no fault | 93 ms | 216 B (69 ms) |
+    | 10 | no fault (faulted at 31.9 s with the old rule) | 870 ms | 278 B (89 ms) |
+    | 12 | overload after about 30 s (was 8.5 s) | 1144 ms | 896 B (287 ms) |
+    | 16 | overload after about 3 s | 938 ms | 972 B (311 ms) |
   - [x] 17.3 Manual: load pixel, overload fault and recovery, measured limits.
 
 - [ ] 13. Final acceptance

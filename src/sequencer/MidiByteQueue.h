@@ -30,6 +30,12 @@ namespace sequencer {
 
 constexpr uint32_t kMidiByteMicros = 320;          // 10 bits at 31250 baud
 constexpr uint32_t kMidiLateThresholdUs = 10000;   // load indicator: a byte waited >= 10 ms
+// Overload fault: the newest buffered byte would reach the wire 250 ms or more after it was
+// produced (Requirement 11.6). 250 ms / 320 us = 781.25, so 782 buffered bytes.
+constexpr uint32_t kMidiOverloadDelayUs = 250000;
+constexpr uint32_t kMidiOverloadBacklogBytes =
+    (kMidiOverloadDelayUs + kMidiByteMicros - 1) / kMidiByteMicros;
+static_assert(kMidiOverloadBacklogBytes == 782, "250 ms of MIDI bytes");
 
 constexpr bool isMidiRealTime(uint8_t b) {
     return b == 0xF8 || b == 0xFA || b == 0xFB || b == 0xFC;
