@@ -166,9 +166,9 @@ cp genseq.uf2 /media/$(whoami)/RPI-RP2/
    - Check timing accuracy
 
 3. **Hardware Testing**:
-   - Verify all buttons work
-   - Check display updates
-   - Test encoder response
+   - Flash a `-DGENSEQ_HOST_CONTROL=ON` build and run the scripts in `test/bench/`
+   - Check the LED matrix screens and the play LED by eye
+   - Capture MIDI with `H:midilog` and compare against the previous firmware
 
 ### 4. Debugging
 
@@ -192,28 +192,17 @@ printf("Sequencer tick: %d\n", tickCount);
    - Set breakpoints
 
 2. **Common Debug Points**:
-   ```cpp
-   // In sequencer.cpp
-   void sequencerTick() {
-       // Break here to check timing
-       if (shouldSendMIDI()) {
-           sendMIDIMessage();
-       }
-   }
-   
-   // In ui.cpp
-   void handleButtonPress() {
-       // Break here to check input
-       processButton(buttonId);
-   }
-   ```
+   - `Sequencer::serviceTick()` (`src/sequencer/sequencer.cpp`): one call per logical tick
+   - `Sequencer::processCommand()`: every command core1 applies
+   - `ui::state::reduce()` (`src/ui/state/Reducer.cpp`): every key event
+   - Live SWD breakpoints on core1 are unreliable on this multidrop setup; prefer the published
+     telemetry words and `H:dump` (see `sequencer_telemetry.h`)
 
 #### Logic Analyzer
 
 For timing-critical debugging:
-- Monitor UART for MIDI
-- Check I2C for display
-- Verify GPIO timing
+- Monitor UART1 TX (GPIO 8) for MIDI
+- Use the optional trace pins (`GENSEQ_TRACE_*_PIN`) for tick, MIDI, save and fault timing
 
 ## Coding Standards
 
@@ -368,10 +357,10 @@ of pulses and total steps.
 
 Closes #45
 
-fix(ui): correct encoder direction
+fix(midi): send Note Off before a second Note On for a key that is already sounding
 
-Encoder was reading backwards due to swapped
-phase A and B pins in hardware config.
+Two patterns on one channel playing the same key sent On, On, Off and left
+the note hanging on some synths.
 ```
 
 ### 3. Pull Request Process
@@ -434,9 +423,9 @@ void testCommandSystem() {
 ### 3. Hardware Testing
 
 Create test hardware setup:
-- Test all button combinations
-- Verify display characters
-- Check MIDI output with monitor
+- Keyboard input (or `H:key` over the host-control channel)
+- LED matrix screens against the manual's generated pictures
+- MIDI output with a monitor or the `H:midilog` capture
 
 ## Performance Optimization
 

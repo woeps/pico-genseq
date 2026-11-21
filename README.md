@@ -16,23 +16,25 @@ See the [GenSeq v1 Product Charter](docs/product/genseq-v1-product-charter.md) f
 
 - **Dual-core architecture** — separates UI work from sequencer execution.
 - **Multi-pattern sequencing** — supports up to 15 independently configurable patterns.
-- **Independent musical streams** — each pattern combines a gate sequence, pitch sequence, and velocity sequence.
+- **Shared sets** — gate, note and velocity sets live in libraries of 16 each; a pattern references one of each, and several patterns can share a set.
+- **Instruments** — up to 16 Instruments, each with its own MIDI channel, mute, and a selection of patterns; a pattern can play on several channels at once.
+- **Generative parameters** — step probability, scale constraint, velocity humanization, deterministic seeds and stream coupling.
 - **Euclidean rhythms** — configurable steps, pulses, rotation, note division, and gate length.
 - **Pitch and velocity play orders** — forwards, backwards, pendulum, and deterministic random traversal.
-- **Live pattern editing** — pattern, gate, pitch, and velocity views provide immediate auditioning with commit and undo behavior.
-- **Serial MIDI output** — sends MIDI notes through one UART-based MIDI output.
+- **Live pattern editing** — instrument, pattern, gate, pitch, and velocity views provide immediate auditioning with commit and undo behavior; F1-F6 jump through the hierarchy.
+- **Serial MIDI output** — notes on up to 16 channels plus MIDI Clock, Start and Stop through one UART-based DIN output, buffered so bursts never break the beat, with a load indicator and a fail-closed overload stop.
 - **Prototype keyboard control** — uses a USB HID boot-protocol keyboard through TinyUSB host mode.
 - **LED matrix interface** — presents the UI on a 16×16 WS2812 matrix.
-- **Flash persistence** — explicitly saves and restores sequencer configuration using a versioned, CRC-protected record.
-- **Host test harness** — exercises core MIDI and persistence behavior without requiring the Pico hardware.
+- **FRAM persistence** — Ctrl+S saves the whole setup to an external SPI FRAM in a versioned, CRC-protected A/B record without interrupting playback; older save formats still load.
+- **Host test harness** — exercises the sequencer, MIDI output, persistence and UI without the Pico hardware; a host-control serial channel drives hardware tests without a keyboard.
 
 ## Current Limitations
 
 - The USB keyboard is a prototyping interface, not the intended final control surface.
 - The LED matrix is the only planned display; older LCD and encoder references describe a previous direction.
-- MIDI transport and clock behavior are not yet complete or performance-validated.
 - Connectivity is currently limited to one serial MIDI output; MIDI input is a possible later extension.
-- Real-time safety, note ownership, cross-core communication, and timing under stalls remain subjects of the performance-foundation milestone.
+- A pattern cannot yet be stopped on its own from the keyboard (use an Instrument route or mute).
+- Scenes, arrangement and projects (milestone 5) are not implemented.
 
 ## Documentation
 
@@ -42,6 +44,7 @@ For comprehensive documentation, see the [docs/](docs/) directory:
 
 - [GenSeq v1 Product Charter](docs/product/genseq-v1-product-charter.md) — approved product vision, audience, principles, scope, and performance model
 - [Project Roadmap](ROADMAP.md) — milestone order, outcomes, and dependencies
+- [User Manual](docs/user/user-manual.md) — views, keys and how to play the device
 - [Architecture Deep Dive](docs/architecture/architecture-deep-dive.md) — technical details
 - [Build & Flash Guide](docs/technical/build-flash.md) — detailed instructions
 - [Dependencies & Setup](docs/reference/dependencies.md) — development environment

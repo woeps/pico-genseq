@@ -12,15 +12,24 @@ Patterns reach the MIDI output through **Instruments**. An Instrument has one
 MIDI channel and a selection of patterns that play on it, so "bass on channel 2"
 and "drums on channel 10" are two Instruments. A pattern can belong to several
 Instruments and then plays the same notes on each of their channels. You can
-switch a pattern off in one Instrument only, mute a whole Instrument, or stop a
-pattern everywhere (section 4a).
+switch a pattern off in one Instrument only or mute a whole Instrument
+(section 4a).
 
 On top of that, the sets carry **generation parameters** that shape the material
 while it plays: step probability (gate set), a scale constraint (pitch set),
 velocity humanization, a deterministic seed and stream coupling (velocity set).
 
 This manual covers firmware milestone M3 (generative engine expansion) with
-shared sets.
+shared sets and Instruments.
+
+The views follow the structure of the instrument, one function key each:
+
+| Key | View | Section |
+|---|---|---|
+| F1 | SETTINGS: tempo | 10 |
+| F2 | INSTRUMENTS: MIDI channels, mute, which patterns play where | 4a |
+| F3 | PATTERNS: the 15 patterns and the sets they use | 4 |
+| F4 / F5 / F6 | GATE / PITCH / VELOCITY editor of the selected pattern's set | 7 / 8 / 9 |
 
 ## 1. Connecting
 
@@ -63,6 +72,16 @@ The picture shows the pitch editor on field `p0` (note C4) with a scale active. 
 | (13,0) green / dim red | Gate grid only: the selected step's gate is on / off. |
 
 ![Status pixels](img/status-pixels.svg)
+
+**Load pixel** (15,4), the right end of row 4, in every view: off when the MIDI
+output keeps up, amber when notes had to wait 10 ms or more in the last 2 seconds,
+red when GenSeq stopped because of an overload. Section 4a explains when this
+happens and what to do.
+
+![Load pixel amber in PATTERNS and red in INSTRUMENTS](img/load-pixel.svg)
+
+Left: the PATTERNS view while a burst of notes is still being sent (amber). Right: the
+INSTRUMENTS view after an overload stopped playback (red); Space plays again.
 
 **Set rows** (the two bottom rows, in the GATE, PITCH and VELOCITY editors):
 
@@ -311,14 +330,17 @@ Every editor works the same way:
 - **Enter** commits: the change becomes part of the set, for every pattern that uses it
   (and is included in the next save).
 - **Esc** undoes everything since the last Enter. Press Esc again (with nothing to
-  undo) to go back to PATTERNS. Leaving an editor any other way also undoes
-  uncommitted changes.
+  undo) to go back to PATTERNS. Leaving an editor any other way (for example a
+  function key) also undoes uncommitted changes.
+
+You open an editor from PATTERNS with Enter on the selected stream, or from any view
+with **F4** (gate), **F5** (pitch) or **F6** (velocity) for the selected pattern.
 
 Each generation parameter has a "neutral" value that switches the feature off
 (probability 100, scale `cro`, humanize 0, seed `off`, coupling `Ind`). A pattern
 with every parameter neutral plays exactly like a plain step sequence.
 
-## 7. GATE editor (the rhythm)
+## 7. GATE editor (F4, the rhythm)
 
 Opens on `Alg`. Fields from left to right:
 
@@ -355,7 +377,7 @@ The per-step grid for three steps (the green pixel at top right is the gate indi
 
 ![GATE per-step grid](img/gate-grid.svg)
 
-## 8. PITCH editor
+## 8. PITCH editor (F5)
 
 Opens on `Cnt`. The scale fields are to the left of it, the pitches to the right.
 
@@ -379,7 +401,7 @@ you are looking at is in the scale (green) or will be changed (red).
 
 The examples show a C# major scale constraint (`Scl`, `rut`), then plain pitches C4 and F#4 (sharp dot at the top right).
 
-## 9. VELOCITY editor
+## 9. VELOCITY editor (F6)
 
 Opens on `Cnt`. The generation fields for humanize, seed and coupling are to the left of it.
 
@@ -418,7 +440,7 @@ pitch is always accented the same way.
 Up/Down changes the tempo by 1 BPM, Shift+Up/Down by 10. Range 40–255. The change
 applies immediately and is included in the next save.
 
-![SETTINGS view](img/settings-test.svg)
+![SETTINGS view at 120 BPM](img/settings.svg)
 
 ## 11. Saving and loading
 

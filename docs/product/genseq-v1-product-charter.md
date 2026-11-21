@@ -238,7 +238,7 @@ This map assigns known differences between the approved product direction and th
 | Prepared projects | One saved configuration is supported; musician-facing project organization is absent | Milestone 5 |
 | MIDI channels per Instrument | Delivered: an Instrument layer above patterns holds one MIDI channel and the patterns that play on it; a pattern may play in several Instruments, with Instrument mute and per-Instrument pattern switches. A channel per individual pattern is not stored any more | Delivered (Instruments feature) |
 | Dedicated physical controls | USB keyboard prototype only | Milestone 7 |
-| Matrix-only product UI | Matrix is active, but obsolete LCD/encoder code and documentation assumptions remain | Milestones 4 and 7 |
+| Matrix-only product UI | Matrix is the only display and the documentation describes it; obsolete LCD/encoder classes remain in `src/ui/hardware/` | Milestones 4 and 7 |
 | Note-focused engine with future CC extension | Note output exists; a general event extension path has not been designed | Milestones 2, 3, and 6 |
 
 ## 15. Milestone 1 Completion Criteria

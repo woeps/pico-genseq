@@ -2,409 +2,143 @@
 
 ## Overview
 
-The GenSeq architecture leverages the RP2040's dual-core design to create a responsive real-time MIDI sequencer. This deep dive explores the technical decisions, data structures, and communication patterns that make it possible.
+GenSeq runs on an RP2040 and splits its work over the two cores:
 
-## Dual-Core Architecture
+| Core | Runs | Must never |
+|---|---|---|
+| core0 | USB keyboard host (TinyUSB), the UI state machine, the LED matrix, saving to the external FRAM, the host-control bench channel | write MIDI or touch sequencer state directly |
+| core1 | the sequencer: transport timeline, patterns, note ownership, MIDI output | wait for the UI, allocate on the tick path, read `UIState` |
 
-### Core Responsibilities
-
-```
-┌─────────────────┐    Commands     ┌─────────────────┐
-│   Core 0        │ ──────────────► │   Core 1        │
-│                 │                 │                 │
-│ • UI Input      │                 │ • Sequencing    │
-│ • Display       │                 │ • MIDI Output   │
-│ • LEDs          │                 │ • Timing        │
-│ • User Logic    │                 │ • Pattern Mgmt  │
-│                 │                 │                 │
-└─────────────────┘                 └─────────────────┘
-```
-
-### Why Dual-Core?
-
-1. **Real-time Constraints**: MIDI timing must be precise (±1ms)
-2. **UI Responsiveness**: User interactions should never affect timing
-3. **Separation of Concerns**: Clean architecture boundaries
-4. **Future Expansion**: Room for additional features
-
-### Core Synchronization
-
-The cores communicate through:
-- **Mailbox**: Fast inter-core messaging
-- **Command Queue**: Asynchronous command processing
-- **Shared Memory**: Read-only data structures
-
-## Data Architecture
-
-### Musical Data Separation
-
-The sequencer separates musical data into three distinct types:
+core0 owns the **model** (the whole setup the user edits, `ui::state::UIState`). core1 owns
+**playback** (a runtime copy of exactly what it needs to play). The only way from core0 to core1
+is the multicore FIFO command channel; core1 publishes a few read-only telemetry words back.
 
 ```
-Pattern
-├── Pitch Set      (What notes to play)
-├── Rhythm Set     (When to play them)
-└── Play Mode      (How to play them)
+ core0                                                     core1
+ ┌──────────────────────────────┐   multicore FIFO   ┌──────────────────────────────┐
+ │ UsbKeyboard / HostControl    │   (commands)       │ CommandInbox / processCommand│
+ │   → Event → reduce()         │ ─────────────────► │   → Sequencer                │
+ │   → UIState (sets, patterns, │                    │      TransportTimeline       │
+ │     Instruments)             │                    │      Scheduler (24 PPQN)     │
+ │   → views → LedMatrix        │   telemetry words  │      Patterns + RouteTable   │
+ │   → PersistenceManager/FRAM  │ ◄───────────────── │      NoteLifecycle           │
+ └──────────────────────────────┘ (fault, load,      │      QueuedMidiOutput → UART1│
+                                    sounding notes)  └──────────────────────────────┘
 ```
 
-#### Pitch Set
-```cpp
-class PitchSet {
-    std::vector<uint8_t> pitches;    // MIDI note numbers
-    std::vector<uint8_t> velocities; // Note velocities
-    bool active;                     // Enable/disable
-};
-```
-
-- Contains note information (C4, G4, etc.)
-- Independent of timing
-- Can be reused across patterns
-
-#### Rhythm Set (Gate Set)
-```cpp
-class GateSet {
-    std::vector<bool> gates;         // On/off for each step
-    std::vector<uint8_t> lengths;    // Gate length percentage
-    uint8_t length;                  // Number of steps
-    bool active;                     // Enable/disable
-};
-```
-
-- Defines timing and rhythm
-- Euclidean algorithm for generation
-- Gate length controls note duration
-
-#### Pattern
-```cpp
-class Pattern {
-    PitchSet* pitchSet;              // Reference to pitch data
-    GateSet* gateSet;                // Reference to rhythm data
-    PlayMode playMode;               // Playback algorithm
-    uint8_t currentStep;             // Current position
-    bool active;                     // Play this pattern?
-};
-```
-
-- Combines pitch and rhythm sets
-- Multiple patterns can share sets
-- Each pattern has independent state
-
-### Play Modes
-
-Different algorithms for note selection:
-
-1. **Forward**: Linear progression through steps
-2. **Random**: Random note selection
-3. **Euclidean**: Evenly spaced notes
-4. **Reverse**: Backward progression
-
-## Command System
-
-### Command Structure
-
-```cpp
-enum class CommandType {
-    PLAY,
-    STOP,
-    SET_BPM,
-    SET_PATTERN_ACTIVE,
-    MODIFY_PITCH_SET,
-    MODIFY_GATE_SET,
-    // ... more commands
-};
-
-struct Command {
-    CommandType type;
-    uint8_t data[4];  // Command-specific data
-};
-```
-
-### Command Flow
+## Musical data model
 
 ```
-UI Core (Core 0)              Sequencer Core (Core 1)
-     │                              │
-     ├─> User presses PLAY ─────────► │
-     │                              │
-     ├─> Create Command             │
-     │    type = PLAY               │
-     │                              │
-     ├─> Send via Mailbox ──────────►│
-     │                              │
-     │                         Process Command
-     │                              │
-     │                         Start Sequencer
-     │                              │
-     │                         Send MIDI Clock
+Instrument (16 slots)              Pattern (up to 15)                Set libraries (16 slots each)
+ channel 1..16 (unique)             active flag                       Gate Sets   (rhythm)
+ muted                              gate / note / velocity reference ─► Note Sets   (pitches, scale)
+ members  (pattern bitmask)  ──►                                      Velocity Sets (velocities,
+ enabled  (route bitmask)                                                            humanize, seed)
 ```
 
-### Command Processing
+- **Sets** live in three global libraries (`SetLibrary<…>` in `UIState.h`). A pattern holds one
+  slot reference per library, so several patterns can share a set; editing a set changes every
+  pattern that references it.
+- **Instruments** (`InstrumentConfig`) hold one MIDI channel and two pattern bitmasks: `members`
+  (assigned) and `enabled` (route switched on). A pattern may be a member of several Instruments
+  and then plays the same notes on each channel.
+- A note sounds on an Instrument's channel only if the pattern is active, its route is enabled
+  and the Instrument is not muted. core0 folds `members & enabled & !muted` into one effective
+  mask per Instrument before sending it to core1.
+- Generation parameters (probability, scale, humanize, seed, coupling) are stored with the set
+  that hosts them and reach core1 per pattern through `GEN_PARAMS_SET`.
 
-The sequencer processes commands in its main loop:
-```cpp
-void sequencerLoop() {
-    while (true) {
-        // Check for commands
-        if (multicore_fifo_rvalid()) {
-            Command cmd = multicore_fifo_pop_blocking();
-            processCommand(cmd);
-        }
-        
-        // Update sequencing
-        if (shouldTick()) {
-            processTick();
-        }
-        
-        // Send MIDI
-        sendPendingMIDI();
-    }
-}
-```
+The pure helpers that edit this model are in `src/ui/state/SetLibrary.*` and
+`src/ui/state/Instruments.*`; the reducer (`Reducer.cpp`) calls them and sends the commands.
 
-## Timing System
+## Command system (`src/commands/command.h`)
 
-### Tick-Based Sequencing
+Commands are packed into 32-bit FIFO words: a header word (`cmd | param1 << 8 | param2 << 16`)
+followed by payload words for set data.
 
-The sequencer uses a tick-based timing system:
+| Command | Payload | Purpose |
+|---|---|---|
+| `PLAY`, `STOP`, `BPM_SET` | — | transport |
+| `PATTERN_ADD`, `PATTERN_REMOVE`, `PATTERN_ACTIVATE`, `PATTERN_DEACTIVATE` | pattern index | pattern list and active flag |
+| `PATTERN_GATE_SET`, `PATTERN_PITCH_SET`, `PATTERN_VELOCITY_SET` | set data | material of one pattern |
+| `*_SET_MULTI` | mask word + set data | one set applied to every pattern in a mask (shared sets) |
+| `GEN_PARAMS_SET` | parameter block | generation parameters of one pattern |
+| `BATCH_BEGIN`, `BATCH_END` | count | core1 holds ticks until a multi-command update has landed |
+| `INSTRUMENT_SET` | mask word | replace one Instrument route slot: protocol channel + effective pattern mask |
 
-- **PPQN**: Pulses Per Quarter Note (typically 24)
-- **BPM**: Beats Per Minute (user configurable)
-- **Tick Interval**: 60,000,000 / (BPM * PPQN * 1000) microseconds
+core1 decodes into a reused fixed-size `PatternSnapshot`, so the receive path never allocates.
+A command that names a missing pattern or an out-of-range value is rejected whole.
 
-### Timing Precision
+## Timing system (`src/sequencer/`)
 
-```cpp
-// Timer interrupt for precise timing
-void timerCallback() {
-    sequencerTick();
-    clearAlarm();
-    setAlarm(nextTickTime);
-}
-```
+- `TransportTimeline` is the single musical clock: 24 PPQN, tick duration from the BPM, meter for
+  the beat length.
+- `Scheduler::service()` runs every core1 loop. It advances every due tick up to a budget of 8 per
+  call. A tick more than one tick period late is **reconciled**: pattern positions advance and due
+  Note Offs are sent, but its Note Ons and its MIDI Clock byte are dropped. A tick one beat late
+  latches the timing fault (`SCHEDULER_LATENESS`).
+- On each tick `serviceTick()` walks the active patterns. On a rising gate edge the emission lens
+  (`emitStep`) decides the note and velocity (probability, scale, humanize, coupling) and draws its
+  random numbers once; the note is then sent on every route of the pattern
+  (`RouteTable::routes[p]`, ascending slot order). A falling edge releases the pattern's voices.
+- `NoteLifecycle` owns every sounding note as one voice per (pattern, route). Each Note Off goes to
+  the channel its Note On used, a reference count per (channel, key) makes sure a key shared by two
+  patterns gets one final Note Off, and a key already sounding is closed before it is struck again.
+  Stop and every fault release all voices.
 
-### MIDI Clock Generation
+## MIDI output (`MidiByteQueue.h`, `UartMidiOutput.*`)
 
-MIDI clock messages are sent at 24 PPQN:
-```cpp
-void sendMIDIClock() {
-    sendMIDIMessage(0xF8); // MIDI Clock message
-}
-```
+The sequencer writes bytes into `QueuedMidiOutput`, a 4096-byte ring plus a small real-time lane.
+The core1 loop calls `pump()`: when the UART FIFO is empty it hands over up to 4 bytes, real-time
+bytes (Clock, Start, Continue, Stop) first. This keeps core1 from ever waiting on the 31,250-baud
+cable while it produces a burst of notes. A full ring waits rather than drop a byte.
 
-## UI Architecture
+- **Overload:** when the buffered bytes would leave the wire 250 ms or more late (782 bytes),
+  `Sequencer::update()` latches the timing fault `MIDI_OUTPUT_OVERLOAD`.
+- **Load indicator:** `g_midiLateMs` records when a byte last waited 10 ms or more; core0 shows it
+  as the amber load pixel.
 
-### Component Hierarchy
+See [MIDI Implementation](../technical/midi-implementation.md) for the bytes on the wire.
 
-```
-UIController
-├── hardware/                (concrete types, no interfaces)
-│   ├── HardwareConfig
-│   ├── Button (×6, A-F)
-│   ├── Encoder
-│   ├── Led
-│   └── LedMatrix
-├── state/                   (state management)
-│   ├── StateManager (singleton)
-│   ├── Reducer (pure function + state-setters)
-│   └── UIState
-└── views/                   (render-only)
-    └── MainView
-```
+## Timing fault
 
-### Data Flow
+`PerformanceFault` latches the first fault (scheduler lateness or MIDI output overload): playback
+stops, all notes are released, MIDI Stop is sent if clock output is on, and the working state is
+kept. core1 publishes `g_timingFaultLatched` and `g_timingFaultCause`; `UIController` mirrors them
+into `UIState` (fault flag, `playing = false`) and the load pixel turns red. Space sends Play,
+which acknowledges the fault on core1.
 
-```
-Button/Encoder → Event → StateManager → reduce(state, event) → new state → listener → View::render()
-                                                                    ↓
-                                                              commands::sendCommand() → Core 1
-```
+## Persistence (`src/persistence/`)
 
-### Reducer Pattern
+Ctrl+S takes a `PersistableConfig` snapshot of `UIState` and writes a CRC-protected, versioned
+record to an external MB85RS2MTA SPI FRAM through an A/B transactional `RecordStore`. Saving does
+not pause playback (core1 keeps running). The current record is format v4 (set libraries,
+pattern references, Instruments). v1 to v3 records still load: v1/v2 patterns become one set of
+each kind per pattern, and the per-pattern MIDI channels of v1-v3 become one Instrument per
+channel. An inconsistent record (bad references, duplicate channels, …) is rejected and the device
+boots with defaults.
 
-State transitions are handled by a pure reducer function. State-setter functions abstract away
-mutating state fields and sending the corresponding commands:
+## UI architecture
 
-```cpp
-// State-setter functions: mutate state and send the corresponding command
-void setBpm(UIState& state, int bpm);
-void setPlaying(UIState& state, bool playing);
+See the [UI System Guide](../development/ui-system-guide.md).
 
-// All state logic in one place
-UIState reduce(const UIState& state, const Event& event) {
-    UIState newState = state;
-    switch (event.type) {
-        case EventType::ENCODER_CHANGED:
-            setBpm(newState, state.bpm + event.data.encoder.delta);
-            break;
-        case EventType::BUTTON_PRESSED:
-            setPlaying(newState, !state.playing);
-            break;
-    }
-    return newState;
-}
-```
+## Memory and stacks
 
-### View System
+- Each core has a 2 KB stack: core1 `[0x20040800, 0x20041000)`, core0 `[0x20041800, 0x20042000)`,
+  with an unused 2 KB gap in between. `stack_guard.h` places two canaries in the gap and core1
+  checks them every loop.
+- `UIState` and `PersistableConfig` are large (KB). Never copy them by value on core0: views and
+  reducer functions mutate the state in place, and the save/load paths use static buffers.
+- Never put a function-local static with a runtime constructor on the core1 path (its guarded
+  lazy construction once hung core1); use file-scope objects.
+- Steady-state ticking performs no heap allocation (covered by
+  `test/example_steady_state_allocation.cpp`). Set replacement allocates, but only when a set
+  command arrives.
 
-Views are render-only — they never mutate state:
+## Telemetry and bench control
 
-```cpp
-class IView {
-public:
-    virtual ~IView() = default;
-    virtual void onEnter() {}
-    virtual void onExit() {}
-    virtual void render(const UIState& state) = 0;
-};
-```
-
-## Memory Management
-
-### Core-Specific Memory
-
-Each core has its own stack:
-```cpp
-// Core 0 stack (UI)
-#define UI_STACK_SIZE 0x1000
-
-// Core 1 stack (Sequencer)
-#define SEQUENCER_STACK_SIZE 0x2000
-```
-
-### Shared Memory
-
-Read-only data can be shared:
-```cpp
-// Flash-stored data accessible by both cores
-const uint8_t* sharedData = (const uint8_t*)0x10000000;
-```
-
-### Dynamic Allocation
-
-Minimal dynamic allocation to avoid fragmentation:
-- Pre-allocated buffers
-- Fixed-size arrays
-- Pool allocators for frequent allocations
-
-## Interrupt Handling
-
-### Core 0 Interrupts
-
-- **GPIO**: Button and encoder inputs
-- **I2C**: Display communication
-- **Timer**: UI refresh timing
-
-### Core 1 Interrupts
-
-- **Timer**: Sequencer tick
-- **UART**: MIDI transmission
-- **DMA**: Efficient data transfer
-
-### PIO Programs
-
-Custom PIO programs for hardware:
-
-```pio
-// Encoder reading PIO
-program encoder_reader {
-    set pins, 0
-    set x, 0
-    
-    label loop:
-    in pins, 2
-    mov x, isr
-    jmp x != y, changed
-    jmp loop
-    
-    label changed:
-    mov y, x
-    irq 0
-    jmp loop
-}
-```
-
-## Performance Considerations
-
-### Critical Sections
-
-MIDI output must be uninterrupted:
-```cpp
-// Disable interrupts during critical MIDI operations
-uint32_t interrupt_state = save_and_disable_interrupts();
-sendMIDIMessage(msg);
-restore_interrupts(interrupt_state);
-```
-
-### DMA Usage
-
-DMA for efficient data transfer:
-```cpp
-// DMA for LED matrix updates
-dma_channel_configure(dma_chan,
-    &dma_config,
-    &led_data,          // Destination
-    &led_buffer,        // Source
-    LED_COUNT,          // Transfer count
-    true                // Start immediately
-);
-```
-
-### Optimization Strategies
-
-1. **Minimize Inter-Core Communication**: Batch commands
-2. **Use Lookup Tables**: For common calculations
-3. **Avoid Floating Point**: Use fixed-point arithmetic
-4. **Cache Frequently Used Data**: Keep in fast memory
-
-## Debugging Architecture
-
-### Core-Specific Debugging
-
-Each core can be debugged independently:
-```bash
-# Debug Core 0 (UI)
-openocd -f interface/cmsis-dap.cfg -f target/rp2040.cfg -c "bp main.0"
-
-# Debug Core 1 (Sequencer)
-openocd -f interface/cmsis-dap.cfg -f target/rp2040.cfg -c "bp main.1"
-```
-
-### Logging
-
-Different logging levels for each core:
-```cpp
-// UI logging
-printf("UI: Button pressed %d\n", buttonId);
-
-// Sequencer logging
-printf("SEQ: Pattern %d tick %d\n", patternId, tick);
-```
-
-## Future Architecture Considerations
-
-### Scalability
-
-The architecture supports:
-- Additional patterns
-- New play modes
-- More UI views
-- Extra hardware components
-
-### Extensibility
-
-Adding new features:
-1. UI features: Add to Core 0
-2. Sequencer features: Add to Core 1
-3. New commands: Extend command enum
-4. New hardware: Add to HAL
-
-### Performance Headroom
-
-Current utilization:
-- Core 0: ~30% (UI is lightweight)
-- Core 1: ~60% (Sequencing is intensive)
-- Memory: ~50% of RAM available
-
-## Summary
-
-The GenSeq architecture successfully separates UI and sequencing concerns across two cores, enabling real-time MIDI performance while maintaining responsive user interaction. The clean data architecture and command system provide a solid foundation for future enhancements.
+core1 publishes 32-bit words in `sequencer_telemetry.h` (sounding notes, fault, load, and in
+host-control builds scheduler and wire-utilisation metrics). A firmware built with
+`-DGENSEQ_HOST_CONTROL=ON` accepts `H:` commands on the UART0 console (`src/ui/hardware/HostControl.*`)
+that synthesize key presses, dump the state (`H:dump`), capture the MIDI stream (`H:midilog`) and
+reboot (`H:reset`), so hardware tests run without a keyboard. Scripts live in `test/bench/`.

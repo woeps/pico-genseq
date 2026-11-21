@@ -6,6 +6,7 @@
 #include "ui/views/PatternsView.h"
 #include "ui/views/InstrumentsView.h"
 #include "ui/state/Instruments.h"
+#include "ui/state/LoadIndicator.h"
 #include "ui/views/GateSetView.h"
 #include "ui/views/PitchSetView.h"
 #include "ui/views/VelocitySetView.h"
@@ -267,11 +268,31 @@ int main(int argc, char** argv) {
         Frame pb = grab("Selected Instrument 2", patterns, p);
         writeSvg(d, "patterns-instruments", {pa, pb});
     }
+    // --- Load indicator (section 2): UIController draws it after every view render with the
+    // same LoadIndicator helpers used here. ---
+    {
+        UIState s = base(); s.currentView = state::ViewId::PATTERNS; s.selectedPattern = 0;
+        matrix.clear();
+        patterns.render(s);
+        matrix.setPixel(state::kLoadPixelX, state::kLoadPixelY, state::loadColor(state::LoadLevel::AMBER));
+        Frame a{"Amber: notes are waiting", {}};
+        const uint32_t* p = hardware::capturePixels(matrix);
+        for (int i = 0; i < 256; i++) a.px[i] = p[i];
+        UIState t = base(); t.currentView = state::ViewId::INSTRUMENTS; t.timingFaultLatched = true;
+        matrix.clear();
+        instruments.render(t);
+        matrix.setPixel(state::kLoadPixelX, state::kLoadPixelY, state::loadColor(state::LoadLevel::RED));
+        Frame b{"Red: overload, stopped", {}};
+        p = hardware::capturePixels(matrix);
+        for (int i = 0; i < 256; i++) b.px[i] = p[i];
+        writeSvg(d, "load-pixel", {a, b}, {{{4, 4}, "load pixel (column 16)"}});
+    }
     // --- Section 10 ---
     {
         UIState s = base(); s.bpm = 120; s.currentView = state::ViewId::SETTINGS;
+        matrix.clear();
         Frame a = grab("SETTINGS (F1)", settings, s);
-        writeSvg(d, "settings-test", {a});
+        writeSvg(d, "settings", {a});
     }
     return 0;
 }

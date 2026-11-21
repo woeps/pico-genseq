@@ -150,91 +150,29 @@ target_link_libraries(genseq
    GND ───────────────────── MIDI Pin 2
    ```
 
-### Display Issues
+### Keyboard Not Responding
 
-**Symptoms**: No display, garbled text, random characters
+**Symptoms**: no reaction to key presses, no "Keyboard mounted" line on the console.
 
-**Debug Steps**:
-1. Check I2C connection:
-   ```cpp
-   // Scan for I2C devices
-   void scan_i2c() {
-       for (uint8_t addr = 0x08; addr < 0x78; addr++) {
-           if (i2c_write_blocking(i2c0, addr, NULL, 0, false) >= 0) {
-               printf("Found I2C device at 0x%02X\n", addr);
-           }
-       }
-   }
-   ```
+1. Check the power: the keyboard needs 5 V on VBUS. Powering the board through VSYS alone does not
+   power the keyboard (see [USB Keyboard Bring-up](../technical/usb-keyboard-bringup.md)).
+2. Use a boot-protocol keyboard; other HID devices are reported as "not a keyboard, ignoring".
+3. Without a keyboard, a host-control build (`-DGENSEQ_HOST_CONTROL=ON`) accepts `H:key …`
+   commands on the UART0 console.
 
-2. Verify I2C address:
-   ```cpp
-   // Default is 0x27, but can be 0x3F
-   #define DISPLAY_I2C_ADDR 0x27
-   ```
+### Yellow Banner at Boot
 
-3. Check pull-up resistors:
-   - SDA and SCL need 4.7kΩ pull-ups to 3.3V
-   - Some modules have built-in pull-ups
+A saved setup exists but could not be loaded (CRC error, unknown format, or an inconsistent
+record). GenSeq started with defaults; the next Ctrl+S overwrites the record. Check the FRAM
+wiring (GPIO 10-13) with the FRAM bring-up firmware (`-DGENSEQ_BUILD_FRAM_BRINGUP=ON`).
 
-### Encoder Problems
+### Red Load Pixel / Playback Stops
 
-**Symptoms**: Jittery movement, wrong direction, no response
-
-**Debug Steps**:
-1. Check encoder wiring:
-   ```
-   Encoder Pin A → GPIO14
-   Encoder Pin B → GPIO15
-   Encoder Button → GPIO20
-   ```
-
-2. Add hardware debouncing:
-   ```
-   Add 0.1µF capacitors between:
-   - Pin A and GND
-   - Pin B and GND
-   ```
-
-3. Verify PIO program:
-   ```cpp
-   // Check PIO is initialized
-   pio_sm_init(pio, sm, offset, &encoder_program_default_config(
-       pio_gpio_setup(pio, ENCODER_PIN_A, ENCODER_PIN_B)
-   ));
-   ```
+The MIDI output was overloaded: notes would have left the cable 250 ms or more late. Mute an
+Instrument or switch routes off and press Space. An amber pixel only means notes are being
+smeared by 10 ms or more. See the user manual, section 4a.
 
 ## Hardware Issues
-
-### Button Matrix Not Working
-
-**Symptoms**: Some buttons not responding, multiple buttons detected
-
-**Debug Steps**:
-1. Check matrix wiring:
-   ```
-   Rows: GPIO22, GPIO21, GPIO20, GPIO19
-   Cols: GPIO18, GPIO17, GPIO16, GPIO15
-   ```
-
-2. Test individual buttons:
-   ```cpp
-   // Direct GPIO test
-   void testButton(uint8_t pin) {
-       gpio_init(pin);
-       gpio_set_dir(pin, GPIO_IN);
-       gpio_pull_up(pin);
-       
-       while (true) {
-           printf("Pin %d: %d\n", pin, !gpio_get(pin));
-           sleep_ms(100);
-       }
-   }
-   ```
-
-3. Check for shorts:
-   - Verify no solder bridges
-   - Check continuity with multimeter
 
 ### LED Strip Issues
 
@@ -382,9 +320,9 @@ DEBUG_PRINT(DEBUG_ERROR, "Failed to send MIDI: %d", error);
 
 Essential signals to monitor:
 1. **MIDI TX** (GPIO8): Verify MIDI messages
-2. **I2C SDA/SCL** (GPIO4/5): Check display communication
-3. **Encoder pins** (GPIO14/15): Verify encoder signals
-4. **LED data** (GPIO23): Check WS2812 timing
+2. **FRAM SPI** (GPIO10-13): Check save traffic
+3. **LED data** (GPIO16): Check WS2812 timing
+4. **Trace pins** (optional, `GENSEQ_TRACE_*_PIN`): tick, MIDI dispatch, save and fault markers
 
 ### GDB Debugging
 

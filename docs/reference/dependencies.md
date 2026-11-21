@@ -146,45 +146,20 @@ The project is optimized for Windsurf IDE:
    - One for PicoProbe (debugging)
 
 2. **Hardware Components**
-   - LCD Display (HD44780 with FC113 controller)
-   - Rotary Encoder with button
-   - Push buttons (16 total)
-   - LED matrix (16x2)
-   - MIDI interface hardware
+   - USB HID keyboard and a micro-USB OTG adapter
+   - 16x16 WS2812 LED matrix
+   - MB85RS2MTA SPI FRAM
+   - MIDI OUT (5-pin DIN) circuit
 
 3. **Debug Hardware**
-   - PicoProbe setup
-   - SWD connection wires
-   - Optional: Logic analyzer
+   - Debugprobe (a second Pico) for SWD and the UART0 console
+   - Optional: logic analyzer (the project uses a BitScope BS05U with `scopething`; sigrok does not
+     support it)
 
 ### Pin Assignments
 
-From `src/genseq.cpp`:
-```cpp
-// BUTTONS
-#define BUTTON_E_PIN 20  // Encoder button
-#define BUTTON_A_PIN 21  // Additional button
-
-// ENCODER
-#define ENCODER_PIN_A 14
-#define ENCODER_PIN_B 15
-#define ENCODER_PIO pio0
-#define ENCODER_SM 0
-
-// DISPLAY (I2C)
-#define DISPLAY_I2C i2c0
-#define DISPLAY_PIN_SDA 4
-#define DISPLAY_PIN_SCL 5
-#define DISPLAY_I2C_ADDR 0x27
-
-// MIDI UART
-#define MIDI_UART uart1
-#define MIDI_UART_PIN_TX 8
-#define MIDI_UART_PIN_RX 9
-
-// STATUS LED
-#define LED_PIN 25
-```
+See [Hardware Configuration](../architecture/hardware-config.md); the source of truth is
+`src/config/pins.h`.
 
 ## Optional Dependencies
 
