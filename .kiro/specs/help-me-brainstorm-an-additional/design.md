@@ -362,6 +362,70 @@ references are removed. Screens are generated from the real view code with the e
 with member / non-member / unassigned markers). The charter gap table entry for per-pattern MIDI
 channels is updated.
 
+### 11. MIDI output load (Requirement 11)
+
+**Output buffer** (`src/sequencer/MidiByteQueue.h`, new, SDK-free). Two lanes:
+
+- a 4096-byte ring for channel bytes (FIFO, order kept);
+- an 8-byte lane for real-time bytes (`0xF8` Clock, `0xFA` Start, `0xFB` Continue, `0xFC`
+  Stop), drained first.
+
+`QueuedMidiOutput : IMidiOutput` (same header, templated on a sink with `bool txEmpty()` and
+`void put(uint8_t)`) implements `write()` as an enqueue and adds `pump(nowUs)`:
+
+```
+pump(nowUs):
+    if sink.txEmpty():                      // UART FIFO fully drained
+        for up to kBurst = 4 bytes:         // keeps real-time jitter <= 4 bytes = 1.28 ms
+            put(realtime lane first, then ring)
+    queued delay = ring depth x 320 us
+    if queued delay >= 10 ms: lastLateMs = nowUs / 1000 (0 stays "never")
+```
+
+`write()` on a full ring calls `pump()` until there is space (Requirement 11.4: wait, never
+drop). `backlog()` returns the ring depth plus the real-time lane depth. The 4-byte burst tolerates
+core1 loop gaps of about 1.3 ms without idling the cable; longer gaps (a large gate-set command)
+only cost wire time, never order.
+
+The UART sink (`UartMidiOutput`) checks `UARTFR.TXFE` (FIFO empty) and writes the data register.
+`IMidiOutput` gains `virtual uint32_t backlog() const { return 0; }`, so every host test output
+(`RecordingMidiOutput`) keeps working unchanged, and `MeteredMidiOutput` forwards it. The byte
+counter, the MIDI tap and the trace markers stay at the enqueue point, so the tap shows the
+order bytes were produced (real-time bytes may reach the wire slightly earlier than shown).
+
+`sequencer_task` calls `midiOutput.pump(now)` on every loop iteration and publishes
+`g_midiLateMs = midiOutput.lastLateMs()`.
+
+**Overload fault.** `Sequencer::update()` calls `overload.observe(output.backlog(), now,
+oneBeatUs)` while playing (the existing `OverloadDetector`). When it reports overloaded the
+sequencer calls `enterTimingFault(MIDI_OUTPUT_OVERLOAD, backlog)`. `play()` resets the detector
+together with the fault acknowledgement. The fault releases all notes and sends Stop into the
+same buffer, behind the bytes already queued, so order and note balance are kept.
+
+**Publishing the fault.** `Sequencer::update()` publishes `g_timingFaultLatched` and
+`g_timingFaultCause` (32-bit volatiles, single writer core1). `UIController::update()` compares
+them with `UIState::timingFaultLatched` and, on a change, sets `timingFaultLatched`,
+`timingFaultCause` and `playing = false` in place and notifies, so the next Space is a Play.
+`acknowledgeFaultOnPlay` already clears the UI side when Play is pressed; core1 clears its latch
+in `play()`.
+
+**Load indicator** (`src/ui/state/LoadIndicator.h`, new, pure):
+
+```cpp
+enum class LoadLevel : uint8_t { OFF, AMBER, RED };
+LoadLevel loadLevel(bool faultLatched, uint32_t lastLateMs, uint32_t nowMs);
+// RED if faultLatched; AMBER if lastLateMs != 0 and nowMs - lastLateMs < 2000; else OFF.
+```
+
+`UIController` draws pixel (15,4): off `0`, amber `0x0080FF00`, red `0x0000FF00`. It redraws
+after every `activeView->render()` (state change and UI pump) and after a banner, and every
+`update()` re-evaluates the level and redraws only when it changed. No view uses (15,4): labels
+are at most three glyphs (columns 0-11), and the status pixels are on row 0.
+
+The policy helpers in `FaultIndication.h` (full-matrix red fill) stay unused: a single red pixel
+plus the stopped transport is the persistent indication, so the performer can still read and
+edit the views while stopped.
+
 ## Data Models
 
 | Where | Type | Size |

@@ -187,6 +187,37 @@ line endings keep CRLF after editing.
     Instruments. Update `ROADMAP.md` and `TODO.md` where they mention per-pattern channels or the
     test view. [R10.4]
 
+- [ ] 14. MIDI output buffer (Requirement 11.1-11.5)
+  - [ ] 14.1 Create `src/sequencer/MidiByteQueue.h`: 4096-byte ring, real-time lane,
+    `QueuedMidiOutput<Sink>` with `write`, `pump(nowUs)`, `backlog()`, `lastLateMs()`. [Design 11]
+  - [ ] 14.2 Add `IMidiOutput::backlog()` (default 0) and forward it in `MeteredMidiOutput`.
+  - [ ] 14.3 Make `UartMidiOutput` a sink (`txEmpty`, `put`), wire `QueuedMidiOutput` in
+    `createSequencerTask`, pump it every core1 loop and publish `g_midiLateMs`.
+  - [ ]* 14.4 Host tests `test/example_midi_byte_queue.cpp`: order kept, real-time ahead of
+    channel bytes, at most 4 bytes per pump, full ring waits and drops nothing, late timestamp at
+    10 ms of queued delay, a full Sequencer fan-out burst through the queue keeps the golden-style
+    byte balance.
+
+- [ ] 15. Overload fault and fault publishing (Requirement 11.6, 11.7)
+  - [ ] 15.1 Observe the output backlog with `OverloadDetector` in `Sequencer::update()`, enter
+    `MIDI_OUTPUT_OVERLOAD`, reset on Play; publish `g_timingFaultLatched` / `g_timingFaultCause`.
+  - [ ] 15.2 `UIController::update()` mirrors the published fault into `UIState` (fault flag,
+    cause, `playing = false`).
+  - [ ]* 15.3 Host tests: a sustained backlog latches the fault after one beat, a burst that
+    drains within a beat does not, the fault releases every note and sends Stop, Play clears it.
+
+- [ ] 16. Load indicator (Requirement 11.8, 11.9)
+  - [ ] 16.1 Create `src/ui/state/LoadIndicator.h` with `loadLevel`.
+  - [ ] 16.2 Draw pixel (15,4) in `UIController` after every render and on level change; add
+    `D:load=` and `D:fault=` cause lines to `H:dump`.
+  - [ ]* 16.3 Host tests for `loadLevel` (off, amber window, red wins).
+
+- [ ] 17. Verification and documentation (Requirement 11, 10.5)
+  - [ ] 17.1 Host suites under ASan/UBSan and the firmware build.
+  - [ ] 17.2 HW: repeat the 11.3 fan-out table and the 11.1 baseline capture; record lateness,
+    missed ticks, fault and load level per Instrument count.
+  - [ ] 17.3 Manual: load pixel, overload fault and recovery, measured limits.
+
 - [ ] 13. Final acceptance
   - [ ] 13.1 Walk the requirements list R1-R10 against the tests and the HW results and record any
     gap in this file.

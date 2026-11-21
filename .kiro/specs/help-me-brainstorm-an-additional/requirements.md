@@ -301,9 +301,8 @@ that nothing hangs or glitches while the sequencer plays.
 3. THE Sequencer SHALL track note ownership per pattern, channel and note, so that a pattern
    routed to several channels releases each note on the channel it was sent on.
 4. THE per-tick MIDI output of the worst case (15 patterns, each audible on 16 channels) SHALL
-   either fit in the existing MIDI event queue bounds or be handled by the existing overload
-   and fail-closed behaviour. It SHALL NOT overrun a queue, drop a Note Off, or leave a note
-   hanging.
+   be handled as specified in Requirement 11. It SHALL NOT overrun a queue, drop a Note Off, or
+   leave a note hanging.
 5. THE performance-safe-foundation timing gates (scheduler lateness, MIDI output bounds, save
    pause, fault latency) SHALL still pass for one Instrument and one pattern per Instrument
    at 40, 120 and 255 BPM.
@@ -313,6 +312,45 @@ that nothing hangs or glitches while the sequencer plays.
 7. THE random number draws of a pattern SHALL NOT depend on the number of its Member
    Instruments, so a seeded pattern produces the same notes whether it is on one channel or on
    several.
+
+### Requirement 11: MIDI output load
+
+**User Story:** As a performer, I want a burst of notes at one tick to be spread over the
+following milliseconds instead of breaking the rhythm, I want to see when the MIDI output is
+getting too busy, and I want the device to stop cleanly when the load is more than the cable
+can carry, so that I can judge how far I can push shared patterns.
+
+Background (measured in task 11.3): MIDI bytes were written to the UART with a blocking write.
+A burst of more than the 32-byte UART FIFO made core1 wait on the cable; a burst longer than one
+tick made the scheduler skip ticks, which dropped their Note On and MIDI Clock bytes. The
+one-beat timing fault never latched.
+
+#### Acceptance Criteria
+
+1. THE Sequencer SHALL NOT wait on the MIDI cable while producing MIDI bytes. Bytes SHALL be
+   placed in a fixed-capacity output buffer (at least 4096 bytes) on core1 and moved to the UART
+   by core1's main loop as the UART accepts them.
+2. THE output buffer SHALL keep the byte order of all channel messages.
+3. MIDI real-time bytes (Clock, Start, Continue, Stop) SHALL be sent ahead of buffered channel
+   bytes, so that they are delayed by at most the bytes already handed to the UART (at most
+   4 bytes, 1.28 ms).
+4. IF the output buffer is full, THEN THE Sequencer SHALL wait for space (the previous blocking
+   behaviour) and SHALL NOT drop any byte.
+5. WHEN a burst of notes is produced at one tick and the average load fits the cable, THE
+   Sequencer SHALL NOT skip ticks because of the burst.
+6. WHEN the output buffer has been non-empty without interruption for one beat while playing,
+   THE Sequencer SHALL enter the timing fault with cause MIDI output overload: stop the
+   transport, release every sounding note and send MIDI Stop, as the existing timing fault does.
+7. THE core1 timing fault state and its cause SHALL be published to core0. WHEN core1 latches
+   a fault, THE UI SHALL set its fault flag and mark the transport as stopped, so that the next
+   Space press is a Play that acknowledges the fault.
+8. THE UI SHALL show a load indicator pixel at (15,4) in every view:
+   - off: normal;
+   - amber: within the last 2 seconds, a byte waited 10 ms or more in the output buffer;
+   - red: a timing fault is latched (until the fault is acknowledged with Play).
+9. THE load indicator SHALL be redrawn after every view render, save banner and view change,
+   and no view SHALL draw anything else at (15,4).
+10. THE golden MIDI stream test and the existing note lifecycle tests SHALL keep their output.
 
 ### Requirement 10: Documentation
 
@@ -330,3 +368,5 @@ that I can use them without reading code.
    Instruments view and the changed Patterns view.
 4. THE product charter's gap table SHALL mark per-pattern MIDI channel configuration as
    delivered through Instruments.
+5. THE user manual SHALL describe the load indicator, the overload fault, how to recover from
+   it, and the measured limits after Requirement 11.
