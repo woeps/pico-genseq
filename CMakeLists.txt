@@ -52,6 +52,7 @@ message(STATUS "Persistence sources: ${PERSISTENCE_SOURCES}")
 # Add source files for the sequencer, commands, and UI components
 add_executable(genseq 
     src/genseq.cpp
+    src/config/binary_info.cpp
     ${SEQUENCER_SOURCES}
     ${COMMON_SOURCES}
     ${COMMANDS_SOURCES}
@@ -62,10 +63,37 @@ add_executable(genseq
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/src/generated)
 pico_generate_pio_header(genseq ${CMAKE_CURRENT_LIST_DIR}/src/ui/hardware/driver/ws2812.pio OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR}/src/generated)
 
-# binary info (readabl by picotool)
+# binary info (readable by picotool: `picotool info -a build/genseq.uf2`)
+# Version = base version + git revision of the tree this was configured from. The revision is
+# read at configure time; CMake re-configures when HEAD or the index changes, so a commit or a
+# staged edit refreshes it. Pinout, build attributes and features are declared in
+# src/config/binary_info.cpp from the macros in src/config/pins.h.
+set(GENSEQ_VERSION_BASE "0.1")
+set(GENSEQ_GIT_REVISION "unknown")
+find_package(Git QUIET)
+if(GIT_FOUND)
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} describe --always --dirty --abbrev=7
+        WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
+        OUTPUT_VARIABLE GENSEQ_GIT_DESCRIBE
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE GENSEQ_GIT_RESULT
+        ERROR_QUIET)
+    if(GENSEQ_GIT_RESULT EQUAL 0 AND NOT GENSEQ_GIT_DESCRIBE STREQUAL "")
+        set(GENSEQ_GIT_REVISION "${GENSEQ_GIT_DESCRIBE}")
+    endif()
+    foreach(_gitfile HEAD index)
+        if(EXISTS ${CMAKE_CURRENT_LIST_DIR}/.git/${_gitfile})
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                         ${CMAKE_CURRENT_LIST_DIR}/.git/${_gitfile})
+        endif()
+    endforeach()
+endif()
+message(STATUS "GenSeq version ${GENSEQ_VERSION_BASE}+${GENSEQ_GIT_REVISION}")
+
 pico_set_program_name(genseq "GenSeq")
-pico_set_program_version(genseq "0.1")
-pico_set_program_description(genseq "Generative MIDI Sequence")
+pico_set_program_version(genseq "${GENSEQ_VERSION_BASE}+${GENSEQ_GIT_REVISION}")
+pico_set_program_description(genseq "Generative MIDI sequencer (RP2040, 15 patterns, shared gate/note/velocity sets)")
 pico_set_program_url(genseq "https://github.com/woeps/pico-genseq")
 
 # Modify the below lines to enable/disable output over UART/USB
@@ -196,6 +224,7 @@ target_compile_definitions(genseq PRIVATE
     GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN=${GENSEQ_CORE1_BOOT_TRACE_FRAM_PIN}
     GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS=${GENSEQ_CORE1_BOOT_TRACE_FRAM_DELAY_MS}
     GENSEQ_PERFORMANCE_TRACE_ENABLED=$<BOOL:${GENSEQ_PERFORMANCE_TRACE_ENABLED}>
+    GENSEQ_GIT_REVISION=\"${GENSEQ_GIT_REVISION}\"
     GENSEQ_TRACE_TICK_PIN=${GENSEQ_TRACE_TICK_PIN}
     GENSEQ_TRACE_MIDI_PIN=${GENSEQ_TRACE_MIDI_PIN}
     GENSEQ_TRACE_OPERATION_PIN=${GENSEQ_TRACE_OPERATION_PIN}
