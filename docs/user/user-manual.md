@@ -67,7 +67,7 @@ read, and GenSeq started with the defaults (section 14).
 5. Press **F6** for the velocity editor: Left three times to `Hmn`, set it to 15 for a looser
    feel, then Right to `Sed` and set a number once you like what you hear. Press **Enter**.
 6. Send the pattern to a second synth: press **F2**, then **Ctrl+N**. A new Instrument appears
-   on channel 2 (label `c02`). With the cursor under pattern 1 press **Enter**: pattern 1 now
+   on channel 2 (label `c02`). With the cursor on pattern 1 press **Enter**: pattern 1 now
    plays on channel 1 and channel 2.
 7. Press **Ctrl+S** to save everything.
 8. To hear the melody in a second rhythm: press **F3**, Ctrl+Right to the add slot and
@@ -172,8 +172,8 @@ half brightness.
 ![INSTRUMENTS view: Instrument 1, Instrument 2, Instrument 2 muted, a refused action](img/instruments.svg)
 
 Five patterns and two Instruments. Instrument 1 (channel 1) plays patterns 1 to 4: pattern 3 is
-stopped (blue) and the route of pattern 4 is off (red, with the cursor on it). Instrument 2 (channel 2) plays
-patterns 1 and 5, so pattern 1 sounds on both channels. Third picture: Instrument 2 muted. Fourth
+stopped (blue) and the route of pattern 4 is off (red, with the cursor on it). Instrument 2
+(channel 2) plays patterns 1 and 5, so pattern 1 sounds on both channels. Third picture: Instrument 2 muted. Fourth
 picture: the strip turns red when an action is refused; it clears at your next key.
 
 | Key | Action |

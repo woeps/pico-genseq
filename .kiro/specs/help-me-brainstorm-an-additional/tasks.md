@@ -124,7 +124,8 @@ line endings keep CRLF after editing.
     functions; register it in `UIController` and the firmware and host CMake files. [R6.2,
     R6.6, Design 5]
   - [x] 8.2 Render: label and channel number, muted tint, 15 pattern cells in the four states
-    plus not-assigned, blinking cursor, 16-pixel Instrument strip, notice flash. [R4.8, R6.3,
+    plus not-assigned, cursor (white top-left pixel of the cell, as in PATTERNS; first built as a
+    pixel pair under the cell and changed after review), 16-pixel Instrument strip, notice flash. [R4.8, R6.3,
     R6.4, R6.5]
   - [x] 8.3 Update `PatternsView::render` with the member / non-member / unassigned markers.
     [R6.7]

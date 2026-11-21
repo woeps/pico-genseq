@@ -71,6 +71,7 @@ because the matrix is only cleared in `onEnter()`.
 | rows 0-4, columns 0-11 | the view's three-glyph label |
 | (13..15, 0) | editor status pixels (dirty, in scale, gate step) |
 | (15, 4) | the load indicator, drawn by `UIController` after every render; no view may use it |
+| top-left pixel of a pattern cell | the cursor / selection in the PATTERNS and INSTRUMENTS grids (white); a cell's state must stay readable from its other three pixels |
 | whole matrix | save banners and the boot banner (`UIController::updateSaveBanner`) for 1.5 s |
 
 Colours are `0xXXGGRRBB`.
