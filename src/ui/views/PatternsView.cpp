@@ -1,6 +1,7 @@
 #include "PatternsView.h"
 #include "../state/Reducer.h"
 #include "../state/SetLibrary.h"
+#include "../state/Instruments.h"
 #include "../Types.h"
 #include <cstdio>
 
@@ -139,12 +140,18 @@ void PatternsView::render(const state::UIState& state)
         const uint32_t color = state.activePatterns & (1 << i)
             ? COLOR_ACTIVE
             : COLOR_INACTIVE;
+        // A pattern in the selected Instrument is a full cell. A pattern that is not keeps only
+        // its top-left pixel, and a pattern in no Instrument at all adds a magenta top-right
+        // pixel (it is silent).
+        const bool member = (state.instruments[state.selectedInstrument].members >> i) & 1u;
+        const bool unassigned = state::instrumentsOf(state, i) == 0;
         for (uint8_t dy = 0; dy < SQUARE_SIZE; dy++) {
             for (uint8_t dx = 0; dx < SQUARE_SIZE; dx++) {
-                ledMatrix.setPixel(x + dx, y + dy, color);
+                const bool lit = member || (dx == 0 && dy == 0);
+                ledMatrix.setPixel(x + dx, y + dy, lit ? color : 0);
             }
         }
-
+        if (!member && unassigned) ledMatrix.setPixel(x + SQUARE_SIZE - 1, y, COLOR_UNASSIGNED);
         if (i != state.selectedPattern) continue;
 
         uint8_t selectedX = x;

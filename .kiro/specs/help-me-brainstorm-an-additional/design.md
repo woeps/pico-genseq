@@ -200,7 +200,7 @@ same cell geometry as `PatternsView` (5 columns x 3 rows of 2 x 2 squares, 1 pix
 
 | Rows | Content |
 |---|---|
-| 0-4 | Label `INS` (existing `drawLabel`) on the left; the selected Instrument's MIDI channel number (existing `drawNumber`) on the right; the number shows red while the Instrument is muted |
+| 0-4 | Label `cNN` (existing `drawLabel`, three characters): the selected Instrument's MIDI channel; the label is red while the Instrument is muted. (`drawNumber` draws in rows 6-10, which the pattern grid uses.) |
 | 5-13 | Pattern grid, one cell per pattern, plus the cursor |
 | 15 | Instrument strip: one pixel per slot (16 pixels). Free = off, occupied = dim blue, muted = dim red, selected = white. A slot with at least one sounding route gets a green tint |
 
@@ -212,8 +212,8 @@ from the constants `PatternsView` already uses:
 | Not in the Pattern Selection | Dim (same colour as an unoccupied slot in `PatternsView`) |
 | Member, route on, pattern active | Green (sounding) |
 | Member, route on, pattern inactive | Blue |
-| Member, route off | Red, 2 x 2 hollow (corner pixels only) |
-| Cursor | White frame pixel in the cell's top-left, blinking at the existing view blink rate |
+| Member, route off | Top row red, bottom row dark |
+| Cursor | Two white pixels in the gap row directly under the cell (rows 7, 10, 13); no blinking, because views render on state change only |
 
 Muted Instrument: the grid is drawn at half brightness, so a muted part reads as "dormant" even
 though the cell states are still visible.

@@ -118,17 +118,17 @@ line endings keep CRLF after editing.
     `.bss` growth against the values from 1.3. Stop and report if the margin falls below the
     documented guard. [Risks]
 
-- [ ] 8. Instruments view
-  - [ ] 8.1 Create `src/ui/views/InstrumentsView.h/.cpp`: key handling from the design table
+- [x] 8. Instruments view
+  - [x] 8.1 Create `src/ui/views/InstrumentsView.h/.cpp`: key handling from the design table
     (arrows, Ctrl+arrows, Enter, E, M, Shift+arrows, Ctrl+N, Delete) calling the reducer
     functions; register it in `UIController` and the firmware and host CMake files. [R6.2,
     R6.6, Design 5]
-  - [ ] 8.2 Render: label and channel number, muted tint, 15 pattern cells in the four states
+  - [x] 8.2 Render: label and channel number, muted tint, 15 pattern cells in the four states
     plus not-assigned, blinking cursor, 16-pixel Instrument strip, notice flash. [R4.8, R6.3,
     R6.4, R6.5]
-  - [ ] 8.3 Update `PatternsView::render` with the member / non-member / unassigned markers.
+  - [x] 8.3 Update `PatternsView::render` with the member / non-member / unassigned markers.
     [R6.7]
-  - [ ]* 8.4 Host tests with a fake `LedMatrix`: each cell state produces its expected pixels, the
+  - [x]* 8.4 Host tests with a fake `LedMatrix`: each cell state produces its expected pixels, the
     strip shows free/occupied/muted/selected, the Patterns view markers, and every key reaches the
     intended reducer function. [R6]
 
