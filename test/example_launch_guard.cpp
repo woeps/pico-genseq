@@ -73,6 +73,10 @@ void UartMidiOutput::write(uint8_t /*byte*/) {
     // No-op host double.
 }
 
+// Sink interface used by the non-blocking QueuedMidiOutput (never pumped in this test).
+bool UartMidiOutput::txEmpty() const { return true; }
+void UartMidiOutput::put(uint8_t /*byte*/) {}
+
 // Linker seam only: sequencer_task() now calls corePauseCheck() once per loop
 // iteration (cooperative flash-write pause). The loop never runs in this test
 // (multicore_launch_core1 above does not invoke the entry function), so a no-op

@@ -15,4 +15,12 @@ namespace sequencer {
         uart_putc_raw(uart, byte); // exactly one byte, unmodified (Req 2.2, 2.4)
     }
 
+    bool UartMidiOutput::txEmpty() const {
+        return (uart_get_hw(uart)->fr & UART_UARTFR_TXFE_BITS) != 0;
+    }
+
+    void UartMidiOutput::put(uint8_t byte) {
+        uart_get_hw(uart)->dr = byte;  // caller checked txEmpty(): the FIFO has room
+    }
+
 } // namespace sequencer

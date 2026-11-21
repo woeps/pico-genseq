@@ -6,6 +6,7 @@
 #include "IMidiOutput.h"
 #include "IMonotonicClock.h"
 #include "NoteLifecycle.h"
+#include "OverloadDetector.h"
 #include "PatternRng.h"
 #include "PerformanceFault.h"
 #include "PerformanceMetrics.h"
@@ -31,6 +32,7 @@ public:
     MeteredMidiOutput(IMidiOutput& inner, uint64_t& byteCounter)
         : inner_(inner), byteCounter_(byteCounter) {}
     void write(uint8_t byte) override;  // defined in sequencer.cpp (uses PerformanceTrace)
+    uint32_t backlog() const override { return inner_.backlog(); }
 
 private:
     IMidiOutput& inner_;
@@ -62,6 +64,8 @@ public:
     void applyInstrument(uint8_t slot, uint8_t protocolChannel, uint16_t mask);
 
     const PerformanceMetrics& performanceMetrics() const { return metrics; }
+    bool timingFaultLatched() const { return fault.latched(); }
+    PerformanceFaultCause timingFaultCause() const { return fault.cause(); }
     void resetPerformanceMetrics();
 
     // Set a pattern's Generation Parameters (generative-engine-expansion). This
@@ -110,6 +114,8 @@ private:
     PerformanceFault fault;
     // Instrument routing (core1's copy): which channels each pattern sounds on.
     common::RouteTable routeTable;
+    // Sustained MIDI output backlog detector (Requirement 11.6).
+    OverloadDetector overload;
 
     void play();
     void stop();

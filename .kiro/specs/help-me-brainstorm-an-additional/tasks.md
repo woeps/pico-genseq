@@ -187,23 +187,23 @@ line endings keep CRLF after editing.
     Instruments. Update `ROADMAP.md` and `TODO.md` where they mention per-pattern channels or the
     test view. [R10.4]
 
-- [ ] 14. MIDI output buffer (Requirement 11.1-11.5)
-  - [ ] 14.1 Create `src/sequencer/MidiByteQueue.h`: 4096-byte ring, real-time lane,
+- [x] 14. MIDI output buffer (Requirement 11.1-11.5)
+  - [x] 14.1 Create `src/sequencer/MidiByteQueue.h`: 4096-byte ring, real-time lane,
     `QueuedMidiOutput<Sink>` with `write`, `pump(nowUs)`, `backlog()`, `lastLateMs()`. [Design 11]
-  - [ ] 14.2 Add `IMidiOutput::backlog()` (default 0) and forward it in `MeteredMidiOutput`.
-  - [ ] 14.3 Make `UartMidiOutput` a sink (`txEmpty`, `put`), wire `QueuedMidiOutput` in
+  - [x] 14.2 Add `IMidiOutput::backlog()` (default 0) and forward it in `MeteredMidiOutput`.
+  - [x] 14.3 Make `UartMidiOutput` a sink (`txEmpty`, `put`), wire `QueuedMidiOutput` in
     `createSequencerTask`, pump it every core1 loop and publish `g_midiLateMs`.
-  - [ ]* 14.4 Host tests `test/example_midi_byte_queue.cpp`: order kept, real-time ahead of
+  - [x]* 14.4 Host tests `test/example_midi_byte_queue.cpp`: order kept, real-time ahead of
     channel bytes, at most 4 bytes per pump, full ring waits and drops nothing, late timestamp at
     10 ms of queued delay, a full Sequencer fan-out burst through the queue keeps the golden-style
     byte balance.
 
 - [ ] 15. Overload fault and fault publishing (Requirement 11.6, 11.7)
-  - [ ] 15.1 Observe the output backlog with `OverloadDetector` in `Sequencer::update()`, enter
+  - [x] 15.1 Observe the output backlog with `OverloadDetector` in `Sequencer::update()`, enter
     `MIDI_OUTPUT_OVERLOAD`, reset on Play; publish `g_timingFaultLatched` / `g_timingFaultCause`.
   - [ ] 15.2 `UIController::update()` mirrors the published fault into `UIState` (fault flag,
     cause, `playing = false`).
-  - [ ]* 15.3 Host tests: a sustained backlog latches the fault after one beat, a burst that
+  - [x]* 15.3 Host tests: a sustained backlog latches the fault after one beat, a burst that
     drains within a beat does not, the fault releases every note and sends Stop, Play clears it.
 
 - [ ] 16. Load indicator (Requirement 11.8, 11.9)

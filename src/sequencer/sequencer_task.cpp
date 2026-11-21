@@ -1,6 +1,8 @@
 #include "sequencer.h"
 #include "PicoMonotonicClock.h"
 #include "UartMidiOutput.h"
+#include "MidiByteQueue.h"
+#include "sequencer_telemetry.h"
 #include "PatternSnapshot.h"
 #include "pico/multicore.h"
 #include "core_pause.h"
@@ -23,6 +25,10 @@ namespace sequencer {
 
 // Global pointer for multicore communication (moved from sequencer.cpp)
 static Sequencer* globalSequencer = nullptr;
+// Non-blocking MIDI output (Requirement 11): the sequencer writes into this buffer and the core1
+// loop below moves the bytes to the UART.
+static QueuedMidiOutput<UartMidiOutput>* globalMidiQueue = nullptr;
+static PicoMonotonicClock* globalClock = nullptr;
 
 // Reused fixed-capacity decode buffer (task 6.4, Req 7.9). Hoisted from a
 // FUNCTION-LOCAL static inside sequencer_task() to FILE SCOPE so its
@@ -152,6 +158,8 @@ static void sequencer_task() {
             // (XIP) mid-erase/program (Req 4.4, 4.5).
             corePauseCheck();
             BB_REGION(10);
+            globalMidiQueue->pump(globalClock->nowMicros());
+            g_midiLateMs = globalMidiQueue->lastLateMs();
 
             // Dual-core stack-overflow guard (BUG A / BUG B-pt2 class): cheap
             // sentinel check of the inter-stack gap. If a core0 boot-path stack
@@ -181,6 +189,7 @@ static void sequencer_task() {
             BB_REGION(15);
             globalSequencer->update();
             BB_REGION(16);
+            globalMidiQueue->pump(globalClock->nowMicros());
 #if GENSEQ_CORE1_BOOT_TRACE
             g_core1Stage = 6;
 #endif
@@ -191,9 +200,12 @@ static void sequencer_task() {
 void createSequencerTask(uart_inst_t* uart, uint txPin, uint rxPin) {
     // Dependencies are constructed before Sequencer so their lifetimes enclose
     // every core1 access to the injected references.
-    static UartMidiOutput midiOutput(uart, txPin, rxPin);
+    static UartMidiOutput uartOutput(uart, txPin, rxPin);
+    static QueuedMidiOutput<UartMidiOutput> midiOutput(uartOutput);
     static PicoMonotonicClock monotonicClock;
     static Sequencer sequencer(midiOutput, monotonicClock);
+    globalMidiQueue = &midiOutput;
+    globalClock = &monotonicClock;
     static bool launched = false;
 
     globalSequencer = &sequencer;

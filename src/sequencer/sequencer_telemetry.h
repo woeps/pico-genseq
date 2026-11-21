@@ -17,6 +17,16 @@ namespace sequencer {
 // (the post-Stop ownership invariant, Req 5.8) — the literal stuck-note signal.
 extern volatile uint32_t g_soundingNotes;
 
+// MIDI output load and timing fault (Requirement 11). Written only by core1, read by core0 for
+// the load indicator pixel and the fault mirror in UIState.
+//   g_midiLateMs        : ms since boot when a byte last waited >= 10 ms in the output buffer
+//                         (0 = never).
+//   g_timingFaultLatched: 1 while core1's timing fault is latched (cleared by Play).
+//   g_timingFaultCause  : PerformanceFaultCause of the latched fault (0 = NONE).
+extern volatile uint32_t g_midiLateMs;
+extern volatile uint32_t g_timingFaultLatched;
+extern volatile uint32_t g_timingFaultCause;
+
 #ifndef GENSEQ_HOST_CONTROL
 #define GENSEQ_HOST_CONTROL 0
 #endif

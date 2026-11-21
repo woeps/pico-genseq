@@ -18,6 +18,9 @@ namespace sequencer {
 // Cross-core stuck-note telemetry (task 12.4). Written by core1 in update();
 // read lock-free by core0 for H:dump.
 volatile uint32_t g_soundingNotes = 0;
+volatile uint32_t g_midiLateMs = 0;
+volatile uint32_t g_timingFaultLatched = 0;
+volatile uint32_t g_timingFaultCause = 0;
 
 Sequencer::Sequencer(IMidiOutput& output, IMonotonicClock& clock)
     : output(output),
@@ -127,6 +130,8 @@ void Sequencer::update() {
     // freezing at the last played value. Single aligned 32-bit store, read
     // lock-free by core0 (task 12.4 literal stuck-note metric).
     g_soundingNotes = noteLifecycle.soundingCount();
+    g_timingFaultLatched = fault.latched() ? 1u : 0u;
+    g_timingFaultCause = static_cast<uint32_t>(fault.cause());
 #if GENSEQ_HOST_CONTROL
     // Bench measurement window (host-control builds only): honour a reset request from core0,
     // then republish the scheduler metrics.
@@ -186,6 +191,16 @@ void Sequencer::update() {
     // serviced nothing this call and asked us to fault.
     if (report.faulted) {
         enterTimingFault(PerformanceFaultCause::SCHEDULER_LATENESS, report.faultLatenessUs);
+        return;
+    }
+
+    // Sustained MIDI output overload (Requirement 11.6): the output buffer has not emptied for
+    // a whole beat, so the average load is more than the cable carries. Fail closed.
+    const uint32_t backlog = meteredOutput.backlog();
+    const uint64_t oneBeatUs =
+        timeline.currentTickDurationMicros() * static_cast<uint64_t>(timeline.ticksPerBeat());
+    if (overload.observe(backlog, clock.nowMicros(), oneBeatUs)) {
+        enterTimingFault(PerformanceFaultCause::MIDI_OUTPUT_OVERLOAD, backlog);
     }
 }
 
@@ -739,6 +754,7 @@ void Sequencer::play() {
     if (ack.acknowledged) {
         instrumentation::PerformanceTrace::setFault(false);
     }
+    overload.reset();  // a new overload window starts with this Play
 
     // Deterministic repeated Play (Req 5.10): a Play while already playing does
     // NOT abandon existing ownership and does NOT emit an unmatched Start/Stop.
