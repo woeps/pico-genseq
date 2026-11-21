@@ -6,7 +6,7 @@ are tests. Steps that need the board are marked HW and stop for the user. Files 
 line endings keep CRLF after editing.
 
 - [ ] 1. Baseline and call-site audit
-  - [ ] 1.1 Confirm the golden MIDI stream test (hash `0xe10306b07cf2b0dd`, 1298 bytes) passes
+  - [ ] 1.1 Confirm the golden MIDI stream test (hash `0x6e772345f8af0f79`, 1304 bytes) passes
     on the current master and note the command that runs it in this file's commit message.
     [R9.6]
   - [ ] 1.2 List every use of `Pattern::midiChannel`, `getMidiChannel`, `setMidiChannel`,

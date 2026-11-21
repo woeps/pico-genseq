@@ -15,7 +15,7 @@ The design keeps three principles of the existing code:
   route plays nothing, so a half-applied edit can only be silent, never on a wrong channel.
 - **Behaviour-preserving defaults.** One Instrument on channel 1 that contains all patterns with
   all routes enabled produces exactly today's MIDI stream. The golden stream test
-  (hash `0xe10306b07cf2b0dd`, 1298 bytes) is the proof.
+  (hash `0x6e772345f8af0f79`, 1304 bytes) is the proof.
 
 Three independent switches decide whether a note sounds (Requirement 4.9):
 
@@ -413,7 +413,7 @@ Host tests (the project's `test/` property and example suites and the `tests/` C
    variants (duplicate channel, bad mask, route bit outside members, zero Instruments) are rejected;
    worst-case record size fits.
 7. **Golden stream**: the existing golden test, run with the default single Instrument, is
-   unchanged and must keep hash `0xe10306b07cf2b0dd`.
+   unchanged and must keep hash `0x6e772345f8af0f79`.
 8. **Canonical channel test** (`example_canonical_channel.cpp`) is rewritten to drive channels
    through `INSTRUMENT_SET` instead of `Pattern::setMidiChannel`.
 
@@ -438,3 +438,34 @@ power-cycle for the restore check):
 | Removing `InitView` removes the only play LED code | Dark LED | LED handling moves to `UIController` in the same step, with a test via a fake LED |
 | Format v4 changes the FRAM record | A downgrade cannot read a v4 save | v3 and older stay readable; the manual notes that older firmware cannot read v4 saves |
 | Instrument fan-out and per-pattern `emitStep` split touch the generation lens | Regression in seeded output | Default fast path and property tests (`property2`, `property5`, golden stream) run unchanged |
+
+## Call-site audit (task 1)
+
+Baseline measured on master `d1dd86d` (branch `feature/instruments`): `test/` suite 48/48 passing
+under ASan+UBSan (`cmake -B <dir> -S test -DGENSEQ_SANITIZE=ON`), `tests/` suite passing
+(`cmake -B <dir> -S tests`). The golden stream test is `genseq_example_golden_stream`; its current
+fingerprint is `0x6e772345f8af0f79`, 1304 bytes (the original 1298-byte stream changed once for the
+Note Off retrigger fix, PR #8). This document and tasks.md use the current value.
+
+Uses to change:
+
+- Per-pattern channel: `src/common/pattern.{h,cpp}`, `src/sequencer/sequencer.cpp` (1),
+  `src/persistence/PersistableConfig.h`, `src/persistence/SaveRecord.cpp`,
+  `src/ui/state/PersistMapping.cpp`, `src/tools/fram_save_trace.cpp`; tests:
+  `test/PersistGen.h`, `test/PersistTestSupport.h`, `example_banner_mapping`,
+  `example_canonical_channel`, `example_header_layout`, `example_outcome_mapping`,
+  `example_set_persistence`, `property7_genparams_roundtrip`.
+- Test view: `src/ui/views/InitView.{h,cpp}`, `UIController.{h,cpp}`, `Reducer.{h,cpp}`
+  (`setValue`, `FUNCTION_KEY_VIEWS`), `UIState.h` (`ViewId::INIT`, `value`),
+  `HostControl.cpp` (`viewName`), `tests/test_initview.cpp`, `tests/test_reducer.cpp` (lines 23, 40,
+  252, 267), `tests/test_patternsview.cpp` (103), `tests/CMakeLists.txt`,
+  `tools/manual_screens/gen.cpp` (line 230, "TEST (F1)" screen).
+- `H:view`: no bench script or tool in `test/bench` or `tools` uses it; only the comment in
+  `HostControl.h` and the `view` verb itself.
+
+Core1 memory baseline (`build/genseq.elf`, firmware at `d1dd86d`-era): text 195820, bss 22240.
+`__bss_end__` = `0x20007d68`, heap limit `0x20040000`, so roughly 226 KB of main RAM is free. The
+stacks are separate: core1 stack `[0x20040800, 0x20041000)`, gap `[0x20041000, 0x20041800)`, core0
+stack `[0x20041800, 0x20042000)`. The 2 KB `NoteLifecycle` growth lands in BSS and cannot reduce
+either stack or the gap; the risk row "core1 RAM +2 KB" is therefore low. Task 7.6 still compares
+`__bss_end__` and the guard symbols after the change.
