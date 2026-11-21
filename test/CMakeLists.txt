@@ -634,6 +634,7 @@ add_test(NAME genseq_example_sequencer_integration COMMAND genseq_example_sequen
 set(EXAMPLE_GOLDEN_STREAM_SRC "${TEST_DIR}/example_golden_stream.cpp")
 set(EXAMPLE_SET_LIBRARY_SRC "${TEST_DIR}/example_set_library.cpp")
 set(EXAMPLE_SET_PERSISTENCE_SRC "${TEST_DIR}/example_set_persistence.cpp")
+set(EXAMPLE_SEQUENCER_SHARING_SRC "${TEST_DIR}/example_sequencer_sharing.cpp")
 add_executable(genseq_example_golden_stream "${EXAMPLE_GOLDEN_STREAM_SRC}")
 target_include_directories(genseq_example_golden_stream PRIVATE ${EMISSION_INCLUDE_DIRS})
 target_link_libraries(genseq_example_golden_stream PRIVATE genseq_emission)
@@ -953,6 +954,7 @@ if(RAPIDCHECK_AVAILABLE)
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_BATCH_FRAMING_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SET_LIBRARY_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SET_PERSISTENCE_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SEQUENCER_SHARING_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${SMOKE_HOST_COMPILATION_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_HEADER_LAYOUT_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_OUTCOME_MAPPING_SRC}")
@@ -1181,6 +1183,22 @@ target_include_directories(genseq_example_set_persistence PRIVATE
 )
 target_link_libraries(genseq_example_set_persistence PRIVATE genseq_emission)
 add_test(NAME genseq_example_set_persistence COMMAND genseq_example_set_persistence)
+
+# Shared sets on the real sequencer (tasks 9.1-9.3): reducer fan-out bridged into a Sequencer.
+add_executable(genseq_example_sequencer_sharing
+    "${EXAMPLE_SEQUENCER_SHARING_SRC}"
+    "${SRC_DIR}/ui/state/Reducer.cpp"
+    "${SRC_DIR}/ui/state/SetLibrary.cpp"
+)
+target_include_directories(genseq_example_sequencer_sharing PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}"
+    "${SRC_DIR}/ui"
+    "${SRC_DIR}/ui/state"
+    "${SRC_DIR}/persistence"
+)
+target_link_libraries(genseq_example_sequencer_sharing PRIVATE genseq_emission)
+add_test(NAME genseq_example_sequencer_sharing COMMAND genseq_example_sequencer_sharing)
 
 # ---------------------------------------------------------------------------
 # Example test: GEN_PARAMS_SET FIFO round-trip (generative-engine-expansion task
