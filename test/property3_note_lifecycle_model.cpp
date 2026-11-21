@@ -36,12 +36,15 @@ namespace {
 
 // A small fixed set of patterns so overlaps and shared keys actually occur.
 constexpr uint8_t kPatterns = 4;
+// Instrument routes per pattern (one monophonic voice per (pattern, route)).
+constexpr uint8_t kRoutes = 3;
 
-enum class Op : uint8_t { NoteOn, ReleasePattern, ReleaseAll, Panic };
+enum class Op : uint8_t { NoteOn, ReleasePattern, ReleaseRoute, ReleaseAll, Panic };
 
 struct GenOp {
     Op op;
     uint8_t pattern;   // 0..kPatterns-1
+    uint8_t route;     // 0..kRoutes-1
     uint8_t channel;   // 0..15 canonical
     uint8_t note;      // 0..127
     uint8_t velocity;  // 0..127
@@ -51,7 +54,7 @@ struct GenOp {
 // the expected emitted byte stream.
 struct Model {
     struct Owned { bool sounding = false; uint8_t channel = 0; uint8_t note = 0; };
-    std::array<Owned, kPatterns> owned{};
+    std::array<std::array<Owned, kRoutes>, kPatterns> owned{};
     uint16_t aggregate[16][128] = {{0}};
     std::vector<uint8_t> wire;
 
@@ -71,20 +74,22 @@ struct Model {
         uint16_t& c = aggregate[o.channel][o.note];
         if (c > 0) { --c; if (c == 0) emitOff(o.channel, o.note); }
     }
-    void noteOn(uint8_t p, uint8_t ch, uint8_t note, uint8_t vel) {
+    void noteOn(uint8_t p, uint8_t route, uint8_t ch, uint8_t note, uint8_t vel) {
         ch &= 0x0F; note &= 0x7F; vel &= 0x7F;
-        Owned& o = owned[p];
+        Owned& o = owned[p][route];
         if (o.sounding) releaseOwned(o);        // monophonic replacement
         o.sounding = true; o.channel = ch; o.note = note;
         if (aggregate[ch][note] > 0) emitOff(ch, note);  // key already on the wire: Off first
         ++aggregate[ch][note];
         emitOn(ch, note, vel);                  // every Note On emitted (5.3)
     }
-    void releasePattern(uint8_t p) { releaseOwned(owned[p]); }
-    void releaseAll() { for (auto& o : owned) releaseOwned(o); }
+    void releasePattern(uint8_t p) { for (auto& o : owned[p]) releaseOwned(o); }
+    void releaseRoute(uint8_t p, uint8_t route) { releaseOwned(owned[p][route]); }
+    void releaseAll() { for (auto& row : owned) for (auto& o : row) releaseOwned(o); }
+    bool sounding(uint8_t p) const { for (const auto& o : owned[p]) if (o.sounding) return true; return false; }
     void panic() { releaseAll(); /* model never leaks an aggregate count */ }
     bool empty() const {
-        for (const auto& o : owned) if (o.sounding) return false;
+        for (const auto& row : owned) for (const auto& o : row) if (o.sounding) return false;
         for (auto& row : aggregate) for (uint16_t v : row) if (v != 0) return false;
         return true;
     }
@@ -99,11 +104,13 @@ struct Arbitrary<GenOp> {
         return gen::build<GenOp>(
             gen::set(&GenOp::op, gen::weightedElement<Op>({
                 {5, Op::NoteOn},         // favor Note On so overlaps/retriggers happen
-                {3, Op::ReleasePattern},
+                {2, Op::ReleasePattern},
+                {2, Op::ReleaseRoute},
                 {1, Op::ReleaseAll},
                 {1, Op::Panic},
             })),
             gen::set(&GenOp::pattern, gen::inRange<uint8_t>(0, kPatterns)),
+            gen::set(&GenOp::route, gen::inRange<uint8_t>(0, kRoutes)),
             // Narrow channel/note ranges so shared (channel,note) keys collide
             // across patterns and the aggregate-refcount path is exercised.
             gen::set(&GenOp::channel, gen::inRange<uint8_t>(0, 3)),
@@ -130,13 +137,17 @@ bool runProperty3() {
             auto applyBoth = [&](const GenOp& g) {
                 switch (g.op) {
                     case Op::NoteOn:
-                        nl.noteOn(ids[g.pattern], common::MidiChannel(g.channel & 0x0F),
-                                  g.note, g.velocity);
-                        model.noteOn(g.pattern, g.channel, g.note, g.velocity);
+                        nl.noteOn(ids[g.pattern], g.route,
+                                  common::MidiChannel(g.channel & 0x0F), g.note, g.velocity);
+                        model.noteOn(g.pattern, g.route, g.channel, g.note, g.velocity);
                         break;
                     case Op::ReleasePattern:
                         nl.releasePattern(ids[g.pattern]);
                         model.releasePattern(g.pattern);
+                        break;
+                    case Op::ReleaseRoute:
+                        nl.releaseRoute(ids[g.pattern], g.route);
+                        model.releaseRoute(g.pattern, g.route);
                         break;
                     case Op::ReleaseAll:
                         nl.releaseAll();
@@ -153,7 +164,10 @@ bool runProperty3() {
                 applyBoth(g);
                 // Per-pattern sounding state agrees with the model after each op.
                 for (uint8_t i = 0; i < kPatterns; ++i) {
-                    RC_ASSERT(nl.patternSounding(ids[i]) == model.owned[i].sounding);
+                    RC_ASSERT(nl.patternSounding(ids[i]) == model.sounding(i));
+                    for (uint8_t r = 0; r < kRoutes; ++r) {
+                        RC_ASSERT(nl.routeSounding(ids[i], r) == model.owned[i][r].sounding);
+                    }
                 }
                 // Emitted wire stream agrees exactly (value and order).
                 RC_ASSERT(out.record() == model.wire);

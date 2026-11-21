@@ -181,6 +181,71 @@ void test_stale_release_ignored() {
     check(nl.ownershipEmpty(), "correct release clears ownership");
 }
 
+// One pattern routed to several Instruments: one voice per route, released independently.
+void test_multi_route_voices() {
+    RecordingMidiOutput out;
+    NoteLifecycle nl(out);
+    PatternId p(0, 1);
+    const MidiChannel c0(0), c1(1), c5(5);
+
+    nl.noteOn(p, 0, c0, 60, 100);
+    nl.noteOn(p, 1, c1, 60, 100);
+    nl.noteOn(p, 4, c5, 60, 100);
+    check(nl.soundingCount() == 3, "three voices for one pattern on three routes");
+    check(nl.routeSounding(p, 0) && nl.routeSounding(p, 1) && nl.routeSounding(p, 4),
+          "all three routes sounding");
+    check(nl.aggregateCount(c0, 60) == 1 && nl.aggregateCount(c1, 60) == 1 &&
+              nl.aggregateCount(c5, 60) == 1,
+          "one aggregate count per channel");
+
+    out.clear();
+    nl.releaseRoute(p, 1);
+    check(out.record() == noteOff(1, 60), "releaseRoute emits Note Off on that route's channel only");
+    check(nl.routeSounding(p, 0) && !nl.routeSounding(p, 1) && nl.routeSounding(p, 4),
+          "other routes keep sounding");
+
+    // A monophonic replacement on one route must not touch the others.
+    out.clear();
+    nl.noteOn(p, 0, c0, 62, 90);
+    std::vector<uint8_t> expect = noteOff(0, 60);
+    const std::vector<uint8_t> on = noteOn(0, 62, 90);
+    expect.insert(expect.end(), on.begin(), on.end());
+    check(out.record() == expect, "replacement on route 0 releases only route 0's old note");
+    check(nl.routeSounding(p, 4), "route 4 untouched by replacement on route 0");
+
+    // The released note keeps the channel recorded at Note On (channel change safety).
+    out.clear();
+    nl.releasePattern(p);
+    check(nl.ownershipEmpty(), "releasePattern releases every route voice");
+    check(contains(out.record(), noteOff(0, 62)) && contains(out.record(), noteOff(5, 60)),
+          "each voice released on its recorded channel");
+
+    // Stale generation does not release a voice of a newer occupant.
+    PatternId current(2, 9), stale(2, 4);
+    nl.noteOn(current, 3, c1, 70, 80);
+    out.clear();
+    nl.releaseRoute(stale, 3);
+    check(out.record().empty() && nl.routeSounding(current, 3), "stale releaseRoute ignored");
+    nl.releaseAll();
+    check(nl.ownershipEmpty(), "releaseAll clears route voices");
+}
+
+// A key shared by two patterns on two routes of the same channel still gives one final Note Off.
+void test_shared_key_across_routes() {
+    RecordingMidiOutput out;
+    NoteLifecycle nl(out);
+    PatternId a(0, 1), b(1, 1);
+    const MidiChannel c(2);
+    nl.noteOn(a, 2, c, 64, 100);
+    nl.noteOn(b, 2, c, 64, 100);  // retrigger: Note Off, Note On
+    check(nl.aggregateCount(c, 64) == 2, "two owners of one key");
+    out.clear();
+    nl.releasePattern(a);
+    check(out.record().empty(), "first owner release is silent");
+    nl.releasePattern(b);
+    check(out.record() == noteOff(2, 64), "last owner emits the single Note Off");
+}
+
 }  // namespace
 
 int main() {
@@ -190,6 +255,8 @@ int main() {
     test_monophonic_replacement();
     test_release_all_and_panic_empty();
     test_stale_release_ignored();
+    test_multi_route_voices();
+    test_shared_key_across_routes();
 
     if (failures == 0) {
         std::printf("example_note_lifecycle: all checks passed\n");

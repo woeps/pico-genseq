@@ -25,16 +25,16 @@ line endings keep CRLF after editing.
     mask and index, `removePattern` equals `removePatternBit` on every slot.
   - [x] 2.3 Register the test in `test/CMakeLists.txt`.
 
-- [ ] 3. NoteLifecycle voices per (pattern, route)
-  - [ ] 3.1 Change ownership to `owned_[PATTERN_CAPACITY][MAX_INSTRUMENTS]`; add
+- [x] 3. NoteLifecycle voices per (pattern, route)
+  - [x] 3.1 Change ownership to `owned_[PATTERN_CAPACITY][MAX_INSTRUMENTS]`; add
     `noteOn(id, route, channel, note, velocity)`, `releaseRoute(id, route)`; keep the four-argument
     `noteOn` as route 0; make `releasePattern`, `releaseAll`, `panic`, `ownershipEmpty` and
     `soundingCount` cover all voices. Keep the retrigger Note Off rule. [R9.3, Design 8]
-  - [ ]* 3.2 Extend `test/example_note_lifecycle.cpp` and `test/example_note_balance.cpp`:
+  - [x]* 3.2 Extend `test/example_note_lifecycle.cpp` and `test/example_note_balance.cpp`:
     one pattern on three routes sounds and releases on three channels; `releaseRoute` releases
     only its voice; a monophonic replacement on one route does not touch the others; shared key
     on two patterns still gives one final Note Off.
-  - [ ]* 3.3 Extend `test/property3_note_lifecycle_model.cpp`: random sequences of noteOn,
+  - [x]* 3.3 Extend `test/property3_note_lifecycle_model.cpp`: random sequences of noteOn,
     releaseRoute, releasePattern, channel change and `releaseAll`; the wire balance is zero for
     every (channel, note) after a final `releaseAll`.
 

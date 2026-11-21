@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "../common/InstrumentRouting.h"
 #include "../common/MidiChannel.h"
 #include "../common/PatternId.h"
 #include "IMidiOutput.h"
@@ -59,12 +60,21 @@ public:
     // Note On is emitted on the wire, including a retrigger of a key another
     // pattern already sounds (Req 5.3); such a retrigger is preceded by a Note
     // Off for that key so the wire alternates On/Off per key.
+    //
+    // A pattern may sound on several Instrument routes at once (one voice per route slot); each
+    // voice is monophonic. The four-argument form is route 0, kept for single-route callers.
     void noteOn(common::PatternId pattern, common::MidiChannel channel, uint8_t note,
                 uint8_t velocity) {
+        noteOn(pattern, 0, channel, note, velocity);
+    }
+
+    void noteOn(common::PatternId pattern, uint8_t route, common::MidiChannel channel,
+                uint8_t note, uint8_t velocity) {
         if (!pattern.valid() || pattern.index >= common::PATTERN_CAPACITY) return;
+        if (route >= common::MAX_INSTRUMENTS) return;
         note &= 0x7F;
 
-        OwnedNote& owned = owned_[pattern.index];
+        OwnedNote& owned = owned_[pattern.index][route];
         if (owned.sounding) {
             // Replace: release the old note first so ownership stays monophonic.
             releaseOwned(owned);
@@ -88,18 +98,26 @@ public:
     // a note a newer occupant started (defensive; the scheduler already resolves
     // live ids). The final Note Off is emitted only when the aggregate count for
     // the key reaches zero.
+    // Releases every route voice of the pattern.
     void releasePattern(common::PatternId pattern) {
         if (pattern.index >= common::PATTERN_CAPACITY) return;
-        OwnedNote& owned = owned_[pattern.index];
-        if (!owned.sounding) return;
-        if (owned.generation != pattern.generation) return;  // stale: not this owner
-        releaseOwned(owned);
+        for (uint8_t route = 0; route < common::MAX_INSTRUMENTS; ++route) {
+            releaseVoice(owned_[pattern.index][route], pattern.generation);
+        }
+    }
+
+    // Release only the voice `pattern` holds on `route` (route removed, muted, channel changed).
+    void releaseRoute(common::PatternId pattern, uint8_t route) {
+        if (pattern.index >= common::PATTERN_CAPACITY || route >= common::MAX_INSTRUMENTS) return;
+        releaseVoice(owned_[pattern.index][route], pattern.generation);
     }
 
     // Release every owned note and clear all ownership (Stop / normal all-off).
     void releaseAll() {
         for (uint8_t i = 0; i < common::PATTERN_CAPACITY; ++i) {
-            if (owned_[i].sounding) releaseOwned(owned_[i]);
+            for (uint8_t route = 0; route < common::MAX_INSTRUMENTS; ++route) {
+                if (owned_[i][route].sounding) releaseOwned(owned_[i][route]);
+            }
         }
     }
 
@@ -122,7 +140,18 @@ public:
     // --- Observers (host tests / validation) ---------------------------------
     bool patternSounding(common::PatternId pattern) const {
         if (pattern.index >= common::PATTERN_CAPACITY) return false;
-        const OwnedNote& o = owned_[pattern.index];
+        for (uint8_t route = 0; route < common::MAX_INSTRUMENTS; ++route) {
+            const OwnedNote& o = owned_[pattern.index][route];
+            if (o.sounding && o.generation == pattern.generation) return true;
+        }
+        return false;
+    }
+
+    bool routeSounding(common::PatternId pattern, uint8_t route) const {
+        if (pattern.index >= common::PATTERN_CAPACITY || route >= common::MAX_INSTRUMENTS) {
+            return false;
+        }
+        const OwnedNote& o = owned_[pattern.index][route];
         return o.sounding && o.generation == pattern.generation;
     }
 
@@ -133,10 +162,13 @@ public:
     // Number of patterns currently holding a sounding note. Zero after Stop /
     // fault (the post-Stop invariant). Published cross-core for the literal
     // stuck-note validation metric (task 12.4).
-    uint8_t soundingCount() const {
-        uint8_t c = 0;
+    // Counts sounding VOICES (a pattern routed to N channels counts N).
+    uint16_t soundingCount() const {
+        uint16_t c = 0;
         for (uint8_t i = 0; i < common::PATTERN_CAPACITY; ++i) {
-            if (owned_[i].sounding) ++c;
+            for (uint8_t route = 0; route < common::MAX_INSTRUMENTS; ++route) {
+                if (owned_[i][route].sounding) ++c;
+            }
         }
         return c;
     }
@@ -145,7 +177,9 @@ public:
     // post-Stop / post-fault invariant (Req 5.8).
     bool ownershipEmpty() const {
         for (uint8_t i = 0; i < common::PATTERN_CAPACITY; ++i) {
-            if (owned_[i].sounding) return false;
+            for (uint8_t route = 0; route < common::MAX_INSTRUMENTS; ++route) {
+                if (owned_[i][route].sounding) return false;
+            }
         }
         for (uint16_t ch = 0; ch < 16; ++ch) {
             for (uint16_t n = 0; n < 128; ++n) {
@@ -162,6 +196,13 @@ private:
         common::MidiChannel channel{};
         uint8_t note = 0;
     };
+
+    // Release one voice if it is still owned by the pattern generation `generation`.
+    void releaseVoice(OwnedNote& owned, uint32_t generation) {
+        if (!owned.sounding) return;
+        if (owned.generation != generation) return;  // stale: not this owner
+        releaseOwned(owned);
+    }
 
     // Release one owned note record: decrement the aggregate count and emit the
     // final Note Off only when the last owner lets go.
@@ -192,7 +233,7 @@ private:
     }
 
     IMidiOutput& output_;
-    OwnedNote owned_[common::PATTERN_CAPACITY];
+    OwnedNote owned_[common::PATTERN_CAPACITY][common::MAX_INSTRUMENTS];
     uint16_t aggregate_[16][128] = {{0}};  // reference count per (channel, note)
 };
 
