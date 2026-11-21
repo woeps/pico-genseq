@@ -781,6 +781,7 @@ void removePattern(UIState& state, uint8_t index) {
     // Instrument masks shift the same way; core1 does the same inside PATTERN_REMOVE (R3.7).
     removePatternFromInstruments(state, index);
     state.patternCount--;
+    clampInstrumentCursor(state);
     if (state.selectedPattern > index) state.selectedPattern--;
     state.selectedPattern = std::min(state.selectedPattern,
                                      static_cast<uint8_t>(state.patternCount - 1));

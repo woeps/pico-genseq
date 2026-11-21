@@ -49,8 +49,12 @@ void removePatternFromInstruments(UIState& state, uint8_t index);
 // Move the selection to the previous/next occupied slot (no wrap). Returns the new slot.
 uint8_t selectInstrumentStep(UIState& state, int direction);
 
-// Move the pattern cursor over the 5 x 3 grid by (dx, dy), clamped.
+// Move the pattern cursor over the 5 x 3 grid by (dx, dy). The cursor only stands on existing
+// patterns: a move onto an empty cell goes to the last pattern if that lies further on, else stays.
 void moveInstrumentCursor(UIState& state, int dx, int dy);
+
+// Keep the cursor on an existing pattern after the pattern count shrank.
+void clampInstrumentCursor(UIState& state);
 
 // Check the invariants of design section 2 (used by tests).
 bool validateInstruments(const UIState& state);

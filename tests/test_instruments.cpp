@@ -215,6 +215,7 @@ TEST(restore_sends_all_sixteen_slots) {
 
 TEST(cursor_moves_over_the_five_by_three_grid_and_clamps) {
     state::UIState s;
+    s.patternCount = 15;
     state::moveInstrumentCursor(s, +1, 0);
     CHECK_EQ(s.instrumentCursor, 1);
     state::moveInstrumentCursor(s, 0, +1);
@@ -223,6 +224,37 @@ TEST(cursor_moves_over_the_five_by_three_grid_and_clamps) {
     CHECK_EQ(s.instrumentCursor, 14);
     state::moveInstrumentCursor(s, -9, -9);
     CHECK_EQ(s.instrumentCursor, 0);
+}
+
+TEST(cursor_stays_on_existing_patterns) {
+    state::UIState s;
+    s.patternCount = 7;                       // row 0: patterns 0-4, row 1: patterns 5-6
+    state::moveInstrumentCursor(s, +9, 0);
+    CHECK_EQ(s.instrumentCursor, 4);          // end of the full first row
+    state::moveInstrumentCursor(s, 0, +1);    // below 4 is empty: go to the last pattern
+    CHECK_EQ(s.instrumentCursor, 6);
+    state::moveInstrumentCursor(s, +1, 0);    // right of the last pattern: stay
+    CHECK_EQ(s.instrumentCursor, 6);
+    state::moveInstrumentCursor(s, 0, +1);    // row 2 is empty: stay
+    CHECK_EQ(s.instrumentCursor, 6);
+    state::moveInstrumentCursor(s, -1, 0);
+    CHECK_EQ(s.instrumentCursor, 5);
+    state::moveInstrumentCursor(s, 0, -1);
+    CHECK_EQ(s.instrumentCursor, 0);
+
+    state::UIState one;                       // a single pattern: the cursor never moves
+    state::moveInstrumentCursor(one, +1, 0);
+    state::moveInstrumentCursor(one, 0, +1);
+    CHECK_EQ(one.instrumentCursor, 0);
+}
+
+TEST(removing_a_pattern_keeps_the_cursor_on_an_existing_pattern) {
+    state::UIState s;
+    for (int i = 0; i < 3; ++i) state::addPattern(s);   // 4 patterns
+    s.instrumentCursor = 3;
+    state::removePattern(s, 3);
+    CHECK_EQ(s.patternCount, 3);
+    CHECK_EQ(s.instrumentCursor, 2);
 }
 
 TEST(select_steps_over_occupied_slots_without_wrapping) {

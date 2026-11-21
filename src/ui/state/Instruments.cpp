@@ -148,13 +148,24 @@ uint8_t selectInstrumentStep(UIState& state, int direction) {
 }
 
 void moveInstrumentCursor(UIState& state, int dx, int dy) {
-    int col = state.instrumentCursor % GRID_COLS + dx;
-    int row = state.instrumentCursor / GRID_COLS + dy;
+    const int count = state.patternCount > 0 ? state.patternCount : 1;
+    const int current = state.instrumentCursor < count ? state.instrumentCursor : count - 1;
+    int col = current % GRID_COLS + dx;
+    int row = current / GRID_COLS + dy;
     if (col < 0) col = 0;
     if (col >= GRID_COLS) col = GRID_COLS - 1;
     if (row < 0) row = 0;
     if (row >= GRID_ROWS) row = GRID_ROWS - 1;
-    state.instrumentCursor = static_cast<uint8_t>(row * GRID_COLS + col);
+    int target = row * GRID_COLS + col;
+    // Only existing patterns: a move onto an empty cell lands on the last pattern if that lies
+    // further in reading order (e.g. Down onto a short last row), otherwise the cursor stays.
+    if (target >= count) target = (count - 1 > current) ? count - 1 : current;
+    state.instrumentCursor = static_cast<uint8_t>(target);
+}
+
+void clampInstrumentCursor(UIState& state) {
+    const uint8_t count = state.patternCount > 0 ? state.patternCount : 1;
+    if (state.instrumentCursor >= count) state.instrumentCursor = static_cast<uint8_t>(count - 1);
 }
 
 bool validateInstruments(const UIState& state) {
