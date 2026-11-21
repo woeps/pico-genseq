@@ -463,6 +463,8 @@ void HostControl::emitDump() {
     printf("D:gateOcc=0x%04x\n", static_cast<unsigned>(s.gateLib.occupied));
     printf("D:noteOcc=0x%04x\n", static_cast<unsigned>(s.noteLib.occupied));
     printf("D:velocityOcc=0x%04x\n", static_cast<unsigned>(s.velocityLib.occupied));
+    printf("D:selSlots=%u.%u.%u\n", static_cast<unsigned>(s.selectedGateSlot),
+           static_cast<unsigned>(s.selectedNoteSlot), static_cast<unsigned>(s.selectedVelocitySlot));
     printf("D:refs=");
     for (uint8_t i = 0; i < s.patternCount; ++i) {
         printf("%s%u.%u.%u", i ? "," : "", static_cast<unsigned>(s.patternRefs[i].gate),
