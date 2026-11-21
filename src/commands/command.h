@@ -36,6 +36,11 @@ namespace commands {
         PATTERN_GATE_SET_MULTI,
         PATTERN_PITCH_SET_MULTI,
         PATTERN_VELOCITY_SET_MULTI,
+        // Instrument routing: replace one route slot. Wire: header word (param1 = slot,
+        // param2 = protocol channel 0..15), then the mask word (effective set of patterns that
+        // sound on the slot: members AND enabled AND NOT muted, folded by core0). One command is
+        // atomic on core1, so no batch frame is needed.
+        INSTRUMENT_SET,
         // Add more commands as needed
     };
 
@@ -66,6 +71,11 @@ namespace commands {
                c == Command::PATTERN_VELOCITY_SET_MULTI;
     }
 
+    // Commands whose header word is followed by a 16-bit mask word.
+    inline bool hasMaskWord(Command c) {
+        return isMultiSetCommand(c) || c == Command::INSTRUMENT_SET;
+    }
+
     // Function to send a command to the sequencer core
     void sendCommand(Command cmd, uint8_t param1 = 0, uint8_t param2 = 0);
     void sendGateSet(uint8_t patternIndex, const std::vector<bool>& gates);
@@ -74,6 +84,10 @@ namespace commands {
     void sendVelocitySet(uint8_t patternIndex, uint8_t count,
                          common::PlayingOrder order,
                          const std::vector<uint8_t>& velocities);
+
+    // Replace Instrument route slot `slot` (0..15) with `protocolChannel` (0..15) and the
+    // effective pattern `patternMask`.
+    void sendInstrumentSet(uint8_t slot, uint8_t protocolChannel, uint16_t patternMask);
 
     // Multicast variants (set-library fan-out): apply one set to every pattern in `patternMask`.
     void sendGateSetMulti(uint16_t patternMask, const std::vector<bool>& gates);

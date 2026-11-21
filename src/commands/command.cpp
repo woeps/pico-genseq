@@ -85,6 +85,14 @@ namespace commands {
                         velocities);
     }
 
+    void sendInstrumentSet(uint8_t slot, uint8_t protocolChannel, uint16_t patternMask) {
+        const uint32_t packed = static_cast<uint32_t>(Command::INSTRUMENT_SET) |
+            (static_cast<uint32_t>(slot) << 8) |
+            (static_cast<uint32_t>(protocolChannel) << 16);
+        multicore_fifo_push_blocking(packed);
+        multicore_fifo_push_blocking(patternMask);
+    }
+
     void sendGateSetMulti(uint16_t patternMask, const std::vector<bool>& gates) {
         pushGatePayload(Command::PATTERN_GATE_SET_MULTI, 0, true, patternMask, gates);
     }
@@ -179,7 +187,7 @@ namespace commands {
             // Multicast: the mask word follows the header; the payload decodes like the
             // single-pattern command, so map to the base command for decoding.
             const Command baseCmd = baseSetCommand(msg.cmd);
-            if (isMultiSetCommand(msg.cmd)) {
+            if (hasMaskWord(msg.cmd)) {
                 msg.patternMask = static_cast<uint16_t>(multicore_fifo_pop_blocking() & 0xFFFF);
             }
             if (baseCmd == Command::PATTERN_GATE_SET) {
@@ -266,7 +274,7 @@ namespace commands {
         // Multicast: the mask word follows the header; the payload decodes like the
         // single-pattern command, so map to the base command for decoding.
         const Command baseCmd = baseSetCommand(msg.cmd);
-        if (isMultiSetCommand(msg.cmd)) {
+        if (hasMaskWord(msg.cmd)) {
             msg.patternMask = static_cast<uint16_t>(multicore_fifo_pop_blocking() & 0xFFFF);
         }
 

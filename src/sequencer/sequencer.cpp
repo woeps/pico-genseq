@@ -480,6 +480,9 @@ void Sequencer::processCommand(commands::CommandMessage msg) {
         case commands::Command::PATTERN_REMOVE:
             removePattern(msg.param1);
             break;
+        case commands::Command::INSTRUMENT_SET:
+            applyInstrument(msg.param1, msg.param2, msg.patternMask);
+            break;
         case commands::Command::PATTERN_GATE_SET_MULTI:
             applyGateSetToMask(msg.patternMask, msg.gates);
             break;
@@ -526,6 +529,10 @@ bool Sequencer::canApplyCommand(const commands::CommandMessage& msg) const {
             // Payload rides the snapshot, not CommandMessage; the scalar path
             // only validates the target index.
             return msg.param1 < patterns.size();
+        case commands::Command::INSTRUMENT_SET:
+            // An empty mask is valid here (muted, deleted or fully disabled Instrument).
+            return msg.param1 < common::MAX_INSTRUMENTS && msg.param2 <= 15 &&
+                   (patterns.size() >= 16 || (msg.patternMask >> patterns.size()) == 0);
         case commands::Command::PATTERN_GATE_SET_MULTI:
             return maskFits(msg.patternMask);
         case commands::Command::PATTERN_PITCH_SET_MULTI:
@@ -622,6 +629,10 @@ void Sequencer::processCommand(const commands::CommandMessage& msg,
         case commands::Command::PATTERN_DEACTIVATE: BB2_BRANCH(9); deactivatePattern(msg.param1); break;
         case commands::Command::PATTERN_ADD:     BB2_BRANCH(10); addPattern(common::Pattern()); break;
         case commands::Command::PATTERN_REMOVE:  BB2_BRANCH(11); removePattern(msg.param1); break;
+        case commands::Command::INSTRUMENT_SET:
+            BB2_BRANCH(15);
+            applyInstrument(msg.param1, msg.param2, msg.patternMask);
+            break;
         case commands::Command::PATTERN_GATE_SET_MULTI: {
             BB2_BRANCH(12);
             std::vector<bool> gates(snapshot.gateCount());

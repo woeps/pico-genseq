@@ -138,11 +138,16 @@ void test_nonset_command_zero_alloc() {
         seq.processCommand(cmd(commands::Command::PATTERN_ACTIVATE, 1), snap);
         seq.processCommand(cmd(commands::Command::PATTERN_DEACTIVATE, 1), snap);
         seq.processCommand(cmd(commands::Command::PLAY), snap);
+        // Instrument routing (instruments task 5.4): INSTRUMENT_SET must be heap-free too.
+        commands::CommandMessage inst = cmd(commands::Command::INSTRUMENT_SET, 2);
+        inst.param2 = 5;
+        inst.patternMask = (i % 2) ? 0b11 : 0;
+        seq.processCommand(inst, snap);
         seq.processCommand(cmd(commands::Command::STOP), snap);
     }
     const uint64_t allocs = g_allocCount - before;
     check(allocs == 0, "non-set commands via the snapshot path perform ZERO heap allocations");
-    if (allocs != 0) std::printf("  observed %llu allocations across 2500 non-set commands\n",
+    if (allocs != 0) std::printf("  observed %llu allocations across 3000 non-set commands\n",
                                  static_cast<unsigned long long>(allocs));
 }
 

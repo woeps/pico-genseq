@@ -643,6 +643,7 @@ set(EXAMPLE_SET_LIBRARY_SRC "${TEST_DIR}/example_set_library.cpp")
 set(EXAMPLE_SET_PERSISTENCE_SRC "${TEST_DIR}/example_set_persistence.cpp")
 set(EXAMPLE_SEQUENCER_SHARING_SRC "${TEST_DIR}/example_sequencer_sharing.cpp")
 set(EXAMPLE_MULTICAST_SETS_SRC "${TEST_DIR}/example_multicast_sets.cpp")
+set(EXAMPLE_INSTRUMENT_ROUTING_SRC "${TEST_DIR}/example_instrument_routing.cpp")
 set(EXAMPLE_NOTE_BALANCE_SRC "${TEST_DIR}/example_note_balance.cpp")
 add_executable(genseq_example_golden_stream "${EXAMPLE_GOLDEN_STREAM_SRC}")
 target_include_directories(genseq_example_golden_stream PRIVATE ${EMISSION_INCLUDE_DIRS})
@@ -965,6 +966,7 @@ if(RAPIDCHECK_AVAILABLE)
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SET_PERSISTENCE_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SEQUENCER_SHARING_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_MULTICAST_SETS_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_INSTRUMENT_ROUTING_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_NOTE_BALANCE_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${SMOKE_HOST_COMPILATION_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_HEADER_LAYOUT_SRC}")
@@ -1241,6 +1243,18 @@ target_include_directories(genseq_example_multicast_sets PRIVATE
 )
 target_link_libraries(genseq_example_multicast_sets PRIVATE genseq_emission)
 add_test(NAME genseq_example_multicast_sets COMMAND genseq_example_multicast_sets)
+
+# Instrument routing (instruments task 5.3): INSTRUMENT_SET wire format + core1 fan-out.
+add_executable(genseq_example_instrument_routing
+    "${EXAMPLE_INSTRUMENT_ROUTING_SRC}"
+    "${SRC_DIR}/commands/command.cpp"
+)
+target_include_directories(genseq_example_instrument_routing PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/commands"
+)
+target_link_libraries(genseq_example_instrument_routing PRIVATE genseq_emission)
+add_test(NAME genseq_example_instrument_routing COMMAND genseq_example_instrument_routing)
 
 # Hanging-note regression: random edits while playing keep On/Off alternating per key.
 add_executable(genseq_example_note_balance "${EXAMPLE_NOTE_BALANCE_SRC}")

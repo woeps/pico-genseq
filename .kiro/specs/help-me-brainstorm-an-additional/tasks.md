@@ -55,22 +55,22 @@ line endings keep CRLF after editing.
   - [x]* 4.5 Golden stream check: the default single route must give the unchanged hash.
     [R9.6]
 
-- [ ] 5. `INSTRUMENT_SET` command and core1 application
-  - [ ] 5.1 Append `Command::INSTRUMENT_SET` and `sendInstrumentSet(slot, protocolChannel, mask)`
+- [x] 5. `INSTRUMENT_SET` command and core1 application
+  - [x] 5.1 Append `Command::INSTRUMENT_SET` and `sendInstrumentSet(slot, protocolChannel, mask)`
     to `src/commands/command.h/.cpp`; replace `isMultiSetCommand` use in the receive paths with
     `hasMaskWord(cmd)` and read the mask word for it in `receiveCommand` and
     `receiveCommandInto` without allocation. [R9.1, Design 6]
-  - [ ] 5.2 Add `Sequencer::applyInstrument(slot, channel, mask)` (public for tests): release
+  - [x] 5.2 Add `Sequencer::applyInstrument(slot, channel, mask)` (public for tests): release
     the voices of patterns that left the mask, release all voices of the slot when the channel
     changes, then `routeTable.set`. Route it from both `processCommand` overloads and from
     `canApplyCommand` (slot < 16, channel <= 15, mask within `patterns.size()`). [R2.4, R2.5,
     R3.8, R4.2, R4.3, Design 7.1]
-  - [ ]* 5.3 Host tests `test/example_instrument_routing.cpp`: fan-out on three channels in
+  - [x]* 5.3 Host tests `test/example_instrument_routing.cpp`: fan-out on three channels in
     ascending slot order; route removal, mute (mask 0) and channel change each emit the Note Off
     on the recorded channel; malformed commands are rejected without change; a seeded pattern
     produces the same notes with 0, 1 and 3 routes; `PATTERN_REMOVE` compacts the table.
     [R9.4, R9.7]
-  - [ ]* 5.4 Extend `test/example_steady_state_allocation.cpp` to cover `INSTRUMENT_SET`.
+  - [x]* 5.4 Extend `test/example_steady_state_allocation.cpp` to cover `INSTRUMENT_SET`.
     [Design 6]
 
 - [ ] 6. UI state model and reducer
