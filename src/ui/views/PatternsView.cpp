@@ -1,5 +1,6 @@
 #include "PatternsView.h"
 #include "../state/Reducer.h"
+#include "../state/SetLibrary.h"
 #include "../Types.h"
 #include <cstdio>
 
@@ -71,6 +72,18 @@ void PatternsView::handleEvent(state::UIState& state, const events::Event& event
             int index = state.selectedPattern + 1;
             if (index > maxPattern) index = maxPattern;
             state::setSelectedPattern(newState, static_cast<uint8_t>(index));
+            break;
+        }
+        case combo(KeyId::LEFT, mod::SHIFT):
+        case combo(KeyId::RIGHT, mod::SHIFT): {
+            // Step the selected pattern's reference of the highlighted set type (R5.2).
+            if (!isPattern) break;
+            const state::SetType type =
+                state.selectedPatternSet == state::PatternSet::GATE ? state::SetType::GATE
+                : state.selectedPatternSet == state::PatternSet::PITCH ? state::SetType::NOTE
+                                                                       : state::SetType::VELOCITY;
+            state::stepSetRef(newState, state.selectedPattern, type,
+                              event.data.key.id == KeyId::LEFT ? -1 : +1);
             break;
         }
         case combo(KeyId::ENTER):
@@ -146,6 +159,24 @@ void PatternsView::render(const state::UIState& state)
             selectedY++;
         }
         ledMatrix.setPixel(selectedX, selectedY, COLOR_SELECTED);
+    }
+
+    // Set references of the selected pattern (R5.1): rows 13/14/15 are the gate / note /
+    // velocity maps, one pixel per slot. Occupied slots are dim; the slot the pattern
+    // references is bright.
+    if (state.selectedPattern < state.patternCount) {
+        const state::PatternRefs& refs = state.patternRefs[state.selectedPattern];
+        const state::SetType types[3] = {state::SetType::GATE, state::SetType::NOTE,
+                                         state::SetType::VELOCITY};
+        const uint8_t refSlot[3] = {refs.gate, refs.note, refs.velocity};
+        for (uint8_t t = 0; t < 3; ++t) {
+            const uint16_t occupied = state::occupiedMask(state, types[t]);
+            for (uint8_t slot = 0; slot < state::SET_LIBRARY_SIZE; ++slot) {
+                if (!((occupied >> slot) & 1u)) continue;
+                ledMatrix.setPixel(slot, REF_ROW_BASE + t,
+                                   slot == refSlot[t] ? COLOR_SELECTED : COLOR_SLOT_OCCUPIED);
+            }
+        }
     }
 }
 

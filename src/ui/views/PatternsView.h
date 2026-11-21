@@ -27,6 +27,8 @@ private:
     static constexpr uint32_t COLOR_INACTIVE = 0x000000FF;
     static constexpr uint32_t COLOR_SELECTED = 0x00FFFFFF;
     static constexpr uint32_t COLOR_NEW_SLOT = 0x00FFFF00;
+    static constexpr uint32_t COLOR_SLOT_OCCUPIED = 0x00200000;
+    static constexpr uint8_t REF_ROW_BASE = 13;  // rows 13..15: gate, note, velocity maps
 };
 
 } // namespace ui

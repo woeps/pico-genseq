@@ -15,6 +15,7 @@ add_executable(genseq_tests
     test_patternsview.cpp
     test_setdetailviews.cpp
     test_setlibrary_reducer.cpp
+    test_setlibraryviews.cpp
     stubs/command_stub.cpp
     stubs/hardware_stub.cpp
     ${SRC}/common/gate_set.cpp
@@ -28,6 +29,7 @@ add_executable(genseq_tests
     ${SRC}/ui/views/GateSetView.cpp
     ${SRC}/ui/views/PitchSetView.cpp
     ${SRC}/ui/views/VelocitySetView.cpp
+    ${SRC}/ui/views/SetViewCommon.cpp
     ${SRC}/ui/hardware/KeyboardDecoder.cpp
 )
 

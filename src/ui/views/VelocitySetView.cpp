@@ -1,5 +1,6 @@
 #include "VelocitySetView.h"
 #include "../state/Reducer.h"
+#include "SetViewCommon.h"
 #include "../state/UIState.h"
 #include "../Types.h"
 #include "../../common/GenerationParameters.h"
@@ -37,6 +38,7 @@ void VelocitySetView::handleEvent(state::UIState& state, const events::Event& ev
 
     state::UIState& newState = state;  // in-place: no 1.4KB copy
     const bool isPressed = event.type == events::EventType::KEY_PRESSED;
+    if (handleSetLibraryKey(newState, state::SetType::VELOCITY, event)) return;
     const bool coarse = (event.data.key.mods & mod::SHIFT) != 0;
     switch (combo(event.data.key.id, event.data.key.mods & ~mod::SHIFT)) {
         case combo(KeyId::LEFT):  state::moveVelocitySetField(newState, -1); break;
@@ -102,6 +104,7 @@ void VelocitySetView::render(const state::UIState& state)
         }
     }
     if (state.velocitySetDirty) ledMatrix.setPixel(15, 0, 0x0000FF00);
+    drawSetOverlay(ledMatrix, state, state::SetType::VELOCITY);
 }
 
 } // namespace ui

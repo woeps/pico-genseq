@@ -1,5 +1,6 @@
 #include "PitchSetView.h"
 #include "../state/Reducer.h"
+#include "SetViewCommon.h"
 #include "../state/UIState.h"
 #include "../Types.h"
 #include "../../common/Scale.h"
@@ -72,6 +73,7 @@ void PitchSetView::handleEvent(state::UIState& state, const events::Event& event
 
     state::UIState& newState = state;  // in-place: no 1.4KB copy
     const bool isPressed = event.type == events::EventType::KEY_PRESSED;
+    if (handleSetLibraryKey(newState, state::SetType::NOTE, event)) return;
     const bool coarse = (event.data.key.mods & mod::SHIFT) != 0;
     switch (combo(event.data.key.id, event.data.key.mods & ~mod::SHIFT)) {
         case combo(KeyId::LEFT):  state::movePitchSetField(newState, -1); break;
@@ -152,6 +154,7 @@ void PitchSetView::render(const state::UIState& state)
         }
     }
     if (state.pitchSetDirty) ledMatrix.setPixel(15, 0, 0x0000FF00);
+    drawSetOverlay(ledMatrix, state, state::SetType::NOTE);
 }
 
 } // namespace ui
