@@ -160,11 +160,11 @@ line endings keep CRLF after editing.
   - [x] 10.2 Build the release firmware (`build/release/`) and confirm it links.
   - [x] 10.3 Commit; the next step needs the board.
 
-- [ ] 11. Hardware verification (HW)
+- [x] 11. Hardware verification (HW)
   - [x] 11.1 Flash the release build; verify boot into the Instruments view with the
     `D:view` and `D:ins=` dump, and MIDI of one Instrument against the pre-feature behaviour.
     [R7.6, R9.6]
-  - [ ] 11.2 Ask the user to power-cycle the board; with host-control keys build two Instruments
+  - [x] 11.2 Ask the user to power-cycle the board; with host-control keys build two Instruments
     sharing one pattern, mute one, disable one route, save, power-cycle, and compare the
     `D:ins=` dump and a MIDI capture before and after. [R8.2, R4, R3.11]
   - [x] 11.3 Fan-out stress: several patterns on several Instruments while editing masks, channels
@@ -204,6 +204,14 @@ line endings keep CRLF after editing.
   - 11.4 (one Instrument, two saves during playback per run, blocking output):
     saved setup 20 / 20 / 65 us lateness, 6 dense patterns 17 / 19 / 20 us at 40 / 120 /
     255 BPM; 0 missed ticks, UI gap 14.8 ms, save 11.6-11.7 ms. Within the foundation gates.
+  - 11.2 (2026-11-21, cold power-cycle by the user): saved Instrument 1 = ch1, patterns 1+2,
+    route of pattern 2 off; Instrument 2 = ch2, pattern 1 (shared); Instrument 3 = ch3,
+    pattern 2, muted (`D:ins=0:1:0:0x0003:0x0001`, `1:2:0:0x0001:0x0001`,
+    `2:3:1:0x0002:0x0002`). After the power-cycle the board boots into `instruments`, every
+    dump field (BPM, patterns, active mask, refs, libraries, Instruments) is identical, and a
+    6 s MIDI capture is byte-identical to the one before (433 bytes, 7 Note Ons on ch1 and 7
+    on ch2, none on ch3). Afterwards the original setup was restored and saved; its capture
+    after a reset is byte-identical to the baseline.
   - 11.5: after 16-Instrument fan-out plus a save, both stack canaries are intact
     (`0x20041000` = `0x57acc0de`, margin `0x20041400` = `0xc0decafe`,
     `g_stackGuardTripped` = 0).
