@@ -125,6 +125,12 @@ private:
     // the deviation note: feedback is presented on the LedMatrix that
     // UIController actually owns rather than the design's (uninstantiated) LCD.
     void updateSaveBanner();
+    // Mirror core1's timing fault into UIState and draw the load indicator pixel (15,4)
+    // (Requirement 11.7-11.9). `force` redraws the pixel even when the level is unchanged (after a
+    // render or a banner overwrote it).
+    void serviceLoadAndFault();
+    void drawLoadPixel(bool force);
+    uint8_t drawnLoadLevel_ = 0xFF;  // ui::state::LoadLevel last drawn; 0xFF = never
 };
 
 } // namespace ui

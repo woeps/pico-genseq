@@ -198,19 +198,19 @@ line endings keep CRLF after editing.
     10 ms of queued delay, a full Sequencer fan-out burst through the queue keeps the golden-style
     byte balance.
 
-- [ ] 15. Overload fault and fault publishing (Requirement 11.6, 11.7)
+- [x] 15. Overload fault and fault publishing (Requirement 11.6, 11.7)
   - [x] 15.1 Observe the output backlog with `OverloadDetector` in `Sequencer::update()`, enter
     `MIDI_OUTPUT_OVERLOAD`, reset on Play; publish `g_timingFaultLatched` / `g_timingFaultCause`.
-  - [ ] 15.2 `UIController::update()` mirrors the published fault into `UIState` (fault flag,
+  - [x] 15.2 `UIController::update()` mirrors the published fault into `UIState` (fault flag,
     cause, `playing = false`).
   - [x]* 15.3 Host tests: a sustained backlog latches the fault after one beat, a burst that
     drains within a beat does not, the fault releases every note and sends Stop, Play clears it.
 
-- [ ] 16. Load indicator (Requirement 11.8, 11.9)
-  - [ ] 16.1 Create `src/ui/state/LoadIndicator.h` with `loadLevel`.
-  - [ ] 16.2 Draw pixel (15,4) in `UIController` after every render and on level change; add
+- [x] 16. Load indicator (Requirement 11.8, 11.9)
+  - [x] 16.1 Create `src/ui/state/LoadIndicator.h` with `loadLevel`.
+  - [x] 16.2 Draw pixel (15,4) in `UIController` after every render and on level change; add
     `D:load=` and `D:fault=` cause lines to `H:dump`.
-  - [ ]* 16.3 Host tests for `loadLevel` (off, amber window, red wins).
+  - [x]* 16.3 Host tests for `loadLevel` (off, amber window, red wins).
 
 - [ ] 17. Verification and documentation (Requirement 11, 10.5)
   - [ ] 17.1 Host suites under ASan/UBSan and the firmware build.

@@ -17,6 +17,7 @@ add_executable(genseq_tests
     test_setlibraryviews.cpp
     test_instruments.cpp
     test_instrumentsview.cpp
+    test_loadindicator.cpp
     stubs/command_stub.cpp
     stubs/hardware_stub.cpp
     ${SRC}/common/gate_set.cpp

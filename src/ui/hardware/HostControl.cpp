@@ -1,4 +1,5 @@
 #include "HostControl.h"
+#include "../state/LoadIndicator.h"
 
 #if GENSEQ_HOST_CONTROL
 
@@ -437,6 +438,18 @@ void HostControl::emitDump() {
     // Stop = no stuck note), last live-save duration us (<=100 ms gap limit),
     // and max UI-loop gap us (<=50 ms limit).
     printf("D:soundingNotes=%u\n", static_cast<unsigned>(sequencer::g_soundingNotes));
+    // MIDI output load (Requirement 11): core1's fault latch and cause, the ms of the last late
+    // byte, and the indicator level the matrix shows.
+    {
+        const uint32_t nowMs = to_ms_since_boot(get_absolute_time());
+        const ui::state::LoadLevel lvl = ui::state::loadLevel(
+            s.timingFaultLatched, sequencer::g_midiLateMs, nowMs);
+        printf("D:core1Fault=%u\n", static_cast<unsigned>(sequencer::g_timingFaultLatched));
+        printf("D:faultCause=%u\n", static_cast<unsigned>(sequencer::g_timingFaultCause));
+        printf("D:midiLateMs=%u\n", static_cast<unsigned>(sequencer::g_midiLateMs));
+        printf("D:load=%s\n", lvl == ui::state::LoadLevel::RED ? "red"
+                             : lvl == ui::state::LoadLevel::AMBER ? "amber" : "off");
+    }
     printf("D:lastSaveUs=%u\n", static_cast<unsigned>(ui::g_lastSaveMicros));
     printf("D:maxUiGapUs=%u\n", static_cast<unsigned>(ui::g_maxUiGapMicros));
     // Generation Parameters of the SELECTED pattern's COMMITTED configs (task

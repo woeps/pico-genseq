@@ -4,6 +4,8 @@
 #include "state/Reducer.h"
 #include "state/StateManager.h"
 #include "state/PersistMapping.h"
+#include "state/LoadIndicator.h"
+#include "../sequencer/sequencer_telemetry.h"
 #include "../persistence/PersistableConfig.h"
 #include "../persistence/BootBannerPolicy.h"
 #include "../persistence/PersistenceManager.h"  // SaveOutcome enum (banner vocabulary)
@@ -357,6 +359,7 @@ void UIController::onStateChanged(const state::UIState& newState)
     }
     
     activeView->render(newState);
+    drawLoadPixel(/*force=*/true);  // a render or onEnter() clear may have overwritten it
 
     // Play indicator on the board LED, independent of the active view. A banner owns the LED while
     // it is shown; the state change after its dismissal re-applies this.
@@ -521,6 +524,7 @@ void UIController::updateSaveBanner()
     }
 
     bannerRendered = true;
+    drawLoadPixel(/*force=*/true);  // keep the load indicator visible on top of the banner
 }
 
 void UIController::pumpRender()
@@ -532,6 +536,7 @@ void UIController::pumpRender()
     if (led) led->update();
     if (activeView) {
         activeView->render(state::getStateManager().getState());
+        drawLoadPixel(/*force=*/true);
     }
     updateSaveBanner();
 
@@ -591,8 +596,34 @@ void UIController::update()
     // strip on this same tick. Non-blocking (Req 7.4).
     updateSaveBanner();
 
+    serviceLoadAndFault();
+
     led->update();
     ledMatrix->update();
+}
+
+void UIController::serviceLoadAndFault()
+{
+    // core1 publishes its fault latch; fold it into UIState (single writer: this UI loop).
+    auto& sm = state::getStateManager();
+    const bool latched = sequencer::g_timingFaultLatched != 0;
+    const uint8_t cause = static_cast<uint8_t>(sequencer::g_timingFaultCause);
+    if (state::mirrorTimingFault(sm.mutableState(), latched, cause)) {
+        sm.notifyStateChanged();  // re-renders and redraws the pixel
+    }
+    drawLoadPixel(/*force=*/false);
+}
+
+void UIController::drawLoadPixel(bool force)
+{
+    if (!ledMatrix) return;
+    const uint32_t nowMs = to_ms_since_boot(get_absolute_time());
+    const state::LoadLevel level = state::loadLevel(
+        state::getStateManager().getState().timingFaultLatched, sequencer::g_midiLateMs, nowMs);
+    const uint8_t code = static_cast<uint8_t>(level);
+    if (!force && code == drawnLoadLevel_) return;
+    ledMatrix->setPixel(state::kLoadPixelX, state::kLoadPixelY, state::loadColor(level));
+    drawnLoadLevel_ = code;
 }
 
 } // namespace ui
