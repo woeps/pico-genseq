@@ -29,6 +29,13 @@ namespace commands {
         // BATCH_BEGIN param1 = number of commands that follow (1..MAX_BATCH_COMMANDS).
         BATCH_BEGIN,
         BATCH_END,
+        // set-library multicast: one set payload applied to every pattern in a 16-bit mask.
+        // Wire: header word (same layout as the single-pattern command, pattern byte unused),
+        // then the mask word, then the payload. Sent when a set has more than one user, so the
+        // payload is expanded, transferred and decoded once instead of once per pattern.
+        PATTERN_GATE_SET_MULTI,
+        PATTERN_PITCH_SET_MULTI,
+        PATTERN_VELOCITY_SET_MULTI,
         // Add more commands as needed
     };
 
@@ -51,7 +58,13 @@ namespace commands {
         uint8_t velocityCount = 0;
         common::PlayingOrder velocityOrder = common::PlayingOrder::FORWARDS;
         std::vector<uint8_t> velocities{};
+        uint16_t patternMask = 0;  // *_SET_MULTI: bit p set == apply to pattern p
     };
+
+    inline bool isMultiSetCommand(Command c) {
+        return c == Command::PATTERN_GATE_SET_MULTI || c == Command::PATTERN_PITCH_SET_MULTI ||
+               c == Command::PATTERN_VELOCITY_SET_MULTI;
+    }
 
     // Function to send a command to the sequencer core
     void sendCommand(Command cmd, uint8_t param1 = 0, uint8_t param2 = 0);
@@ -61,6 +74,14 @@ namespace commands {
     void sendVelocitySet(uint8_t patternIndex, uint8_t count,
                          common::PlayingOrder order,
                          const std::vector<uint8_t>& velocities);
+
+    // Multicast variants (set-library fan-out): apply one set to every pattern in `patternMask`.
+    void sendGateSetMulti(uint16_t patternMask, const std::vector<bool>& gates);
+    void sendPitchSetMulti(uint16_t patternMask, uint8_t count,
+                           common::PlayingOrder order, const std::vector<uint8_t>& pitches);
+    void sendVelocitySetMulti(uint16_t patternMask, uint8_t count,
+                              common::PlayingOrder order,
+                              const std::vector<uint8_t>& velocities);
 
     // generative-engine-expansion task 10.4 — send a pattern's Generation
     // Parameters to core1 over the FIFO. Fixed 7-word payload (no per-element

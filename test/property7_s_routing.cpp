@@ -57,6 +57,9 @@ void sendPitchSet(uint8_t /*patternIndex*/, uint8_t /*count*/,
     // No-op host double.
 }
 
+void sendGateSetMulti(uint16_t, const std::vector<bool>&) {}
+void sendPitchSetMulti(uint16_t, uint8_t, common::PlayingOrder, const std::vector<uint8_t>&) {}
+void sendVelocitySetMulti(uint16_t, uint8_t, common::PlayingOrder, const std::vector<uint8_t>&) {}
 void sendVelocitySet(uint8_t /*patternIndex*/, uint8_t /*count*/,
                      common::PlayingOrder /*order*/,
                      const std::vector<uint8_t>& /*velocities*/) {

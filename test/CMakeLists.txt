@@ -635,6 +635,7 @@ set(EXAMPLE_GOLDEN_STREAM_SRC "${TEST_DIR}/example_golden_stream.cpp")
 set(EXAMPLE_SET_LIBRARY_SRC "${TEST_DIR}/example_set_library.cpp")
 set(EXAMPLE_SET_PERSISTENCE_SRC "${TEST_DIR}/example_set_persistence.cpp")
 set(EXAMPLE_SEQUENCER_SHARING_SRC "${TEST_DIR}/example_sequencer_sharing.cpp")
+set(EXAMPLE_MULTICAST_SETS_SRC "${TEST_DIR}/example_multicast_sets.cpp")
 add_executable(genseq_example_golden_stream "${EXAMPLE_GOLDEN_STREAM_SRC}")
 target_include_directories(genseq_example_golden_stream PRIVATE ${EMISSION_INCLUDE_DIRS})
 target_link_libraries(genseq_example_golden_stream PRIVATE genseq_emission)
@@ -955,6 +956,7 @@ if(RAPIDCHECK_AVAILABLE)
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SET_LIBRARY_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SET_PERSISTENCE_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SEQUENCER_SHARING_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_MULTICAST_SETS_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${SMOKE_HOST_COMPILATION_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_HEADER_LAYOUT_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_OUTCOME_MAPPING_SRC}")
@@ -1217,3 +1219,15 @@ target_include_directories(genseq_example_genparams_fifo PRIVATE
 )
 target_link_libraries(genseq_example_genparams_fifo PRIVATE genseq_emission)
 add_test(NAME genseq_example_genparams_fifo COMMAND genseq_example_genparams_fifo)
+
+# Multicast set commands (10.2 follow-up): real command.cpp over a FIFO double + real Sequencer.
+add_executable(genseq_example_multicast_sets
+    "${EXAMPLE_MULTICAST_SETS_SRC}"
+    "${SRC_DIR}/commands/command.cpp"
+)
+target_include_directories(genseq_example_multicast_sets PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}/commands"
+)
+target_link_libraries(genseq_example_multicast_sets PRIVATE genseq_emission)
+add_test(NAME genseq_example_multicast_sets COMMAND genseq_example_multicast_sets)

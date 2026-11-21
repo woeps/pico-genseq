@@ -83,6 +83,34 @@ void sendVelocitySet(uint8_t pattern, uint8_t count, common::PlayingOrder order,
     m.velocities = velocities;
     deliver(m);
 }
+void sendGateSetMulti(uint16_t mask, const std::vector<bool>& gates) {
+    CommandMessage m;
+    m.cmd = Command::PATTERN_GATE_SET_MULTI;
+    m.patternMask = mask;
+    m.gateCount = static_cast<uint16_t>(gates.size());
+    m.gates = gates;
+    deliver(m);
+}
+void sendPitchSetMulti(uint16_t mask, uint8_t count, common::PlayingOrder order,
+                       const std::vector<uint8_t>& pitches) {
+    CommandMessage m;
+    m.cmd = Command::PATTERN_PITCH_SET_MULTI;
+    m.patternMask = mask;
+    m.pitchCount = count;
+    m.pitchOrder = order;
+    m.pitches = pitches;
+    deliver(m);
+}
+void sendVelocitySetMulti(uint16_t mask, uint8_t count, common::PlayingOrder order,
+                          const std::vector<uint8_t>& velocities) {
+    CommandMessage m;
+    m.cmd = Command::PATTERN_VELOCITY_SET_MULTI;
+    m.patternMask = mask;
+    m.velocityCount = count;
+    m.velocityOrder = order;
+    m.velocities = velocities;
+    deliver(m);
+}
 void sendGenParams(uint8_t pattern, const common::GenerationParameters& params) {
     g_seq->setPatternGenerationParameters(pattern, params);
     CommandMessage m;

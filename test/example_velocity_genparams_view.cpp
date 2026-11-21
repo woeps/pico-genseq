@@ -33,6 +33,9 @@ int g_gateSetSends = 0;  // PATTERN_GATE_SET count: each one restarts the gate a
 void sendCommand(Command, uint8_t, uint8_t) {}
 void sendGateSet(uint8_t, const std::vector<bool>&) { ++g_gateSetSends; }
 void sendPitchSet(uint8_t, uint8_t, common::PlayingOrder, const std::vector<uint8_t>&) {}
+void sendGateSetMulti(uint16_t, const std::vector<bool>&) {}
+void sendPitchSetMulti(uint16_t, uint8_t, common::PlayingOrder, const std::vector<uint8_t>&) {}
+void sendVelocitySetMulti(uint16_t, uint8_t, common::PlayingOrder, const std::vector<uint8_t>&) {}
 void sendVelocitySet(uint8_t, uint8_t, common::PlayingOrder, const std::vector<uint8_t>&) {}
 void sendGenParams(uint8_t p, const common::GenerationParameters& gp) {
     g_sentGenParams.push_back({p, gp});

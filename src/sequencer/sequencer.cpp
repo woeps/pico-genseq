@@ -470,6 +470,22 @@ void Sequencer::processCommand(commands::CommandMessage msg) {
         case commands::Command::PATTERN_REMOVE:
             removePattern(msg.param1);
             break;
+        case commands::Command::PATTERN_GATE_SET_MULTI:
+            applyGateSetToMask(msg.patternMask, msg.gates);
+            break;
+        case commands::Command::PATTERN_PITCH_SET_MULTI:
+            applyPitchSetToMask(msg.patternMask,
+                                common::PitchSet(std::vector<uint8_t>(msg.pitches.begin(),
+                                                                      msg.pitches.begin() + msg.pitchCount),
+                                                 msg.pitchOrder));
+            break;
+        case commands::Command::PATTERN_VELOCITY_SET_MULTI:
+            applyVelocitySetToMask(
+                msg.patternMask,
+                common::VelocitySet(std::vector<uint8_t>(msg.velocities.begin(),
+                                                         msg.velocities.begin() + msg.velocityCount),
+                                    msg.velocityOrder));
+            break;
         default:
             break;
     }
@@ -500,6 +516,12 @@ bool Sequencer::canApplyCommand(const commands::CommandMessage& msg) const {
             // Payload rides the snapshot, not CommandMessage; the scalar path
             // only validates the target index.
             return msg.param1 < patterns.size();
+        case commands::Command::PATTERN_GATE_SET_MULTI:
+            return maskFits(msg.patternMask);
+        case commands::Command::PATTERN_PITCH_SET_MULTI:
+            return maskFits(msg.patternMask) && msg.pitchCount <= msg.pitches.size();
+        case commands::Command::PATTERN_VELOCITY_SET_MULTI:
+            return maskFits(msg.patternMask) && msg.velocityCount <= msg.velocities.size();
         case commands::Command::NOOP:
         default:
             return false;
@@ -528,6 +550,15 @@ void Sequencer::processCommand(const commands::CommandMessage& msg,
         case commands::Command::PATTERN_VELOCITY_SET:
             applicable = msg.param1 < patterns.size() &&
                          msg.velocityCount <= snapshot.velocityCount();
+            break;
+        case commands::Command::PATTERN_GATE_SET_MULTI:
+            applicable = maskFits(msg.patternMask);
+            break;
+        case commands::Command::PATTERN_PITCH_SET_MULTI:
+            applicable = maskFits(msg.patternMask) && msg.pitchCount <= snapshot.pitchCount();
+            break;
+        case commands::Command::PATTERN_VELOCITY_SET_MULTI:
+            applicable = maskFits(msg.patternMask) && msg.velocityCount <= snapshot.velocityCount();
             break;
         default:
             // Non-set commands carry no vector payload; the scalar path validates
@@ -581,6 +612,28 @@ void Sequencer::processCommand(const commands::CommandMessage& msg,
         case commands::Command::PATTERN_DEACTIVATE: BB2_BRANCH(9); deactivatePattern(msg.param1); break;
         case commands::Command::PATTERN_ADD:     BB2_BRANCH(10); addPattern(common::Pattern()); break;
         case commands::Command::PATTERN_REMOVE:  BB2_BRANCH(11); removePattern(msg.param1); break;
+        case commands::Command::PATTERN_GATE_SET_MULTI: {
+            BB2_BRANCH(12);
+            std::vector<bool> gates(snapshot.gateCount());
+            for (uint16_t i = 0; i < snapshot.gateCount(); ++i) gates[i] = snapshot.gate(i);
+            applyGateSetToMask(msg.patternMask, gates);
+            break;
+        }
+        case commands::Command::PATTERN_PITCH_SET_MULTI: {
+            BB2_BRANCH(13);
+            std::vector<uint8_t> pitches(snapshot.pitchCount());
+            for (uint8_t i = 0; i < snapshot.pitchCount(); ++i) pitches[i] = snapshot.pitch(i);
+            applyPitchSetToMask(msg.patternMask, common::PitchSet(pitches, snapshot.pitchOrder()));
+            break;
+        }
+        case commands::Command::PATTERN_VELOCITY_SET_MULTI: {
+            BB2_BRANCH(14);
+            std::vector<uint8_t> velocities(snapshot.velocityCount());
+            for (uint8_t i = 0; i < snapshot.velocityCount(); ++i) velocities[i] = snapshot.velocity(i);
+            applyVelocitySetToMask(msg.patternMask,
+                                   common::VelocitySet(velocities, snapshot.velocityOrder()));
+            break;
+        }
         default: break;
     }
     BB2_BRANCH(100);  // survived the apply
@@ -614,6 +667,36 @@ void Sequencer::setPatternVelocitySetFromSnapshot(size_t patternIndex,
     std::vector<uint8_t> velocities(snap.velocityCount());
     for (uint8_t i = 0; i < snap.velocityCount(); ++i) velocities[i] = snap.velocity(i);
     patterns[patternIndex].setVelocitySet(common::VelocitySet(velocities, snap.velocityOrder()));
+}
+
+bool Sequencer::maskFits(uint16_t mask) const {
+    // Non-empty and no bit at or beyond the live pattern count.
+    if (mask == 0) return false;
+    return patterns.size() >= 16 || (mask >> patterns.size()) == 0;
+}
+
+void Sequencer::applyGateSetToMask(uint16_t mask, const std::vector<bool>& gates) {
+    // One GateSet built from the decoded payload; each user gets a copy that takes over its own
+    // phase (continueFrom), identical to setPatternGateSetFromSnapshot per pattern.
+    const common::GateSet built(gates);
+    for (size_t p = 0; p < patterns.size() && p < 16; ++p) {
+        if (!((mask >> p) & 1u)) continue;
+        common::GateSet next = built;
+        if (playing) next.continueFrom(patterns[p].getGateSet());  // keep phase
+        patterns[p].setGateSet(next);
+    }
+}
+
+void Sequencer::applyPitchSetToMask(uint16_t mask, const common::PitchSet& pitchSet) {
+    for (size_t p = 0; p < patterns.size() && p < 16; ++p) {
+        if ((mask >> p) & 1u) patterns[p].setPitchSet(pitchSet);
+    }
+}
+
+void Sequencer::applyVelocitySetToMask(uint16_t mask, const common::VelocitySet& velocitySet) {
+    for (size_t p = 0; p < patterns.size() && p < 16; ++p) {
+        if ((mask >> p) & 1u) patterns[p].setVelocitySet(velocitySet);
+    }
 }
 
 void Sequencer::setPatternGenParamsFromSnapshot(size_t patternIndex,

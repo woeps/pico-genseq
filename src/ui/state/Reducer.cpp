@@ -165,29 +165,59 @@ void sendGenParamsToUsers(const UIState& s, SetType type, uint8_t slot,
     }
 }
 
+// A set with one user goes out as the single-pattern command (byte-identical to the
+// pre-library firmware); a shared set goes out ONCE as a multicast command with the user mask,
+// so the payload is expanded, transferred and decoded once however many patterns share it.
+uint8_t lowestUser(uint16_t users) {
+    uint8_t p = 0;
+    while (!((users >> p) & 1u)) ++p;
+    return p;
+}
+
 void sendGateToUsers(const UIState& s, uint8_t slot, const GateSetConfig& config) {
     const uint16_t users = usersOf(s, SetType::GATE, slot);
-    for (uint8_t p = 0; p < s.patternCount; ++p) {
-        if ((users >> p) & 1u) sendGateSet(p, config);
+    if (users == 0) return;
+    if (popcount16(users) == 1) {
+        sendGateSet(lowestUser(users), config);
+        return;
+    }
+    switch (config.algorithm) {
+        case GateAlgorithm::EUCLIDEAN:
+            commands::sendGateSetMulti(users, expandGateStates(config));
+            break;
     }
 }
 
 void sendPitchToUsers(const UIState& s, uint8_t slot, const PitchSetConfig& config) {
     const uint16_t users = usersOf(s, SetType::NOTE, slot);
-    for (uint8_t p = 0; p < s.patternCount; ++p) {
-        if ((users >> p) & 1u) sendPitchSetConfig(p, config);
+    if (users == 0) return;
+    if (popcount16(users) == 1) {
+        sendPitchSetConfig(lowestUser(users), config);
+        return;
     }
+    std::vector<uint8_t> pitches(config.pitches.begin(), config.pitches.begin() + config.count);
+    commands::sendPitchSetMulti(users, config.count, config.order, pitches);
 }
 
 void sendVelocityToUsers(const UIState& s, uint8_t slot, const VelocitySetConfig& config) {
     const uint16_t users = usersOf(s, SetType::VELOCITY, slot);
-    for (uint8_t p = 0; p < s.patternCount; ++p) {
-        if ((users >> p) & 1u) sendVelocitySetConfig(p, config);
+    if (users == 0) return;
+    if (popcount16(users) == 1) {
+        sendVelocitySetConfig(lowestUser(users), config);
+        return;
     }
+    std::vector<uint8_t> velocities(config.velocities.begin(),
+                                    config.velocities.begin() + config.count);
+    commands::sendVelocitySetMulti(users, config.count, config.order, velocities);
 }
 
 uint16_t userCount(const UIState& s, SetType type, uint8_t slot) {
     return popcount16(usersOf(s, type, slot));
+}
+
+// Commands a set send produces: one (single or multicast) if the set has any user.
+uint16_t setCommandCount(const UIState& s, SetType type, uint8_t slot) {
+    return usersOf(s, type, slot) != 0 ? 1 : 0;
 }
 
 void restoreGateSetDraft(UIState& state) {
@@ -195,7 +225,7 @@ void restoreGateSetDraft(UIState& state) {
     if (!state.gateSetDirty || !slotOccupied(state, SetType::GATE, slot)) return;
     state.gateSetDraft = state.gateLib.slots[slot];
     state.gateSetDirty = false;
-    BatchScope batch(2 * userCount(state, SetType::GATE, slot));
+    BatchScope batch(setCommandCount(state, SetType::GATE, slot) + userCount(state, SetType::GATE, slot));
     sendGateToUsers(state, slot, state.gateSetDraft);
     // drop the previewed draft gen-params
     sendGenParamsToUsers(state, SetType::GATE, slot, nullptr, nullptr, nullptr);
@@ -279,7 +309,7 @@ void restorePitchSetDraft(UIState& state) {
     if (!state.pitchSetDirty || !slotOccupied(state, SetType::NOTE, slot)) return;
     state.pitchSetDraft = state.noteLib.slots[slot];
     state.pitchSetDirty = false;
-    BatchScope batch(2 * userCount(state, SetType::NOTE, slot));
+    BatchScope batch(setCommandCount(state, SetType::NOTE, slot) + userCount(state, SetType::NOTE, slot));
     sendPitchToUsers(state, slot, state.pitchSetDraft);
     sendGenParamsToUsers(state, SetType::NOTE, slot, nullptr, nullptr, nullptr);
 }
@@ -289,7 +319,7 @@ void restoreVelocitySetDraft(UIState& state) {
     if (!state.velocitySetDirty || !slotOccupied(state, SetType::VELOCITY, slot)) return;
     state.velocitySetDraft = state.velocityLib.slots[slot];
     state.velocitySetDirty = false;
-    BatchScope batch(2 * userCount(state, SetType::VELOCITY, slot));
+    BatchScope batch(setCommandCount(state, SetType::VELOCITY, slot) + userCount(state, SetType::VELOCITY, slot));
     sendVelocityToUsers(state, slot, state.velocitySetDraft);
     sendGenParamsToUsers(state, SetType::VELOCITY, slot, nullptr, nullptr, nullptr);
 }
@@ -466,8 +496,7 @@ void adjustGateSetValue(UIState& state, int delta, bool coarse) {
     // fire that step's note on every scrub (bench report 2026-11-20), so only a
     // gate-structure change sends the array.
     if (prop != GateSetProperty::PROBABILITY && prop != GateSetProperty::STEP_GRID) {
-        BatchScope batch(userCount(state, SetType::GATE, state.selectedGateSlot));
-        sendGateToUsers(state, state.selectedGateSlot, next);
+        sendGateToUsers(state, state.selectedGateSlot, next);  // one command, no frame needed
     }
     // Fields that feed the gen-params (probabilities; STEPS bounds the per-step
     // array; NOTE_LENGTH sets stepLength) preview live instead of on ENTER only.
@@ -489,8 +518,7 @@ void toggleGateStep(UIState& state) {
     next.gateStates[s] = next.gateStates[s] ? 0 : 1;
     state.gateSetDraft = next;
     state.gateSetDirty = next != state.gateLib.slots[state.selectedGateSlot];
-    BatchScope batch(userCount(state, SetType::GATE, state.selectedGateSlot));
-    sendGateToUsers(state, state.selectedGateSlot, next);
+    sendGateToUsers(state, state.selectedGateSlot, next);  // one command, no frame needed
 }
 
 void commitGateSetEdit(UIState& state) {
@@ -579,8 +607,7 @@ void adjustPitchSetValue(UIState& state, int delta, bool coarse) {
     if (state.selectedPitchSetField <= PITCH_SET_FIELD_QUANTIZE) {
         previewPitchGenParams(state);  // scale/root/quantize: audible immediately
     } else {
-        BatchScope batch(userCount(state, SetType::NOTE, state.selectedNoteSlot));
-        sendPitchToUsers(state, state.selectedNoteSlot, next);
+        sendPitchToUsers(state, state.selectedNoteSlot, next);  // one command, no frame needed
     }
 }
 
@@ -678,8 +705,7 @@ void adjustVelocitySetValue(UIState& state, int delta, bool coarse) {
     if (state.selectedVelocitySetField <= VELOCITY_SET_FIELD_COUPLING) {
         previewVelocityGenParams(state);  // humanize/seed/coupling: audible immediately
     } else {
-        BatchScope batch(userCount(state, SetType::VELOCITY, state.selectedVelocitySlot));
-        sendVelocityToUsers(state, state.selectedVelocitySlot, next);
+        sendVelocityToUsers(state, state.selectedVelocitySlot, next);  // one command, no frame needed
     }
 }
 

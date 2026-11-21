@@ -32,7 +32,7 @@ int indexOf(Command cmd, size_t from = 0) {
 
 }  // namespace
 
-TEST(edit_of_shared_gate_set_reaches_all_users_in_one_batch) {
+TEST(edit_of_shared_gate_set_is_one_multicast_command_to_all_users) {
     state::UIState s = sharedState();
     s.selectedGateSlot = 0;
     state::beginGateSetEdit(s);
@@ -42,19 +42,39 @@ TEST(edit_of_shared_gate_set_reaches_all_users_in_one_batch) {
     state::adjustGateSetValue(s, 1);
 
     const auto& v = commands::testing::sentCommands();
-    CHECK_EQ(commands::testing::countOf(Command::PATTERN_GATE_SET), 2);
-    CHECK_EQ(commands::testing::countOf(Command::BATCH_BEGIN), 1);
-    CHECK_EQ(commands::testing::countOf(Command::BATCH_END), 1);
-    const int begin = indexOf(Command::BATCH_BEGIN);
-    const int end = indexOf(Command::BATCH_END);
-    CHECK(begin >= 0 && end > begin);
-    if (begin >= 0) CHECK_EQ(v[begin].param1, 2);
-    const int g0 = indexOf(Command::PATTERN_GATE_SET);
-    const int g1 = indexOf(Command::PATTERN_GATE_SET, g0 + 1);
-    CHECK(g0 > begin && g1 > g0 && g1 < end);
-    if (g1 > 0) {
-        CHECK_EQ(v[g0].param1, 0);
-        CHECK_EQ(v[g1].param1, 1);
+    CHECK_EQ(v.size(), 1);
+    CHECK_EQ(commands::testing::countOf(Command::PATTERN_GATE_SET), 0);
+    CHECK_EQ(commands::testing::countOf(Command::PATTERN_GATE_SET_MULTI), 1);
+    CHECK_EQ(commands::testing::countOf(Command::BATCH_BEGIN), 0);  // one command is atomic itself
+    if (v.size() == 1) {
+        CHECK_EQ(v[0].patternMask, 0b011);  // patterns 0 and 1 share gate slot 0
+        CHECK_EQ(v[0].gateCount, 96);       // 16 steps x sixteenth
+    }
+}
+
+TEST(shared_draft_discard_frames_multicast_and_per_user_gen_params) {
+    state::UIState s = sharedState();
+    s.selectedGateSlot = 0;
+    state::beginGateSetEdit(s);
+    s.selectedGateSetProperty = state::GateSetProperty::PULSES;
+    state::adjustGateSetValue(s, 1);
+    commands::testing::reset();
+
+    state::undoGateSetEdit(s);
+
+    const auto& v = commands::testing::sentCommands();
+    // BEGIN(3), GATE_SET_MULTI, GEN_PARAMS(0), GEN_PARAMS(1), END
+    CHECK_EQ(v.size(), 5);
+    if (v.size() == 5) {
+        CHECK(v[0].cmd == Command::BATCH_BEGIN);
+        CHECK_EQ(v[0].param1, 3);
+        CHECK(v[1].cmd == Command::PATTERN_GATE_SET_MULTI);
+        CHECK_EQ(v[1].patternMask, 0b011);
+        CHECK(v[2].cmd == Command::GEN_PARAMS_SET);
+        CHECK_EQ(v[2].param1, 0);
+        CHECK(v[3].cmd == Command::GEN_PARAMS_SET);
+        CHECK_EQ(v[3].param1, 1);
+        CHECK(v[4].cmd == Command::BATCH_END);
     }
 }
 
@@ -121,8 +141,16 @@ TEST(selecting_another_slot_discards_the_draft_and_resends_the_committed_set) {
     CHECK_EQ(s.selectedNoteSlot, 1);
     CHECK_EQ(s.pitchSetDraft.pitches[0], 60);
     CHECK_EQ(s.noteLib.slots[0].pitches[0], 60);  // committed set untouched by the draft
-    // the previewed value was undone for the users of the old slot (patterns 0 and 1)
-    CHECK_EQ(commands::testing::countOf(Command::PATTERN_PITCH_SET), 2);
+    // the previewed value was undone for the users of the old slot (patterns 0 and 1): one
+    // multicast command to both
+    CHECK_EQ(commands::testing::countOf(Command::PATTERN_PITCH_SET_MULTI), 1);
+    CHECK_EQ(commands::testing::countOf(Command::PATTERN_PITCH_SET), 0);
+    {
+        const auto& v = commands::testing::sentCommands();
+        for (const auto& c : v) {
+            if (c.cmd == Command::PATTERN_PITCH_SET_MULTI) CHECK_EQ(c.patternMask, 0b011);
+        }
+    }
 }
 
 TEST(selecting_a_free_slot_is_ignored) {

@@ -132,6 +132,12 @@ private:
 
     // Apply Generation Parameters from the snapshot's POD member (task 6.1/6.2),
     // on the allocation-free core1 path.
+    // Multicast (set-library fan-out): build the set ONCE, then copy it into every pattern in
+    // `mask`; each pattern keeps its own playback phase exactly as the single-pattern apply.
+    void applyGateSetToMask(uint16_t mask, const std::vector<bool>& gates);
+    void applyPitchSetToMask(uint16_t mask, const common::PitchSet& pitchSet);
+    void applyVelocitySetToMask(uint16_t mask, const common::VelocitySet& velocitySet);
+    bool maskFits(uint16_t mask) const;
     void setPatternGenParamsFromSnapshot(size_t patternIndex,
                                          const sequencer::PatternSnapshot& snap);
 

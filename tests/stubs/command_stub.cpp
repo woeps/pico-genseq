@@ -68,6 +68,38 @@ void sendGenParams(uint8_t patternIndex, const common::GenerationParameters&) {
     testing::sentCommands().push_back(msg);
 }
 
+void sendGateSetMulti(uint16_t mask, const std::vector<bool>& gates) {
+    CommandMessage msg;
+    msg.cmd = Command::PATTERN_GATE_SET_MULTI;
+    msg.patternMask = mask;
+    msg.gateCount = static_cast<uint16_t>(
+        std::min(gates.size(), static_cast<size_t>(MAX_GATE_SET_LENGTH)));
+    msg.gates.assign(gates.begin(), gates.begin() + msg.gateCount);
+    testing::sentCommands().push_back(msg);
+}
+
+void sendPitchSetMulti(uint16_t mask, uint8_t count, common::PlayingOrder order,
+                       const std::vector<uint8_t>& pitches) {
+    CommandMessage msg;
+    msg.cmd = Command::PATTERN_PITCH_SET_MULTI;
+    msg.patternMask = mask;
+    msg.pitchCount = static_cast<uint8_t>(std::min(static_cast<size_t>(count), pitches.size()));
+    msg.pitchOrder = order;
+    msg.pitches.assign(pitches.begin(), pitches.begin() + msg.pitchCount);
+    testing::sentCommands().push_back(msg);
+}
+
+void sendVelocitySetMulti(uint16_t mask, uint8_t count, common::PlayingOrder order,
+                          const std::vector<uint8_t>& velocities) {
+    CommandMessage msg;
+    msg.cmd = Command::PATTERN_VELOCITY_SET_MULTI;
+    msg.patternMask = mask;
+    msg.velocityCount = static_cast<uint8_t>(std::min(static_cast<size_t>(count), velocities.size()));
+    msg.velocityOrder = order;
+    msg.velocities.assign(velocities.begin(), velocities.begin() + msg.velocityCount);
+    testing::sentCommands().push_back(msg);
+}
+
 CommandMessage receiveCommand() { return {}; }
 
 } // namespace commands
