@@ -342,6 +342,18 @@ void HostControl::emitDump() {
         printf("D:genSeed=%lu\n", static_cast<unsigned long>(v.seed));
         printf("D:genCoupling=%u\n", static_cast<unsigned>(v.coupling));
     }
+    // Set libraries (separate-velocity-set-gate-set-and-note-set): slot occupancy per library and
+    // each pattern's three references as "gate.note.velocity", e.g. "D:refs=0.0.0,0.1.2".
+    printf("D:gateOcc=0x%04x\n", static_cast<unsigned>(s.gateLib.occupied));
+    printf("D:noteOcc=0x%04x\n", static_cast<unsigned>(s.noteLib.occupied));
+    printf("D:velocityOcc=0x%04x\n", static_cast<unsigned>(s.velocityLib.occupied));
+    printf("D:refs=");
+    for (uint8_t i = 0; i < s.patternCount; ++i) {
+        printf("%s%u.%u.%u", i ? "," : "", static_cast<unsigned>(s.patternRefs[i].gate),
+               static_cast<unsigned>(s.patternRefs[i].note),
+               static_cast<unsigned>(s.patternRefs[i].velocity));
+    }
+    printf("\n");
     printf("D:end\n");
 }
 
