@@ -342,7 +342,7 @@ line endings keep CRLF after editing.
   | R7 F1-F6, boot view, test view removed | `tests/test_reducer.cpp` F-key tests; 11.1 boots into `instruments`; play LED confirmed by the user | met |
   | R8 Persistence v4 and migration | `example_instrument_persistence`, property 1/7 round trips, corrupt-record rejection; 11.1 (v3 save migrated); 11.2 (cold power-cycle) | met |
   | R9 Real-time safety | note lifecycle property test; golden stream unchanged; 11.4 and 17.2 timing gates | met, with one deviation: 11.4 used the host-control timing counters, not a BitScope capture |
-  | R10 Documentation | manual sections 3, 4, 4a, 11, 13; charter gap table; roadmap | met |
+  | R10 Documentation | manual sections 1-7, 14, 15, 16 (after the restructure of 2026-11-21); charter gap table; roadmap | met |
   | R11 MIDI output load | `example_midi_byte_queue`, `tests/test_loadindicator.cpp`; 17.2 table (no skipped ticks at any load, fault at 250 ms delay) | met, except that the load pixel has not been checked by eye on the device |
 
   Final run: 52 host test programs under ASan/UBSan pass, 163 UI tests pass, the release
