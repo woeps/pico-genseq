@@ -34,6 +34,8 @@
 #include "persistence/PersistableConfig.h"
 #include "persistence/SaveRecord.h"
 
+#include "PersistTestSupport.h"
+
 #include <rapidcheck.h>
 
 #include <cstddef>
@@ -53,33 +55,7 @@ void writeU32LE(std::vector<uint8_t>& buf, std::size_t offset, uint32_t v) {
 
 // A distinct sentinel config used to prove `out` is left untouched by a failed deserialize.
 // Recognizably "not defaults" so the untouched-check is meaningful (mirrors the CRC test).
-persistence::PersistableConfig makeSentinel() {
-    persistence::PersistableConfig s{};
-    s.patternCount = 7;
-    s.bpm = 4242;
-    s.midiClockEnabled = 1;
-    for (uint8_t idx = 0; idx < s.patternCount; ++idx) {
-        persistence::PatternConfig& pat = s.patterns[idx];
-        pat.gateAlgorithm = 0;
-        pat.gateSteps = 33;
-        pat.gatePulses = 11;
-        pat.gateRotation = 5;
-        pat.gateNoteLength = 2;
-        pat.gateLength = 77;
-        pat.pitchCount = 3;
-        pat.pitchOrder = 1;
-        pat.pitches[0] = 60;
-        pat.pitches[1] = 62;
-        pat.pitches[2] = 64;
-        pat.velocityCount = 2;
-        pat.velocityOrder = 2;
-        pat.velocities[0] = 100;
-        pat.velocities[1] = 110;
-        pat.midiChannel = 9;
-        pat.active = 1;
-    }
-    return s;
-}
+persistence::PersistableConfig makeSentinel() { return persist_test::makeSentinel(); }
 
 // Deserialize `span` against a sentinel-seeded `out` and assert the status matches `expected`
 // AND that `out` was left byte-for-byte at the sentinel (no mutation on any failure path).
@@ -132,6 +108,7 @@ void checkBadVersion() {
     // reason this record is rejected.
     int badVersion = *rc::gen::inRange<int>(0, 256);
     while (badVersion == persistence::FORMAT_VERSION ||
+           badVersion == persistence::FORMAT_VERSION_V2_LEGACY ||
            badVersion == persistence::FORMAT_VERSION_V1_LEGACY) {
         badVersion = (badVersion + 1) & 0xFF;  // step to the next u8, wrapping
     }

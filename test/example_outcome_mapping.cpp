@@ -55,22 +55,21 @@ persistence::PersistableConfig makeSmallConfig() {
     cfg.bpm = 120;
     cfg.midiClockEnabled = 1;
 
-    persistence::PatternConfig& p0 = cfg.patterns[0];
-    p0.gateAlgorithm = 1;
-    p0.gateSteps = 16;
-    p0.gatePulses = 4;
-    p0.gateRotation = 0;
-    p0.gateNoteLength = 2;
-    p0.gateLength = 50;
-    p0.pitchCount = 2;
-    p0.pitchOrder = 0;
-    p0.pitches[0] = 60;
-    p0.pitches[1] = 64;
-    p0.velocityCount = 1;
-    p0.velocityOrder = 0;
-    p0.velocities[0] = 100;
-    p0.midiChannel = 1;
-    p0.active = 1;
+    cfg.gateSets[0].algorithm = 1;
+    cfg.gateSets[0].steps = 16;
+    cfg.gateSets[0].pulses = 4;
+    cfg.gateSets[0].rotation = 0;
+    cfg.gateSets[0].noteLength = 2;
+    cfg.gateSets[0].gateLength = 50;
+    cfg.noteSets[0].count = 2;
+    cfg.noteSets[0].order = 0;
+    cfg.noteSets[0].pitches[0] = 60;
+    cfg.noteSets[0].pitches[1] = 64;
+    cfg.velocitySets[0].count = 1;
+    cfg.velocitySets[0].order = 0;
+    cfg.velocitySets[0].velocities[0] = 100;
+    cfg.patterns[0].midiChannel = 1;
+    cfg.patterns[0].active = 1;
 
     return cfg;
 }
@@ -84,25 +83,23 @@ persistence::PersistableConfig makeOversizedConfig() {
     cfg.bpm = 140;
     cfg.midiClockEnabled = 1;
 
-    persistence::PatternConfig& p0 = cfg.patterns[0];
-    p0.gateAlgorithm = 1;
-    p0.gateSteps = 16;
-    p0.gatePulses = 8;
-    p0.gateRotation = 0;
-    p0.gateNoteLength = 2;
-    p0.gateLength = 50;
-    p0.pitchCount = persistence::MAX_SET_LEN;      // 16
-    p0.pitchOrder = 0;
-    for (uint8_t i = 0; i < persistence::MAX_SET_LEN; i++) {
-        p0.pitches[i] = static_cast<uint8_t>(48 + i);
+    // Fill every library slot with a maximum-length set so the record is far larger than a
+    // tiny capacity.
+    cfg.gateOccupied = cfg.noteOccupied = cfg.velocityOccupied = 0xFFFF;
+    for (uint8_t s = 0; s < persistence::SET_LIBRARY_SIZE; ++s) {
+        cfg.gateSets[s].steps = 16;
+        cfg.gateSets[s].pulses = 8;
+        cfg.gateSets[s].noteLength = 2;
+        cfg.gateSets[s].gateLength = 50;
+        cfg.noteSets[s].count = persistence::MAX_SET_LEN;
+        cfg.velocitySets[s].count = persistence::MAX_SET_LEN;
+        for (uint8_t i = 0; i < persistence::MAX_SET_LEN; i++) {
+            cfg.noteSets[s].pitches[i] = static_cast<uint8_t>(48 + i);
+            cfg.velocitySets[s].velocities[i] = static_cast<uint8_t>(64 + i);
+        }
     }
-    p0.velocityCount = persistence::MAX_SET_LEN;   // 16
-    p0.velocityOrder = 0;
-    for (uint8_t i = 0; i < persistence::MAX_SET_LEN; i++) {
-        p0.velocities[i] = static_cast<uint8_t>(64 + i);
-    }
-    p0.midiChannel = 1;
-    p0.active = 1;
+    cfg.patterns[0].midiChannel = 1;
+    cfg.patterns[0].active = 1;
 
     return cfg;
 }

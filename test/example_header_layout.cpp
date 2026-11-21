@@ -56,40 +56,27 @@ persistence::PersistableConfig makeKnownConfig() {
     cfg.bpm = 120;
     cfg.midiClockEnabled = 1;
 
-    persistence::PatternConfig& p0 = cfg.patterns[0];
-    p0.gateAlgorithm = 1;
-    p0.gateSteps = 16;
-    p0.gatePulses = 4;
-    p0.gateRotation = 0;
-    p0.gateNoteLength = 2;
-    p0.gateLength = 50;
-    p0.pitchCount = 3;
-    p0.pitchOrder = 0;
-    p0.pitches[0] = 60;
-    p0.pitches[1] = 62;
-    p0.pitches[2] = 64;
-    p0.velocityCount = 2;
-    p0.velocityOrder = 1;
-    p0.velocities[0] = 100;
-    p0.velocities[1] = 110;
-    p0.midiChannel = 1;
-    p0.active = 1;
+    cfg.gateOccupied = cfg.noteOccupied = cfg.velocityOccupied = 0x0003;
+    persistence::GateSetRecord& g0 = cfg.gateSets[0];
+    g0.algorithm = 1; g0.steps = 16; g0.pulses = 4; g0.rotation = 0; g0.noteLength = 2; g0.gateLength = 50;
+    persistence::NoteSetRecord& n0 = cfg.noteSets[0];
+    n0.count = 3; n0.order = 0; n0.pitches[0] = 60; n0.pitches[1] = 62; n0.pitches[2] = 64;
+    persistence::VelocitySetRecord& v0 = cfg.velocitySets[0];
+    v0.count = 2; v0.order = 1; v0.velocities[0] = 100; v0.velocities[1] = 110;
+    cfg.patterns[0].midiChannel = 1;
+    cfg.patterns[0].active = 1;
+    cfg.patterns[0].gateRef = 0; cfg.patterns[0].noteRef = 0; cfg.patterns[0].velocityRef = 0;
 
-    persistence::PatternConfig& p1 = cfg.patterns[1];
-    p1.gateAlgorithm = 0;
-    p1.gateSteps = 8;
-    p1.gatePulses = 2;
-    p1.gateRotation = 1;
-    p1.gateNoteLength = 1;
-    p1.gateLength = 75;
-    p1.pitchCount = 1;
-    p1.pitchOrder = 0;
-    p1.pitches[0] = 48;
-    p1.velocityCount = 1;
-    p1.velocityOrder = 0;
-    p1.velocities[0] = 90;
-    p1.midiChannel = 2;
-    p1.active = 0;
+    persistence::GateSetRecord& g1 = cfg.gateSets[1];
+    g1.algorithm = 0; g1.steps = 8; g1.pulses = 2; g1.rotation = 1; g1.noteLength = 1; g1.gateLength = 75;
+    persistence::NoteSetRecord& n1 = cfg.noteSets[1];
+    n1.count = 1; n1.order = 0; n1.pitches[0] = 48;
+    persistence::VelocitySetRecord& v1 = cfg.velocitySets[1];
+    v1.count = 1; v1.order = 0; v1.velocities[0] = 90;
+    // Pattern 1 shares pattern 0's note set but uses its own gate and velocity sets.
+    cfg.patterns[1].midiChannel = 2;
+    cfg.patterns[1].active = 0;
+    cfg.patterns[1].gateRef = 1; cfg.patterns[1].noteRef = 0; cfg.patterns[1].velocityRef = 1;
 
     return cfg;
 }
@@ -113,8 +100,8 @@ int main() {
         expect(record[0] == 'G', "byte[0] is not 'G' (magic[0])", ok);
         expect(record[1] == 'S', "byte[1] is not 'S' (magic[1])", ok);
 
-        // Byte 2: format version == 1.
-        expect(record[2] == FORMAT_VERSION, "byte[2] is not FORMAT_VERSION (1)", ok);
+        // Byte 2: format version == FORMAT_VERSION.
+        expect(record[2] == FORMAT_VERSION, "byte[2] is not FORMAT_VERSION", ok);
 
         // Byte 3: reserved == 0.
         expect(record[3] == 0, "byte[3] (reserved) is not 0", ok);

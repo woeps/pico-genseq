@@ -119,29 +119,38 @@ void core0_sequencer_proxy() {
     }
 }
 
-// Build a worst-case PersistableConfig (all 15 patterns active, full sets) so
-// the serialized SaveRecord is the largest the codec produces.
+// Build a worst-case PersistableConfig (all 15 patterns active, all three libraries full with
+// maximum-length sets) so the serialized SaveRecord is the largest the codec produces.
 persistence::PersistableConfig make_worst_case_config() {
     persistence::PersistableConfig cfg{};
     cfg.patternCount = persistence::MAX_PATTERNS;  // 15
     cfg.bpm = 255;
     cfg.midiClockEnabled = 1;
+    cfg.gateOccupied = cfg.noteOccupied = cfg.velocityOccupied = 0xFFFF;
+    for (uint8_t s = 0; s < persistence::SET_LIBRARY_SIZE; ++s) {
+        auto& g = cfg.gateSets[s];
+        g.algorithm = 0;
+        g.steps = 64;
+        g.pulses = 32;
+        g.rotation = 3;
+        g.noteLength = 2;
+        g.gateLength = 75;
+        g.stepProbCount = persistence::MAX_SET_LEN;
+        g.gateStepCount = persistence::GateSetRecord::kMaxGateEditSteps;
+        auto& n = cfg.noteSets[s];
+        n.count = persistence::MAX_SET_LEN;     // 16
+        auto& v = cfg.velocitySets[s];
+        v.count = persistence::MAX_SET_LEN;     // 16
+        for (uint8_t i = 0; i < persistence::MAX_SET_LEN; ++i) {
+            n.pitches[i] = static_cast<uint8_t>(36 + i);
+            v.velocities[i] = static_cast<uint8_t>(64 + i);
+        }
+    }
     for (uint8_t p = 0; p < persistence::MAX_PATTERNS; ++p) {
         auto& pc = cfg.patterns[p];
-        pc.gateAlgorithm = 1;
-        pc.gateSteps = 64;
-        pc.gatePulses = 32;
-        pc.gateRotation = 3;
-        pc.gateNoteLength = 2;
-        pc.gateLength = 75;
-        pc.pitchCount = persistence::MAX_SET_LEN;     // 16
-        pc.pitchOrder = 0;
-        pc.velocityCount = persistence::MAX_SET_LEN;  // 16
-        pc.velocityOrder = 0;
-        for (uint8_t i = 0; i < persistence::MAX_SET_LEN; ++i) {
-            pc.pitches[i] = static_cast<uint8_t>(36 + i);
-            pc.velocities[i] = static_cast<uint8_t>(64 + i);
-        }
+        pc.gateRef = p;
+        pc.noteRef = static_cast<uint8_t>(15 - p);
+        pc.velocityRef = p;
         pc.midiChannel = static_cast<uint8_t>((p % 16) + 1);
         pc.active = 1;
     }
@@ -187,7 +196,7 @@ int main() {
     // Serialize the worst-case record with the REAL codec (the true save size).
     const persistence::PersistableConfig cfg = make_worst_case_config();
     const std::vector<uint8_t> record = persistence::serialize(cfg);
-    std::printf("SaveRecord: %u bytes (15 patterns, full sets)\n",
+    std::printf("SaveRecord: %u bytes (15 patterns, 3 full libraries)\n",
                 static_cast<unsigned>(record.size()));
 
     // A larger STRESS record (real record tiled to ~12 KB). The real 676-byte

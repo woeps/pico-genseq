@@ -31,6 +31,9 @@
 #include "persistence/PersistenceManager.h"
 #include "persistence/SaveRecord.h"
 
+#include "PersistGen.h"
+#include "PersistTestSupport.h"
+
 #include <rapidcheck.h>
 
 #include <cstddef>
@@ -39,58 +42,10 @@
 
 namespace {
 
-// Generate one random VALID persistence::PatternConfig (same generator style as
-// property2_store_roundtrip.cpp), but with pitch/velocity sets forced to their maximum length so
-// each pattern contributes its worst-case ~44 payload bytes. This guarantees the serialized
-// record dwarfs the tiny capacity used below, so RC_PRE almost never discards a case.
-rc::Gen<persistence::PatternConfig> genFatPatternConfig() {
-    return rc::gen::exec([] {
-        persistence::PatternConfig p{};
-
-        // Gate generator parameters. gateSteps in 1..64 anchors the dependent ranges.
-        p.gateAlgorithm = 0;  // only algorithm 0 today
-        const uint8_t steps = *rc::gen::inRange<int>(1, 65);  // 1..64 inclusive
-        p.gateSteps = steps;
-        p.gatePulses = *rc::gen::inRange<int>(0, steps + 1);  // 0..steps
-        p.gateRotation = *rc::gen::inRange<int>(0, steps);    // 0..steps-1
-        p.gateNoteLength = *rc::gen::inRange<int>(0, 6);      // 0..5
-        p.gateLength = *rc::gen::inRange<int>(0, 101);        // 0..100
-
-        // Pitch set: force the maximum length so the record is large.
-        p.pitchCount = persistence::MAX_SET_LEN;
-        p.pitchOrder = *rc::gen::inRange<int>(0, 4);  // common::PlayingOrder 0..3
-        for (uint8_t i = 0; i < persistence::MAX_SET_LEN; i++) {
-            p.pitches[i] = *rc::gen::inRange<int>(0, 128);  // MIDI-ish byte 0..127
-        }
-
-        // Velocity set: same maximum shape.
-        p.velocityCount = persistence::MAX_SET_LEN;
-        p.velocityOrder = *rc::gen::inRange<int>(0, 4);  // common::PlayingOrder 0..3
-        for (uint8_t i = 0; i < persistence::MAX_SET_LEN; i++) {
-            p.velocities[i] = *rc::gen::inRange<int>(0, 128);
-        }
-
-        p.midiChannel = *rc::gen::inRange<int>(1, 17);  // 1..16
-        p.active = *rc::gen::inRange<int>(0, 2);        // 0/1
-        return p;
-    });
-}
-
-// Generate one random VALID persistence::PersistableConfig with patternCount in 1..MAX_PATTERNS
-// (at least one pattern so the serialized record always exceeds the tiny capacity).
+// Generate one random VALID v3 config (random library occupancy, set contents, and per-pattern
+// references that may share sets). See PersistGen.h.
 rc::Gen<persistence::PersistableConfig> genOversizedConfig() {
-    return rc::gen::exec([] {
-        persistence::PersistableConfig cfg{};
-        const uint8_t patternCount =
-            *rc::gen::inRange<int>(1, persistence::MAX_PATTERNS + 1);  // 1..15
-        cfg.patternCount = patternCount;
-        cfg.bpm = *rc::gen::inRange<int>(0, 1001);  // plausible BPM span 0..1000
-        cfg.midiClockEnabled = *rc::gen::inRange<int>(0, 2);  // 0/1
-        for (uint8_t i = 0; i < patternCount; i++) {
-            cfg.patterns[i] = *genFatPatternConfig();
-        }
-        return cfg;
-    });
+    return rc::gen::exec([] { return persist_gen::genConfig(1, true); });
 }
 
 }  // namespace

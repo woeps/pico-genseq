@@ -25,68 +25,19 @@
 #include "persistence/PersistableConfig.h"
 #include "persistence/SaveRecord.h"
 
+#include "PersistGen.h"
+#include "PersistTestSupport.h"
+
 #include <rapidcheck.h>
 
 #include <cstdint>
 
 namespace {
 
-// Generate one random VALID persistence::PatternConfig. Every field is drawn inside the range
-// the schema documents (see PersistableConfig.h), and only [0, count) set elements are filled
-// meaningfully — matching the count-aware equality of PatternConfig::operator==.
-rc::Gen<persistence::PatternConfig> genPatternConfig() {
-    return rc::gen::exec([] {
-        persistence::PatternConfig p{};
-
-        // Gate generator parameters. gateSteps in 1..64 anchors the dependent ranges.
-        p.gateAlgorithm = 0;  // only algorithm 0 today
-        const uint8_t steps =
-            *rc::gen::inRange<int>(1, 65);  // 1..64 inclusive
-        p.gateSteps = steps;
-        p.gatePulses = *rc::gen::inRange<int>(0, steps + 1);       // 0..steps
-        p.gateRotation = *rc::gen::inRange<int>(0, steps);         // 0..steps-1
-        p.gateNoteLength = *rc::gen::inRange<int>(0, 6);           // 0..5
-        p.gateLength = *rc::gen::inRange<int>(0, 101);             // 0..100
-
-        // Pitch set: count in 0..MAX_SET_LEN, only [0,count) contents matter.
-        const uint8_t pitchCount =
-            *rc::gen::inRange<int>(0, persistence::MAX_SET_LEN + 1);
-        p.pitchCount = pitchCount;
-        p.pitchOrder = *rc::gen::inRange<int>(0, 4);  // common::PlayingOrder 0..3
-        for (uint8_t i = 0; i < pitchCount; i++) {
-            p.pitches[i] = *rc::gen::inRange<int>(0, 128);  // arbitrary MIDI-ish byte 0..127
-        }
-
-        // Velocity set: same shape as pitch set.
-        const uint8_t velocityCount =
-            *rc::gen::inRange<int>(0, persistence::MAX_SET_LEN + 1);
-        p.velocityCount = velocityCount;
-        p.velocityOrder = *rc::gen::inRange<int>(0, 4);  // common::PlayingOrder 0..3
-        for (uint8_t i = 0; i < velocityCount; i++) {
-            p.velocities[i] = *rc::gen::inRange<int>(0, 128);
-        }
-
-        p.midiChannel = *rc::gen::inRange<int>(1, 17);  // 1..16
-        p.active = *rc::gen::inRange<int>(0, 2);        // 0/1
-        return p;
-    });
-}
-
-// Generate one random VALID persistence::PersistableConfig with patternCount in
-// 0..MAX_PATTERNS; only [0, patternCount) patterns are filled meaningfully.
+// Generate one random VALID v3 config (random library occupancy, set contents, and per-pattern
+// references that may share sets). See PersistGen.h.
 rc::Gen<persistence::PersistableConfig> genPersistableConfig() {
-    return rc::gen::exec([] {
-        persistence::PersistableConfig cfg{};
-        const uint8_t patternCount =
-            *rc::gen::inRange<int>(0, persistence::MAX_PATTERNS + 1);  // 0..15
-        cfg.patternCount = patternCount;
-        cfg.bpm = *rc::gen::inRange<int>(0, 1001);  // plausible BPM span 0..1000
-        cfg.midiClockEnabled = *rc::gen::inRange<int>(0, 2);  // 0/1
-        for (uint8_t i = 0; i < patternCount; i++) {
-            cfg.patterns[i] = *genPatternConfig();
-        }
-        return cfg;
-    });
+    return rc::gen::exec([] { return persist_gen::genConfig(0, false); });
 }
 
 }  // namespace

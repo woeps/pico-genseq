@@ -149,10 +149,10 @@ void test_persist_roundtrip() {
     commitPitchSetEdit(s);
 
     const persistence::PersistableConfig cfg = toPersistableConfig(s);
-    check(cfg.patterns[0].genScale == static_cast<uint8_t>(common::ScaleId::MINOR_NATURAL),
+    check(cfg.noteSets[0].scale == static_cast<uint8_t>(common::ScaleId::MINOR_NATURAL),
           "mapping stores scale");
-    check(cfg.patterns[0].genScaleRoot == 9, "mapping stores root");
-    check(cfg.patterns[0].genQuantize == static_cast<uint8_t>(common::QuantizeMode::SKIP),
+    check(cfg.noteSets[0].scaleRoot == 9, "mapping stores root");
+    check(cfg.noteSets[0].quantize == static_cast<uint8_t>(common::QuantizeMode::SKIP),
           "mapping stores quantize");
 
     UIState loaded;
@@ -167,8 +167,8 @@ void test_persist_roundtrip() {
     UIState def = freshState();
     commitPitchSetEdit(def);
     const persistence::PersistableConfig dcfg = toPersistableConfig(def);
-    check(dcfg.patterns[0].genScale == 0 && dcfg.patterns[0].genScaleRoot == 0 &&
-          dcfg.patterns[0].genQuantize == 0,
+    check(dcfg.noteSets[0].scale == 0 && dcfg.noteSets[0].scaleRoot == 0 &&
+          dcfg.noteSets[0].quantize == 0,
           "default scale maps to 0/0/0 (v1-compatible)");
 }
 

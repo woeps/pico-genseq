@@ -37,7 +37,7 @@ constexpr std::size_t kCap = 8192;  // two 4 KiB slots
 PersistableConfig cfg(uint16_t bpm, uint8_t firstPitch) {
     PersistableConfig c{};
     c.bpm = bpm; c.patternCount = 1; c.midiClockEnabled = 1;
-    c.patterns[0].pitchCount = 1; c.patterns[0].pitches[0] = firstPitch;
+    c.noteSets[0].count = 1; c.noteSets[0].pitches[0] = firstPitch;
     c.patterns[0].active = 1;
     return c;
 }
@@ -56,7 +56,7 @@ void test_commit_and_load() {
 
     check(rs.commit(cfg(90, 48)) == CommitResult::OK, "second commit OK");
     check(rs.currentGeneration() == 2, "second commit bumps generation to 2");
-    check(rs.load(out) == LoadStatus::OK && out.bpm == 90 && out.patterns[0].pitches[0] == 48,
+    check(rs.load(out) == LoadStatus::OK && out.bpm == 90 && out.noteSets[0].pitches[0] == 48,
           "load returns the NEWEST committed record");
 }
 
@@ -98,7 +98,7 @@ void test_many_commits_alternate() {
         check(rs.currentGeneration() == i, "generation increments monotonically");
     }
     PersistableConfig out{};
-    check(rs.load(out) == LoadStatus::OK && out.bpm == 106 && out.patterns[0].pitches[0] == 66,
+    check(rs.load(out) == LoadStatus::OK && out.bpm == 106 && out.noteSets[0].pitches[0] == 66,
           "newest of six commits selected");
 }
 

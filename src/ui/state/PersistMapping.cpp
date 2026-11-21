@@ -14,8 +14,130 @@ namespace {
 //                       convention and UIState has no field for it.
 constexpr uint8_t DEFAULT_MIDI_CHANNEL = 1;
 constexpr uint8_t DEFAULT_MIDI_CLOCK_ENABLED = 1;
+static_assert(SET_LIBRARY_SIZE == persistence::SET_LIBRARY_SIZE, "library sizes must match");
 
 } // namespace
+
+namespace {
+
+void toGateRecord(const GateSetConfig& gate, persistence::GateSetRecord& g) {
+    g.algorithm = static_cast<uint8_t>(gate.algorithm);
+    g.steps = gate.steps;
+    g.pulses = gate.pulses;
+    g.rotation = gate.rotation;
+    g.noteLength = static_cast<uint8_t>(gate.noteLength);
+    g.gateLength = gate.gateLength;
+
+    // R9: explicit per-step gate states + per-step/per-Pattern probability.
+    const uint8_t gridSteps = gate.steps < MAX_GRID_STEPS ? gate.steps : MAX_GRID_STEPS;
+    g.gateStepCount = gridSteps;
+    for (uint8_t j = 0; j < gridSteps; ++j) g.gateStates[j] = gate.gateStates[j];
+    g.stepProbCount = gridSteps;
+    for (uint8_t j = 0; j < gridSteps; ++j) g.stepProbability[j] = gate.stepProbability[j];
+    g.patternProbability = gate.patternProbability;
+}
+
+void toNoteRecord(const PitchSetConfig& pitch, persistence::NoteSetRecord& n) {
+    n.count = pitch.count > persistence::MAX_SET_LEN ? persistence::MAX_SET_LEN : pitch.count;
+    n.order = static_cast<uint8_t>(pitch.order);
+    for (uint8_t j = 0; j < n.count; j++) n.pitches[j] = pitch.pitches[j];
+    // Scale constraint (generative-engine-expansion R8/R10) lives with the note set.
+    n.scale = static_cast<uint8_t>(pitch.scale);
+    n.scaleRoot = pitch.scaleRoot;
+    n.quantize = static_cast<uint8_t>(pitch.quantize);
+}
+
+void toVelocityRecord(const VelocitySetConfig& vel, persistence::VelocitySetRecord& v) {
+    v.count = vel.count > persistence::MAX_SET_LEN ? persistence::MAX_SET_LEN : vel.count;
+    v.order = static_cast<uint8_t>(vel.order);
+    for (uint8_t j = 0; j < v.count; j++) v.velocities[j] = vel.velocities[j];
+    // humanize / seed / coupling (R3/R4/R5) live with the velocity set.
+    v.humanizeRange = vel.humanizeRange;
+    v.seedSet = vel.seedSet ? 1 : 0;
+    v.seed = vel.seed;
+    v.coupling = static_cast<uint8_t>(vel.coupling);
+}
+
+GateSetConfig fromGateRecord(const persistence::GateSetRecord& g) {
+    GateSetConfig gate{};
+    gate.algorithm = static_cast<GateAlgorithm>(g.algorithm);
+    gate.steps = g.steps;
+    gate.pulses = g.pulses;
+    gate.rotation = g.rotation;
+    gate.noteLength = static_cast<NoteLength>(g.noteLength);
+    gate.gateLength = g.gateLength;
+    // R9: restore explicit gate states + probability. A record without explicit states
+    // (gateStepCount == 0, e.g. migrated from v1) is seeded from the Euclidean generator so
+    // the restored set keeps its rhythm (expandGateStates of a seeded config ==
+    // createEuclidean output). Otherwise the states (which may include manual edits) are
+    // restored verbatim.
+    if (g.gateStepCount == 0) {
+        // Bjorklund distribution, mirroring regenerateGateStates / createEuclidean.
+        const uint8_t steps = gate.steps < MAX_GRID_STEPS ? gate.steps : MAX_GRID_STEPS;
+        for (uint8_t j = 0; j < MAX_GRID_STEPS; ++j) gate.gateStates[j] = 0;
+        if (gate.pulses >= gate.steps) {
+            for (uint8_t j = 0; j < steps; ++j) gate.gateStates[j] = 1;
+        } else if (gate.pulses > 0) {
+            int bucket = 0;
+            for (uint8_t j = 0; j < gate.steps; ++j) {
+                bucket += gate.pulses;
+                if (bucket >= gate.steps) {
+                    bucket -= gate.steps;
+                    const uint8_t pos = (j + gate.rotation) % gate.steps;
+                    if (pos < MAX_GRID_STEPS) gate.gateStates[pos] = 1;
+                }
+            }
+        }
+    } else {
+        for (uint8_t j = 0; j < g.gateStepCount && j < MAX_GRID_STEPS; ++j) {
+            gate.gateStates[j] = g.gateStates[j];
+        }
+    }
+    for (uint8_t j = 0; j < g.stepProbCount && j < MAX_GRID_STEPS; ++j) {
+        gate.stepProbability[j] = g.stepProbability[j];
+    }
+    gate.patternProbability = g.patternProbability;
+    return gate;
+}
+
+PitchSetConfig fromNoteRecord(const persistence::NoteSetRecord& n) {
+    PitchSetConfig pitch{};
+    pitch.count = n.count > MAX_PITCHES ? MAX_PITCHES : n.count;
+    pitch.order = static_cast<common::PlayingOrder>(n.order);
+    for (uint8_t j = 0; j < pitch.count; j++) pitch.pitches[j] = n.pitches[j];
+    // A legacy record carries defaults (CHROMATIC/0/NEAREST): no scale constraint.
+    pitch.scale = static_cast<common::ScaleId>(n.scale);
+    pitch.scaleRoot = n.scaleRoot;
+    pitch.quantize = static_cast<common::QuantizeMode>(n.quantize);
+    return pitch;
+}
+
+VelocitySetConfig fromVelocityRecord(const persistence::VelocitySetRecord& v) {
+    VelocitySetConfig vel{};
+    vel.count = v.count > MAX_VELOCITIES ? MAX_VELOCITIES : v.count;
+    vel.order = static_cast<common::PlayingOrder>(v.order);
+    for (uint8_t j = 0; j < vel.count; j++) vel.velocities[j] = v.velocities[j];
+    vel.humanizeRange = v.humanizeRange;
+    vel.seedSet = v.seedSet != 0;
+    vel.seed = v.seed;
+    vel.coupling = static_cast<common::CouplingMode>(v.coupling);
+    return vel;
+}
+
+uint8_t lowestSet(uint16_t mask) {
+    for (uint8_t i = 0; i < SET_LIBRARY_SIZE; ++i) {
+        if ((mask >> i) & 1u) return i;
+    }
+    return 0;
+}
+
+// A reference to a free or out-of-range slot (only reachable from a hand-built config; the
+// codec rejects such records) falls back to the library's lowest occupied slot.
+uint8_t validRef(uint16_t mask, uint8_t ref) {
+    return (ref < SET_LIBRARY_SIZE && ((mask >> ref) & 1u)) ? ref : lowestSet(mask);
+}
+
+}  // namespace
 
 void toPersistableConfig(const UIState& state, persistence::PersistableConfig& cfg) {
     static const persistence::PersistableConfig kDefault{};
@@ -27,65 +149,25 @@ void toPersistableConfig(const UIState& state, persistence::PersistableConfig& c
     cfg.bpm = state.bpm;
     cfg.midiClockEnabled = DEFAULT_MIDI_CLOCK_ENABLED;
 
-    for (uint8_t i = 0; i < count; i++) {
-        persistence::PatternConfig& p = cfg.patterns[i];
-        const GateSetConfig& gate = state.gateSetOf(i);
-        const PitchSetConfig& pitch = state.pitchSetOf(i);
-        const VelocitySetConfig& vel = state.velocitySetOf(i);
-
-        p.active = static_cast<uint8_t>((state.activePatterns >> i) & 0x1);
-
-        p.gateAlgorithm = static_cast<uint8_t>(gate.algorithm);
-        p.gateSteps = gate.steps;
-        p.gatePulses = gate.pulses;
-        p.gateRotation = gate.rotation;
-        p.gateNoteLength = static_cast<uint8_t>(gate.noteLength);
-        p.gateLength = gate.gateLength;
-
-        // R9: explicit per-step gate states + per-step/per-Pattern probability.
-        const uint8_t gridSteps = gate.steps < MAX_GRID_STEPS ? gate.steps : MAX_GRID_STEPS;
-        p.gateStepCount = gridSteps;
-        for (uint8_t j = 0; j < gridSteps; ++j) p.gateStates[j] = gate.gateStates[j];
-        p.genStepProbCount = gridSteps;
-        for (uint8_t j = 0; j < gridSteps; ++j) p.genStepProbability[j] = gate.stepProbability[j];
-        p.genPatternProbability = gate.patternProbability;
-
-        p.pitchCount = pitch.count;
-        if (p.pitchCount > persistence::MAX_SET_LEN) {
-            p.pitchCount = persistence::MAX_SET_LEN;
+    cfg.gateOccupied = state.gateLib.occupied;
+    cfg.noteOccupied = state.noteLib.occupied;
+    cfg.velocityOccupied = state.velocityLib.occupied;
+    for (uint8_t s = 0; s < SET_LIBRARY_SIZE; ++s) {
+        if ((state.gateLib.occupied >> s) & 1u) toGateRecord(state.gateLib.slots[s], cfg.gateSets[s]);
+        if ((state.noteLib.occupied >> s) & 1u) toNoteRecord(state.noteLib.slots[s], cfg.noteSets[s]);
+        if ((state.velocityLib.occupied >> s) & 1u) {
+            toVelocityRecord(state.velocityLib.slots[s], cfg.velocitySets[s]);
         }
-        p.pitchOrder = static_cast<uint8_t>(pitch.order);
-        for (uint8_t j = 0; j < p.pitchCount; j++) {
-            p.pitches[j] = pitch.pitches[j];
-        }
-
-        // Scale constraint (generative-engine-expansion R8/R10): persist the UI
-        // scale fields into the Generation Parameters block. Other gen-params
-        // (probability/humanize/seed/coupling) are threaded in by their own
-        // views in tasks 9/10.
-        p.genScale = static_cast<uint8_t>(pitch.scale);
-        p.genScaleRoot = pitch.scaleRoot;
-        p.genQuantize = static_cast<uint8_t>(pitch.quantize);
-
-        p.velocityCount = vel.count;
-        if (p.velocityCount > persistence::MAX_SET_LEN) {
-            p.velocityCount = persistence::MAX_SET_LEN;
-        }
-        p.velocityOrder = static_cast<uint8_t>(vel.order);
-        for (uint8_t j = 0; j < p.velocityCount; j++) {
-            p.velocities[j] = vel.velocities[j];
-        }
-
-        // Pattern-scope Generation Parameters hosted in the VelocitySet view
-        // (R3/R4/R5): humanize, seed, coupling.
-        p.genHumanizeRange = vel.humanizeRange;
-        p.genSeedSet = vel.seedSet ? 1 : 0;
-        p.genSeed = vel.seed;
-        p.genCoupling = static_cast<uint8_t>(vel.coupling);
-
-        p.midiChannel = DEFAULT_MIDI_CHANNEL;
     }
 
+    for (uint8_t i = 0; i < count; i++) {
+        persistence::PatternConfig& p = cfg.patterns[i];
+        p.active = static_cast<uint8_t>((state.activePatterns >> i) & 0x1);
+        p.midiChannel = DEFAULT_MIDI_CHANNEL;
+        p.gateRef = state.patternRefs[i].gate;
+        p.noteRef = state.patternRefs[i].note;
+        p.velocityRef = state.patternRefs[i].velocity;
+    }
 }
 
 persistence::PersistableConfig toPersistableConfig(const UIState& state) {
@@ -105,88 +187,41 @@ void applyPersistableConfig(UIState& state,
     state.patternCount = count;
     state.bpm = static_cast<uint8_t>(cfg.bpm);
 
-    uint16_t activeMask = 0;
-    for (uint8_t i = 0; i < count; i++) {
-        const persistence::PatternConfig& p = cfg.patterns[i];
-
-        if (p.active) activeMask |= static_cast<uint16_t>(1u << i);
-
-        // Legacy (per-pattern) record: pattern i owns set i of every library.
-        state.patternRefs[i] = PatternRefs{i, i, i};
-
-        GateSetConfig gate{};
-        gate.algorithm = static_cast<GateAlgorithm>(p.gateAlgorithm);
-        gate.steps = p.gateSteps;
-        gate.pulses = p.gatePulses;
-        gate.rotation = p.gateRotation;
-        gate.noteLength = static_cast<NoteLength>(p.gateNoteLength);
-        gate.gateLength = p.gateLength;
-        // R9: restore explicit gate states + probability. A v1 record has
-        // gateStepCount==0: SEED gateStates from the Euclidean generator so the
-        // restored pattern keeps its rhythm (expandGateStates of a seeded config
-        // == createEuclidean output). A v2 record carries explicit gateStates
-        // (which may include manual edits) and is restored verbatim.
-        if (p.gateStepCount == 0) {
-            // Bjorklund distribution, mirroring regenerateGateStates / createEuclidean.
-            const uint8_t steps = gate.steps < MAX_GRID_STEPS ? gate.steps : MAX_GRID_STEPS;
-            for (uint8_t j = 0; j < MAX_GRID_STEPS; ++j) gate.gateStates[j] = 0;
-            if (gate.pulses >= gate.steps) {
-                for (uint8_t j = 0; j < steps; ++j) gate.gateStates[j] = 1;
-            } else if (gate.pulses > 0) {
-                int bucket = 0;
-                for (uint8_t j = 0; j < gate.steps; ++j) {
-                    bucket += gate.pulses;
-                    if (bucket >= gate.steps) {
-                        bucket -= gate.steps;
-                        const uint8_t pos = (j + gate.rotation) % gate.steps;
-                        if (pos < MAX_GRID_STEPS) gate.gateStates[pos] = 1;
-                    }
-                }
-            }
-        } else {
-            for (uint8_t j = 0; j < p.gateStepCount && j < MAX_GRID_STEPS; ++j) {
-                gate.gateStates[j] = p.gateStates[j];
-            }
-        }
-        for (uint8_t j = 0; j < p.genStepProbCount && j < MAX_GRID_STEPS; ++j) {
-            gate.stepProbability[j] = p.genStepProbability[j];
-        }
-        gate.patternProbability = p.genPatternProbability;
-        state.gateSetOf(i) = gate;
-
-        PitchSetConfig pitch{};
-        pitch.count = p.pitchCount > MAX_PITCHES ? MAX_PITCHES : p.pitchCount;
-        pitch.order = static_cast<common::PlayingOrder>(p.pitchOrder);
-        for (uint8_t j = 0; j < pitch.count; j++) {
-            pitch.pitches[j] = p.pitches[j];
-        }
-        // Scale constraint (R8/R10): restore from the Generation Parameters
-        // block. A v1 record carries defaults (CHROMATIC/0/NEAREST), so a
-        // pre-milestone save loads with no scale constraint (behavior-preserving).
-        pitch.scale = static_cast<common::ScaleId>(p.genScale);
-        pitch.scaleRoot = p.genScaleRoot;
-        pitch.quantize = static_cast<common::QuantizeMode>(p.genQuantize);
-        state.pitchSetOf(i) = pitch;
-
-        VelocitySetConfig vel{};
-        vel.count = p.velocityCount > MAX_VELOCITIES ? MAX_VELOCITIES : p.velocityCount;
-        vel.order = static_cast<common::PlayingOrder>(p.velocityOrder);
-        for (uint8_t j = 0; j < vel.count; j++) {
-            vel.velocities[j] = p.velocities[j];
-        }
-        // Pattern-scope gen-params (R3/R4/R5). v1 records carry defaults
-        // (0 / false / INDEPENDENT) — behavior-preserving.
-        vel.humanizeRange = p.genHumanizeRange;
-        vel.seedSet = p.genSeedSet != 0;
-        vel.seed = p.genSeed;
-        vel.coupling = static_cast<common::CouplingMode>(p.genCoupling);
-        state.velocitySetOf(i) = vel;
+    // Libraries: every library keeps at least one set (default slot 0 if the mask is empty).
+    const uint16_t gateMask = cfg.gateOccupied ? cfg.gateOccupied : 0x0001;
+    const uint16_t noteMask = cfg.noteOccupied ? cfg.noteOccupied : 0x0001;
+    const uint16_t velocityMask = cfg.velocityOccupied ? cfg.velocityOccupied : 0x0001;
+    state.gateLib.occupied = gateMask;
+    state.noteLib.occupied = noteMask;
+    state.velocityLib.occupied = velocityMask;
+    for (uint8_t s = 0; s < SET_LIBRARY_SIZE; ++s) {
+        state.gateLib.slots[s] =
+            ((gateMask >> s) & 1u) ? fromGateRecord(cfg.gateSets[s]) : GateSetConfig{};
+        state.noteLib.slots[s] =
+            ((noteMask >> s) & 1u) ? fromNoteRecord(cfg.noteSets[s]) : PitchSetConfig{};
+        state.velocityLib.slots[s] = ((velocityMask >> s) & 1u)
+                                         ? fromVelocityRecord(cfg.velocitySets[s])
+                                         : VelocitySetConfig{};
     }
 
-    const uint16_t ownedSlots = static_cast<uint16_t>((1u << count) - 1u);
-    state.gateLib.occupied = ownedSlots;
-    state.noteLib.occupied = ownedSlots;
-    state.velocityLib.occupied = ownedSlots;
+    uint16_t activeMask = 0;
+    for (uint8_t i = 0; i < count; i++) {
+        // cfg.patterns[i] is only meaningful for i < cfg.patternCount; a config with no
+        // patterns still gets one pattern on the default set 0 of each library.
+        const persistence::PatternConfig p =
+            i < cfg.patternCount ? cfg.patterns[i] : persistence::PatternConfig{};
+        if (p.active) activeMask |= static_cast<uint16_t>(1u << i);
+        state.patternRefs[i] = PatternRefs{validRef(gateMask, p.gateRef),
+                                           validRef(noteMask, p.noteRef),
+                                           validRef(velocityMask, p.velocityRef)};
+    }
+    // Patterns beyond the restored count carry no references.
+    for (uint8_t i = count; i < MAX_PATTERNS; i++) state.patternRefs[i] = PatternRefs{};
+
+    // Selection follows the first pattern's references so the set views open on real sets.
+    state.selectedGateSlot = state.patternRefs[0].gate;
+    state.selectedNoteSlot = state.patternRefs[0].note;
+    state.selectedVelocitySlot = state.patternRefs[0].velocity;
 
     state.activePatterns = activeMask;
     // Draft / dirty / selection / save-status fields are intentionally left at

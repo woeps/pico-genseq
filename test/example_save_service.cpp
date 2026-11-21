@@ -41,7 +41,7 @@ void check(bool cond, const char* what) {
 PersistableConfig makeConfig(uint16_t bpm, uint8_t firstPitch) {
     PersistableConfig c{};
     c.bpm = bpm; c.patternCount = 1; c.midiClockEnabled = 1;
-    c.patterns[0].pitchCount = 1; c.patterns[0].pitches[0] = firstPitch;
+    c.noteSets[0].count = 1; c.noteSets[0].pitches[0] = firstPitch;
     c.patterns[0].active = 1;
     return c;
 }
@@ -85,7 +85,7 @@ void test_snapshot_immutable() {
     PersistableConfig working = makeConfig(120, 60);
     svc.begin(working);
     working.bpm = 200;                 // live edit AFTER begin
-    working.patterns[0].pitches[0] = 99;
+    working.noteSets[0].pitches[0] = 99;
     uint64_t t = 1000;
     while (svc.service(t)) t += 1000;
     check(svc.succeeded(), "save completes");
@@ -93,7 +93,7 @@ void test_snapshot_immutable() {
     // Load back: the written config reflects the SNAPSHOT (120/60), not the edit.
     PersistableConfig loaded{};
     mgr.load(loaded);
-    check(loaded.bpm == 120 && loaded.patterns[0].pitches[0] == 60,
+    check(loaded.bpm == 120 && loaded.noteSets[0].pitches[0] == 60,
           "written bytes reflect the immutable snapshot, not the post-begin edit");
 }
 

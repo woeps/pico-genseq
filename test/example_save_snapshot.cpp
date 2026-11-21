@@ -36,8 +36,8 @@ PersistableConfig makeConfig(uint16_t bpm, uint8_t patternCount, uint8_t firstPi
     c.patternCount = patternCount;
     c.midiClockEnabled = 1;
     if (patternCount > 0) {
-        c.patterns[0].pitchCount = 1;
-        c.patterns[0].pitches[0] = firstPitch;
+        c.noteSets[0].count = 1;
+        c.noteSets[0].pitches[0] = firstPitch;
         c.patterns[0].active = 1;
     }
     return c;
@@ -61,12 +61,12 @@ void test_snapshot_immutable_after_capture() {
 
     // Mutate the LIVE working state after capture (a new live edit).
     working.bpm = 200;
-    working.patterns[0].pitches[0] = 72;
+    working.noteSets[0].pitches[0] = 72;
     working.patternCount = 3;
 
     // The snapshot is frozen at its captured values (Req 8.4).
     check(snap.config().bpm == 120, "snapshot bpm unchanged by later live edit");
-    check(snap.config().patterns[0].pitches[0] == 60, "snapshot pitch unchanged by later edit");
+    check(snap.config().noteSets[0].pitches[0] == 60, "snapshot pitch unchanged by later edit");
     check(snap.config().patternCount == 1, "snapshot pattern count unchanged by later edit");
     check(snap.config() != working, "snapshot diverges from the mutated live state");
 }
@@ -80,9 +80,9 @@ void test_accepted_included_draft_excluded() {
     PersistableConfig committed = makeConfig(120, 1, 64);  // accepted change present
     SaveSnapshot snap;
     snap.capture(committed);
-    check(snap.config().patterns[0].pitches[0] == 64,
+    check(snap.config().noteSets[0].pitches[0] == 64,
           "accepted (pending-application) change is included in the snapshot (8.2)");
-    check(snap.config().patterns[0].pitches[0] != 99,
+    check(snap.config().noteSets[0].pitches[0] != 99,
           "unkept audition draft is excluded from the snapshot (8.3)");
 }
 

@@ -34,7 +34,7 @@ constexpr std::size_t kCap = 8192;
 PersistableConfig cfg(uint16_t bpm, uint8_t p0) {
     PersistableConfig c{};
     c.bpm = bpm; c.patternCount = 1; c.midiClockEnabled = 1;
-    c.patterns[0].pitchCount = 1; c.patterns[0].pitches[0] = p0; c.patterns[0].active = 1;
+    c.noteSets[0].count = 1; c.noteSets[0].pitches[0] = p0; c.patterns[0].active = 1;
     return c;
 }
 
@@ -46,8 +46,8 @@ void test_draft_working_pending_distinction() {
     PersistableConfig workingAccepted = cfg(120, 64);
     SaveSnapshot snap;
     snap.capture(workingAccepted);
-    check(snap.config().patterns[0].pitches[0] == 64, "accepted (pending) change captured (8.2)");
-    check(snap.config().patterns[0].pitches[0] != 99, "unkept draft excluded (8.3)");
+    check(snap.config().noteSets[0].pitches[0] == 64, "accepted (pending) change captured (8.2)");
+    check(snap.config().noteSets[0].pitches[0] != 99, "unkept draft excluded (8.3)");
 }
 
 // 8.4: mutation after capture does not change the snapshot nor what is written.

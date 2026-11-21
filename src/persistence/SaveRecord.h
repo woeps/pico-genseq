@@ -13,11 +13,14 @@ namespace persistence {
 // under C++17), which plain `constexpr` at namespace scope would not guarantee
 // if its address were taken in more than one TU.
 inline constexpr uint8_t MAGIC[2] = {'G', 'S'};  // "GS"
-// Current format version. v2 (generative-engine-expansion) appends a Generation
-// Parameters block + an explicit gate array per pattern. v1 is still LOADABLE
-// (migrated: Generation Parameters default, gate array derived from the
-// generator params), so a pre-milestone save is never rejected (Req 6.5).
-inline constexpr uint8_t FORMAT_VERSION = 2;
+// Current format version. v3 (separate-velocity-set-gate-set-and-note-set) stores three
+// set libraries once and a slot reference per pattern. v2 (generative-engine-expansion)
+// stored a Generation Parameters block + an explicit gate array inline per pattern, and v1
+// the bare per-pattern material. Both are still LOADABLE: each pattern becomes its own
+// Gate/Note/Velocity Set at the same slot index, so a legacy save plays exactly as before
+// (Req 6.5, R7.4).
+inline constexpr uint8_t FORMAT_VERSION = 3;
+inline constexpr uint8_t FORMAT_VERSION_V2_LEGACY = 2;
 inline constexpr uint8_t FORMAT_VERSION_V1_LEGACY = 1;
 // magic (2) + version (1) + reserved (1) + payloadLength (4) + crc32 (4) = 12
 inline constexpr std::size_t HEADER_SIZE = 2 + 1 + 1 + 4 + 4;
@@ -30,6 +33,7 @@ enum class LoadStatus {
     BAD_VERSION,
     TRUNCATED,     // shorter than header, or shorter than declared payload
     CRC_MISMATCH,
+    INVALID_REFERENCE,  // v3: empty library, or a pattern references a free/out-of-range slot
 };
 
 // Serialize a snapshot into a full Save_Record (header + payload). Deterministic.

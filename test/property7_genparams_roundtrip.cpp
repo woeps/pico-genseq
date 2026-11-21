@@ -1,18 +1,20 @@
-// generative-engine-expansion Property 7: Generation Parameters persistence v2
-// round-trip + v1 migration.
+// generative-engine-expansion Property 7 (updated for format v3): legacy record migration.
 //
-// Validates Requirements 6.5, 1.7, 9.8:
-//   - a v2 Save_Record round-trips every Generation Parameter and the explicit
-//     gate array unchanged (serialize -> deserialize -> equal);
-//   - a hand-built v1 (pre-milestone) record still LOADS, with every pattern's
-//     Generation Parameters at their behavior-preserving defaults and no explicit
-//     gate array (gateStepCount == 0, derived from the generator as before) —
-//     this is the migration contract, a v1 save is never rejected.
+// Validates Requirements 6.5, 1.7, 9.8 and set-library R7.3/R7.4:
+//   - a v2 Save_Record (per-pattern inline material + Generation Parameters + explicit gate
+//     array) still LOADS and migrates to the v3 libraries: pattern i owns gate/note/velocity
+//     set i, with the generation parameters split by hosting set;
+//   - a hand-built v1 (pre-milestone) record still LOADS the same way, with every set's
+//     Generation Parameters at their behavior-preserving defaults and no explicit gate array
+//     (gateStepCount == 0, derived from the generator as before) — a v1 save is never rejected;
+//   - the migrated config re-serializes as v3 and round-trips.
 //
 // Shared-runner arrangement: defines runPersistProperty7() and NO main().
 
 #include "persistence/PersistableConfig.h"
 #include "persistence/SaveRecord.h"
+
+#include "PersistTestSupport.h"
 
 #include <rapidcheck.h>
 
@@ -22,11 +24,11 @@
 
 namespace {
 
-// Generate a random VALID pattern config INCLUDING Generation Parameters, so the
-// v2 round-trip exercises the appended block.
-rc::Gen<persistence::PatternConfig> genPatternConfigV2() {
+// Generate a random VALID legacy (v1/v2) pattern INCLUDING Generation Parameters, so the
+// v2 migration exercises the appended block.
+rc::Gen<persistence::LegacyPatternConfig> genLegacyPattern() {
     return rc::gen::exec([] {
-        persistence::PatternConfig p{};
+        persistence::LegacyPatternConfig p{};
         p.gateAlgorithm = 0;
         const uint8_t steps = *rc::gen::inRange<int>(1, 65);
         p.gateSteps = steps;
@@ -67,7 +69,7 @@ rc::Gen<persistence::PatternConfig> genPatternConfigV2() {
                 {{1, rc::gen::just<uint8_t>(0xFF)},
                  {3, rc::gen::cast<uint8_t>(rc::gen::inRange<int>(0, 101))}});
         }
-        const uint8_t gsc = *rc::gen::inRange<int>(0, persistence::PatternConfig::kMaxGateEditSteps + 1);
+        const uint8_t gsc = *rc::gen::inRange<int>(0, persistence::LegacyPatternConfig::kMaxGateEditSteps + 1);
         p.gateStepCount = gsc;
         for (uint8_t i = 0; i < gsc; ++i)
             p.gateStates[i] = static_cast<uint8_t>(*rc::gen::inRange<int>(0, 2));
@@ -75,79 +77,45 @@ rc::Gen<persistence::PatternConfig> genPatternConfigV2() {
     });
 }
 
-// Build a v1 (legacy) record BY HAND: the v1 payload layout had NO Generation
-// Parameters block. We serialize a v2 record, then rewrite it in the v1 shape by
-// re-emitting only the v1 fields and stamping version 1. Simpler: construct the
-// v1 bytes directly from a known config's v1 fields.
-std::vector<uint8_t> buildV1Record(const persistence::PersistableConfig& cfg) {
-    std::vector<uint8_t> payload;
-    auto u8 = [&](uint8_t v) { payload.push_back(v); };
-    auto u16 = [&](uint16_t v) { payload.push_back(v & 0xFF); payload.push_back((v >> 8) & 0xFF); };
-
-    u8(cfg.patternCount);
-    u16(cfg.bpm);
-    u8(cfg.midiClockEnabled);
-    for (uint8_t p = 0; p < cfg.patternCount && p < persistence::MAX_PATTERNS; ++p) {
-        const auto& pat = cfg.patterns[p];
-        u8(pat.gateAlgorithm); u8(pat.gateSteps); u8(pat.gatePulses);
-        u8(pat.gateRotation); u8(pat.gateNoteLength); u8(pat.gateLength);
-        u8(pat.pitchCount); u8(pat.pitchOrder);
-        for (uint8_t i = 0; i < pat.pitchCount && i < persistence::MAX_SET_LEN; ++i) u8(pat.pitches[i]);
-        u8(pat.velocityCount); u8(pat.velocityOrder);
-        for (uint8_t i = 0; i < pat.velocityCount && i < persistence::MAX_SET_LEN; ++i) u8(pat.velocities[i]);
-        u8(pat.midiChannel); u8(pat.active);
-        // NOTE: no Generation Parameters block — this is the v1 shape.
-    }
-
-    std::vector<uint8_t> rec;
-    rec.push_back('G'); rec.push_back('S');
-    rec.push_back(persistence::FORMAT_VERSION_V1_LEGACY);  // version 1
-    rec.push_back(0);
-    const uint32_t len = static_cast<uint32_t>(payload.size());
-    rec.push_back(len & 0xFF); rec.push_back((len >> 8) & 0xFF);
-    rec.push_back((len >> 16) & 0xFF); rec.push_back((len >> 24) & 0xFF);
-    const uint32_t crc = persistence::crc32(payload.data(), payload.size());
-    rec.push_back(crc & 0xFF); rec.push_back((crc >> 8) & 0xFF);
-    rec.push_back((crc >> 16) & 0xFF); rec.push_back((crc >> 24) & 0xFF);
-    rec.insert(rec.end(), payload.begin(), payload.end());
-    return rec;
-}
-
 }  // namespace
 
 bool runPersistProperty7() {
     bool ok = true;
 
-    // v2 round-trip: every Generation Parameter and the gate array survive.
+    // v2 migration: every Generation Parameter and the gate array land in the right set.
     ok &= rc::check(
-        "Property 7a: v2 Save_Record round-trips Generation Parameters + gate array",
+        "Property 7a: a v2 record migrates to per-pattern sets with Generation Parameters split by set",
         [] {
-            persistence::PersistableConfig cfg{};
-            const uint8_t count = *rc::gen::inRange<int>(1, persistence::MAX_PATTERNS + 1);
-            cfg.patternCount = count;
-            cfg.bpm = *rc::gen::inRange<int>(40, 256);
-            cfg.midiClockEnabled = *rc::gen::inRange<int>(0, 2);
-            for (uint8_t i = 0; i < count; ++i) cfg.patterns[i] = *genPatternConfigV2();
+            persist_test::LegacyConfig legacy;
+            legacy.patternCount = *rc::gen::inRange<int>(1, persistence::MAX_PATTERNS + 1);
+            legacy.bpm = *rc::gen::inRange<int>(40, 256);
+            legacy.midiClockEnabled = *rc::gen::inRange<int>(0, 2);
+            for (uint8_t i = 0; i < legacy.patternCount; ++i) legacy.patterns[i] = *genLegacyPattern();
 
-            const std::vector<uint8_t> rec = persistence::serialize(cfg);
+            const std::vector<uint8_t> rec =
+                persist_test::serializeLegacy(legacy, persistence::FORMAT_VERSION_V2_LEGACY);
             persistence::PersistableConfig out{};
-            const persistence::LoadStatus st =
-                persistence::deserialize(rec.data(), rec.size(), out);
+            const persistence::LoadStatus st = persistence::deserialize(rec.data(), rec.size(), out);
             RC_ASSERT(st == persistence::LoadStatus::OK);
-            RC_ASSERT(out == cfg);
+            RC_ASSERT(out == persist_test::expectedMigration(legacy));
+
+            // The migrated config is a valid v3 config: it re-serializes and round-trips.
+            const std::vector<uint8_t> v3 = persistence::serialize(out);
+            RC_ASSERT(v3[2] == persistence::FORMAT_VERSION);
+            persistence::PersistableConfig again{};
+            RC_ASSERT(persistence::deserialize(v3.data(), v3.size(), again) == persistence::LoadStatus::OK);
+            RC_ASSERT(again == out);
         });
 
     // v1 migration: a legacy record loads OK, with defaults for every gen param.
     ok &= rc::check(
-        "Property 7b: a v1 record loads with Generation Parameters defaulted",
+        "Property 7b: a v1 record migrates with Generation Parameters defaulted",
         [] {
-            persistence::PersistableConfig cfg{};
-            const uint8_t count = *rc::gen::inRange<int>(1, persistence::MAX_PATTERNS + 1);
-            cfg.patternCount = count;
-            cfg.bpm = *rc::gen::inRange<int>(40, 256);
-            cfg.midiClockEnabled = 1;
-            for (uint8_t i = 0; i < count; ++i) {
-                auto& p = cfg.patterns[i];
+            persist_test::LegacyConfig legacy;
+            legacy.patternCount = *rc::gen::inRange<int>(1, persistence::MAX_PATTERNS + 1);
+            legacy.bpm = *rc::gen::inRange<int>(40, 256);
+            for (uint8_t i = 0; i < legacy.patternCount; ++i) {
+                auto& p = legacy.patterns[i];
                 p.gateAlgorithm = 0;
                 p.gateSteps = 16; p.gatePulses = 4; p.gateRotation = 0;
                 p.gateNoteLength = 1; p.gateLength = 50;
@@ -156,27 +124,29 @@ bool runPersistProperty7() {
                 p.midiChannel = 1; p.active = 1;
             }
 
-            const std::vector<uint8_t> v1 = buildV1Record(cfg);
+            const std::vector<uint8_t> v1 =
+                persist_test::serializeLegacy(legacy, persistence::FORMAT_VERSION_V1_LEGACY);
             persistence::PersistableConfig out{};
-            const persistence::LoadStatus st =
-                persistence::deserialize(v1.data(), v1.size(), out);
+            const persistence::LoadStatus st = persistence::deserialize(v1.data(), v1.size(), out);
             RC_ASSERT(st == persistence::LoadStatus::OK);
-            RC_ASSERT(out.patternCount == cfg.patternCount);
+            RC_ASSERT(out == persist_test::expectedMigration(legacy));
+            RC_ASSERT(out.patternCount == legacy.patternCount);
 
-            // Every pattern's Generation Parameters are at defaults, and no
-            // explicit gate array was stored (derive-from-generator on load).
+            // Every set's Generation Parameters are at defaults, and no explicit gate array
+            // was stored (derive-from-generator on load).
             for (uint8_t i = 0; i < out.patternCount; ++i) {
-                const auto& p = out.patterns[i];
-                RC_ASSERT(p.genScale == 0);                 // CHROMATIC
-                RC_ASSERT(p.genScaleRoot == 0);
-                RC_ASSERT(p.genQuantize == 0);              // NEAREST
-                RC_ASSERT(p.genPatternProbability == 100);
-                RC_ASSERT(p.genHumanizeRange == 0);
-                RC_ASSERT(p.genSeedSet == 0);
-                RC_ASSERT(p.genSeed == 0);
-                RC_ASSERT(p.genCoupling == 0);              // INDEPENDENT
-                RC_ASSERT(p.genStepProbCount == 0);
-                RC_ASSERT(p.gateStepCount == 0);            // derive from generator
+                RC_ASSERT(out.noteSets[i].scale == 0);                 // CHROMATIC
+                RC_ASSERT(out.noteSets[i].scaleRoot == 0);
+                RC_ASSERT(out.noteSets[i].quantize == 0);              // NEAREST
+                RC_ASSERT(out.gateSets[i].patternProbability == 100);
+                RC_ASSERT(out.gateSets[i].stepProbCount == 0);
+                RC_ASSERT(out.gateSets[i].gateStepCount == 0);         // derive from generator
+                RC_ASSERT(out.velocitySets[i].humanizeRange == 0);
+                RC_ASSERT(out.velocitySets[i].seedSet == 0);
+                RC_ASSERT(out.velocitySets[i].seed == 0);
+                RC_ASSERT(out.velocitySets[i].coupling == 0);          // INDEPENDENT
+                RC_ASSERT(out.patterns[i].gateRef == i && out.patterns[i].noteRef == i &&
+                          out.patterns[i].velocityRef == i);
             }
         });
 

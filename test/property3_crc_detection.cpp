@@ -30,6 +30,9 @@
 #include "persistence/PersistableConfig.h"
 #include "persistence/SaveRecord.h"
 
+#include "PersistGen.h"
+#include "PersistTestSupport.h"
+
 #include <rapidcheck.h>
 
 #include <cstddef>
@@ -38,88 +41,15 @@
 
 namespace {
 
-// Generate one random VALID persistence::PatternConfig. Every field is drawn inside the range
-// the schema documents (see PersistableConfig.h); only [0, count) set elements are filled.
-rc::Gen<persistence::PatternConfig> genPatternConfig() {
-    return rc::gen::exec([] {
-        persistence::PatternConfig p{};
-
-        const uint8_t steps = *rc::gen::inRange<int>(1, 65);  // 1..64
-        p.gateAlgorithm = 0;
-        p.gateSteps = steps;
-        p.gatePulses = *rc::gen::inRange<int>(0, steps + 1);  // 0..steps
-        p.gateRotation = *rc::gen::inRange<int>(0, steps);    // 0..steps-1
-        p.gateNoteLength = *rc::gen::inRange<int>(0, 6);      // 0..5
-        p.gateLength = *rc::gen::inRange<int>(0, 101);        // 0..100
-
-        const uint8_t pitchCount =
-            *rc::gen::inRange<int>(0, persistence::MAX_SET_LEN + 1);  // 0..16
-        p.pitchCount = pitchCount;
-        p.pitchOrder = *rc::gen::inRange<int>(0, 4);
-        for (uint8_t i = 0; i < pitchCount; i++) {
-            p.pitches[i] = *rc::gen::inRange<int>(0, 128);  // 0..127
-        }
-
-        const uint8_t velocityCount =
-            *rc::gen::inRange<int>(0, persistence::MAX_SET_LEN + 1);  // 0..16
-        p.velocityCount = velocityCount;
-        p.velocityOrder = *rc::gen::inRange<int>(0, 4);
-        for (uint8_t i = 0; i < velocityCount; i++) {
-            p.velocities[i] = *rc::gen::inRange<int>(0, 128);  // 0..127
-        }
-
-        p.midiChannel = *rc::gen::inRange<int>(1, 17);  // 1..16
-        p.active = *rc::gen::inRange<int>(0, 2);        // 0/1
-        return p;
-    });
-}
-
-// Generate one random VALID persistence::PersistableConfig with patternCount in
-// 0..MAX_PATTERNS; only [0, patternCount) patterns are filled meaningfully.
+// Generate one random VALID v3 config (random library occupancy, set contents, and per-pattern
+// references that may share sets). See PersistGen.h.
 rc::Gen<persistence::PersistableConfig> genPersistableConfig() {
-    return rc::gen::exec([] {
-        persistence::PersistableConfig cfg{};
-        const uint8_t patternCount =
-            *rc::gen::inRange<int>(0, persistence::MAX_PATTERNS + 1);  // 0..15
-        cfg.patternCount = patternCount;
-        cfg.bpm = *rc::gen::inRange<int>(0, 1001);            // 0..1000
-        cfg.midiClockEnabled = *rc::gen::inRange<int>(0, 2);  // 0/1
-        for (uint8_t i = 0; i < patternCount; i++) {
-            cfg.patterns[i] = *genPatternConfig();
-        }
-        return cfg;
-    });
+    return rc::gen::exec([] { return persist_gen::genConfig(0, false); });
 }
 
 // A distinct sentinel config used to prove `out` is left untouched by a failed deserialize.
 // Recognizably "not defaults" so an untouched-check is meaningful.
-persistence::PersistableConfig makeSentinel() {
-    persistence::PersistableConfig s{};
-    s.patternCount = 7;
-    s.bpm = 4242;
-    s.midiClockEnabled = 1;
-    for (uint8_t idx = 0; idx < s.patternCount; ++idx) {
-        persistence::PatternConfig& pat = s.patterns[idx];
-        pat.gateAlgorithm = 0;
-        pat.gateSteps = 33;
-        pat.gatePulses = 11;
-        pat.gateRotation = 5;
-        pat.gateNoteLength = 2;
-        pat.gateLength = 77;
-        pat.pitchCount = 3;
-        pat.pitchOrder = 1;
-        pat.pitches[0] = 60;
-        pat.pitches[1] = 62;
-        pat.pitches[2] = 64;
-        pat.velocityCount = 2;
-        pat.velocityOrder = 2;
-        pat.velocities[0] = 100;
-        pat.velocities[1] = 110;
-        pat.midiChannel = 9;
-        pat.active = 1;
-    }
-    return s;
-}
+persistence::PersistableConfig makeSentinel() { return persist_test::makeSentinel(); }
 
 }  // namespace
 

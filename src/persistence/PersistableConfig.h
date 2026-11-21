@@ -11,9 +11,10 @@ constexpr uint8_t MAX_PATTERNS = 15;
 // Mirrors ui::state MAX_PITCHES / MAX_VELOCITIES (max set length).
 constexpr uint8_t MAX_SET_LEN = 16;
 
-// Durable per-pattern configuration. Holds only persistable fields derived
-// from ui::state::UIState — no transient runtime state (position / randomState).
-struct PatternConfig {
+// Format v1/v2 per-pattern record (material stored inline per pattern). DECODE-ONLY: the
+// codec reads it and migrates it into the v3 set libraries (one set of each type per
+// pattern); nothing writes it any more except legacy-record test helpers.
+struct LegacyPatternConfig {
     // Gate set: persisted as the euclidean generator parameters (the source of
     // truth in UIState gate sets), not the expanded boolean vector.
     uint8_t gateAlgorithm;   // ui::state::GateAlgorithm
@@ -59,7 +60,7 @@ struct PatternConfig {
 
 // Compares only the meaningful elements (respecting counts), matching the
 // round-trip guarantee described by the design's Property 1.
-inline bool operator==(const PatternConfig& lhs, const PatternConfig& rhs) {
+inline bool operator==(const LegacyPatternConfig& lhs, const LegacyPatternConfig& rhs) {
     if (lhs.gateAlgorithm != rhs.gateAlgorithm ||
         lhs.gateSteps != rhs.gateSteps || lhs.gatePulses != rhs.gatePulses ||
         lhs.gateRotation != rhs.gateRotation ||
@@ -96,31 +97,146 @@ inline bool operator==(const PatternConfig& lhs, const PatternConfig& rhs) {
         if (lhs.genStepProbability[i] != rhs.genStepProbability[i]) return false;
     }
     if (lhs.gateStepCount != rhs.gateStepCount) return false;
-    for (uint8_t i = 0; i < lhs.gateStepCount && i < PatternConfig::kMaxGateEditSteps; i++) {
+    for (uint8_t i = 0; i < lhs.gateStepCount && i < LegacyPatternConfig::kMaxGateEditSteps; i++) {
         if (lhs.gateStates[i] != rhs.gateStates[i]) return false;
     }
     return true;
 }
 
-inline bool operator!=(const PatternConfig& lhs, const PatternConfig& rhs) {
+inline bool operator!=(const LegacyPatternConfig& lhs, const LegacyPatternConfig& rhs) {
     return !(lhs == rhs);
 }
 
-// The in-memory snapshot the codec serializes. A plain aggregate derived from
-// UIState, holding only durable fields.
+// --- Format v3: set libraries + per-pattern references --------------------------------
+// (separate-velocity-set-gate-set-and-note-set). Mirrors ui::state::SET_LIBRARY_SIZE.
+constexpr uint8_t SET_LIBRARY_SIZE = 16;
+
+// One Gate Set (rhythm material + the generation parameters that live with it).
+struct GateSetRecord {
+    static constexpr uint8_t kMaxGateEditSteps = 64;
+    uint8_t algorithm = 0;     // ui::state::GateAlgorithm
+    uint8_t steps = 16;        // 1..64
+    uint8_t pulses = 4;        // 0..steps
+    uint8_t rotation = 0;      // 0..steps-1
+    uint8_t noteLength = 1;    // ui::state::NoteLength
+    uint8_t gateLength = 50;   // 0..100
+    uint8_t patternProbability = 100;  // 0..100
+    uint8_t stepProbCount = 0;         // 0..MAX_SET_LEN
+    uint8_t stepProbability[MAX_SET_LEN] = {0};  // 0xFF == INHERIT; [0, stepProbCount) meaningful
+    uint8_t gateStepCount = 0;                   // 0 == derive from the generator
+    uint8_t gateStates[kMaxGateEditSteps] = {0}; // 0/1 per step; [0, gateStepCount) meaningful
+};
+
+// One Note Set (pitches + the scale constraint that lives with it).
+struct NoteSetRecord {
+    uint8_t count = 4;                    // 0..MAX_SET_LEN
+    uint8_t order = 0;                    // common::PlayingOrder
+    uint8_t pitches[MAX_SET_LEN] = {60, 67, 69, 72};  // [0, count) meaningful
+    uint8_t scale = 0;                    // common::ScaleId (0 == CHROMATIC)
+    uint8_t scaleRoot = 0;                // 0..11
+    uint8_t quantize = 0;                 // common::QuantizeMode (0 == NEAREST)
+};
+
+// One Velocity Set (velocities + humanize/seed/coupling that live with it).
+struct VelocitySetRecord {
+    uint8_t count = 4;                    // 0..MAX_SET_LEN
+    uint8_t order = 0;                    // common::PlayingOrder
+    uint8_t velocities[MAX_SET_LEN] = {100, 80, 60, 80};  // [0, count) meaningful
+    uint8_t humanizeRange = 0;
+    uint8_t seedSet = 0;                  // 0/1
+    uint32_t seed = 0;
+    uint8_t coupling = 0;                 // common::CouplingMode (0 == INDEPENDENT)
+};
+
+// Durable per-pattern configuration: flags plus one reference per library.
+struct PatternConfig {
+    uint8_t active = 0;       // 0/1 (from UIState::activePatterns bit)
+    uint8_t midiChannel = 1;  // 1..16 (reserved; defaulted from convention today)
+    uint8_t gateRef = 0;      // slot in gateSets, must be occupied
+    uint8_t noteRef = 0;      // slot in noteSets, must be occupied
+    uint8_t velocityRef = 0;  // slot in velocitySets, must be occupied
+};
+
+inline bool operator==(const GateSetRecord& a, const GateSetRecord& b) {
+    if (a.algorithm != b.algorithm || a.steps != b.steps || a.pulses != b.pulses ||
+        a.rotation != b.rotation || a.noteLength != b.noteLength ||
+        a.gateLength != b.gateLength || a.patternProbability != b.patternProbability ||
+        a.stepProbCount != b.stepProbCount || a.gateStepCount != b.gateStepCount) {
+        return false;
+    }
+    for (uint8_t i = 0; i < a.stepProbCount && i < MAX_SET_LEN; i++) {
+        if (a.stepProbability[i] != b.stepProbability[i]) return false;
+    }
+    for (uint8_t i = 0; i < a.gateStepCount && i < GateSetRecord::kMaxGateEditSteps; i++) {
+        if (a.gateStates[i] != b.gateStates[i]) return false;
+    }
+    return true;
+}
+inline bool operator!=(const GateSetRecord& a, const GateSetRecord& b) { return !(a == b); }
+
+inline bool operator==(const NoteSetRecord& a, const NoteSetRecord& b) {
+    if (a.count != b.count || a.order != b.order || a.scale != b.scale ||
+        a.scaleRoot != b.scaleRoot || a.quantize != b.quantize) {
+        return false;
+    }
+    for (uint8_t i = 0; i < a.count && i < MAX_SET_LEN; i++) {
+        if (a.pitches[i] != b.pitches[i]) return false;
+    }
+    return true;
+}
+inline bool operator!=(const NoteSetRecord& a, const NoteSetRecord& b) { return !(a == b); }
+
+inline bool operator==(const VelocitySetRecord& a, const VelocitySetRecord& b) {
+    if (a.count != b.count || a.order != b.order || a.humanizeRange != b.humanizeRange ||
+        a.seedSet != b.seedSet || a.seed != b.seed || a.coupling != b.coupling) {
+        return false;
+    }
+    for (uint8_t i = 0; i < a.count && i < MAX_SET_LEN; i++) {
+        if (a.velocities[i] != b.velocities[i]) return false;
+    }
+    return true;
+}
+inline bool operator!=(const VelocitySetRecord& a, const VelocitySetRecord& b) { return !(a == b); }
+
+inline bool operator==(const PatternConfig& a, const PatternConfig& b) {
+    return a.active == b.active && a.midiChannel == b.midiChannel && a.gateRef == b.gateRef &&
+           a.noteRef == b.noteRef && a.velocityRef == b.velocityRef;
+}
+inline bool operator!=(const PatternConfig& a, const PatternConfig& b) { return !(a == b); }
+
+// The in-memory snapshot the codec serializes. A plain aggregate derived from UIState,
+// holding only durable fields. Occupancy masks default to slot 0 so a minimal config is valid.
 struct PersistableConfig {
     uint8_t patternCount;   // 0..MAX_PATTERNS
     uint16_t bpm;           // sequencer-level
     uint8_t midiClockEnabled;  // 0/1 (reserved; defaults to 1 today)
+    uint16_t gateOccupied = 0x0001;      // bit s set == gateSets[s] is present
+    uint16_t noteOccupied = 0x0001;
+    uint16_t velocityOccupied = 0x0001;
+    GateSetRecord gateSets[SET_LIBRARY_SIZE];
+    NoteSetRecord noteSets[SET_LIBRARY_SIZE];
+    VelocitySetRecord velocitySets[SET_LIBRARY_SIZE];
     PatternConfig patterns[MAX_PATTERNS];
 };
 
-// Compares only the meaningful patterns (respecting patternCount).
-inline bool operator==(const PersistableConfig& lhs,
-                       const PersistableConfig& rhs) {
+// Compares only the meaningful content: occupied slots and [0, patternCount) patterns.
+inline bool operator==(const PersistableConfig& lhs, const PersistableConfig& rhs) {
     if (lhs.patternCount != rhs.patternCount || lhs.bpm != rhs.bpm ||
-        lhs.midiClockEnabled != rhs.midiClockEnabled) {
+        lhs.midiClockEnabled != rhs.midiClockEnabled ||
+        lhs.gateOccupied != rhs.gateOccupied || lhs.noteOccupied != rhs.noteOccupied ||
+        lhs.velocityOccupied != rhs.velocityOccupied) {
         return false;
+    }
+    for (uint8_t i = 0; i < SET_LIBRARY_SIZE; i++) {
+        if ((lhs.gateOccupied >> i) & 1u) {
+            if (lhs.gateSets[i] != rhs.gateSets[i]) return false;
+        }
+        if ((lhs.noteOccupied >> i) & 1u) {
+            if (lhs.noteSets[i] != rhs.noteSets[i]) return false;
+        }
+        if ((lhs.velocityOccupied >> i) & 1u) {
+            if (lhs.velocitySets[i] != rhs.velocitySets[i]) return false;
+        }
     }
     for (uint8_t i = 0; i < lhs.patternCount && i < MAX_PATTERNS; i++) {
         if (lhs.patterns[i] != rhs.patterns[i]) return false;
@@ -128,8 +244,7 @@ inline bool operator==(const PersistableConfig& lhs,
     return true;
 }
 
-inline bool operator!=(const PersistableConfig& lhs,
-                       const PersistableConfig& rhs) {
+inline bool operator!=(const PersistableConfig& lhs, const PersistableConfig& rhs) {
     return !(lhs == rhs);
 }
 

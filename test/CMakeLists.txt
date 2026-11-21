@@ -633,6 +633,7 @@ add_test(NAME genseq_example_sequencer_integration COMMAND genseq_example_sequen
 # per-pattern-sets emission, which the set-library refactor must reproduce (Req 9.1).
 set(EXAMPLE_GOLDEN_STREAM_SRC "${TEST_DIR}/example_golden_stream.cpp")
 set(EXAMPLE_SET_LIBRARY_SRC "${TEST_DIR}/example_set_library.cpp")
+set(EXAMPLE_SET_PERSISTENCE_SRC "${TEST_DIR}/example_set_persistence.cpp")
 add_executable(genseq_example_golden_stream "${EXAMPLE_GOLDEN_STREAM_SRC}")
 target_include_directories(genseq_example_golden_stream PRIVATE ${EMISSION_INCLUDE_DIRS})
 target_link_libraries(genseq_example_golden_stream PRIVATE genseq_emission)
@@ -951,6 +952,7 @@ if(RAPIDCHECK_AVAILABLE)
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_GOLDEN_STREAM_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_BATCH_FRAMING_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SET_LIBRARY_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_SET_PERSISTENCE_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${SMOKE_HOST_COMPILATION_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_HEADER_LAYOUT_SRC}")
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_OUTCOME_MAPPING_SRC}")
@@ -1162,6 +1164,23 @@ target_include_directories(genseq_example_set_library PRIVATE
 )
 target_link_libraries(genseq_example_set_library PRIVATE genseq_emission)
 add_test(NAME genseq_example_set_library COMMAND genseq_example_set_library)
+
+# Format v3 persistence (task 7.5): shared refs, legacy migration, invalid-reference rejection.
+add_executable(genseq_example_set_persistence
+    "${EXAMPLE_SET_PERSISTENCE_SRC}"
+    "${SRC_DIR}/ui/state/PersistMapping.cpp"
+    "${SRC_DIR}/persistence/SaveRecord.cpp"
+)
+target_include_directories(genseq_example_set_persistence PRIVATE
+    ${EMISSION_INCLUDE_DIRS}
+    "${SRC_DIR}"
+    "${SRC_DIR}/ui"
+    "${SRC_DIR}/ui/state"
+    "${SRC_DIR}/persistence"
+    "${TEST_DIR}"
+)
+target_link_libraries(genseq_example_set_persistence PRIVATE genseq_emission)
+add_test(NAME genseq_example_set_persistence COMMAND genseq_example_set_persistence)
 
 # ---------------------------------------------------------------------------
 # Example test: GEN_PARAMS_SET FIFO round-trip (generative-engine-expansion task
