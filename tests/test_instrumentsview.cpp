@@ -122,7 +122,7 @@ TEST(instrumentsview_arrows_move_the_cursor_and_ctrl_arrows_select_instruments) 
     state::createInstrument(s);          // slot 1, selected
     s.selectedInstrument = 0;
     CHECK_EQ(test::handle(f.view, s, press(KeyId::RIGHT)).instrumentCursor, 1);
-    CHECK_EQ(test::handle(f.view, s, press(KeyId::DOWN)).instrumentCursor, 3);  // only 4 patterns
+    CHECK_EQ(test::handle(f.view, s, press(KeyId::DOWN)).instrumentCursor, 0);  // 4 patterns, all in row 0
     CHECK_EQ(test::handle(f.view, s, press(KeyId::RIGHT, mod::CTRL)).selectedInstrument, 1);
     s.selectedInstrument = 1;
     CHECK_EQ(test::handle(f.view, s, press(KeyId::LEFT, mod::CTRL)).selectedInstrument, 0);

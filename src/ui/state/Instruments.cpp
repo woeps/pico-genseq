@@ -156,10 +156,12 @@ void moveInstrumentCursor(UIState& state, int dx, int dy) {
     if (col >= GRID_COLS) col = GRID_COLS - 1;
     if (row < 0) row = 0;
     if (row >= GRID_ROWS) row = GRID_ROWS - 1;
+    // Only existing patterns. A row without patterns is not entered (Up/Down stays in its row);
+    // an empty cell in a row that has patterns (only the last row can be short) lands on that
+    // row's last pattern. Left/Right therefore stop at the first / last pattern.
+    if (row * GRID_COLS >= count) row = current / GRID_COLS;
     int target = row * GRID_COLS + col;
-    // Only existing patterns: a move onto an empty cell lands on the last pattern if that lies
-    // further in reading order (e.g. Down onto a short last row), otherwise the cursor stays.
-    if (target >= count) target = (count - 1 > current) ? count - 1 : current;
+    if (target >= count) target = count - 1;
     state.instrumentCursor = static_cast<uint8_t>(target);
 }
 

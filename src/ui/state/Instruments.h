@@ -50,7 +50,8 @@ void removePatternFromInstruments(UIState& state, uint8_t index);
 uint8_t selectInstrumentStep(UIState& state, int direction);
 
 // Move the pattern cursor over the 5 x 3 grid by (dx, dy). The cursor only stands on existing
-// patterns: a move onto an empty cell goes to the last pattern if that lies further on, else stays.
+// patterns: Up/Down never enter a row without patterns, an empty cell in a short last row lands
+// on that row's last pattern, and Left/Right stop at the first / last pattern.
 void moveInstrumentCursor(UIState& state, int dx, int dy);
 
 // Keep the cursor on an existing pattern after the pattern count shrank.

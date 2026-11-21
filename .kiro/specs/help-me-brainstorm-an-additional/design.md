@@ -153,7 +153,7 @@ Same pattern as `SetLibrary.cpp`: free functions in `ui::state`, in place, notic
 | `toggleMember(s, slot, p)` | Add: set `members` and `enabled` bits. Remove: clear both. `syncInstrument` | 3.2, 3.10 |
 | `toggleRoute(s, slot, p)` | If `p` is not in `members`: `NOT_MEMBER` notice, no change. Else flip `enabled` bit; `syncInstrument` | 3.11-3.14 |
 | `selectInstrument(s, dir)` | Next or previous occupied slot, no wrap | 6.1 |
-| `moveInstrumentCursor(s, dx, dy)` | Moves over the 5 x 3 grid, only onto existing patterns: a move onto an empty cell goes to the last pattern if it lies further on, else the cursor stays; `removePattern` clamps it (changed after review) | 6.2 |
+| `moveInstrumentCursor(s, dx, dy)` | Moves over the 5 x 3 grid, only onto existing patterns: Up/Down never enter a row without patterns, an empty cell in the short last row lands on its last pattern, Left/Right stop at the first / last pattern; `removePattern` clamps it (changed after review) | 6.2 |
 | `syncInstrument(s, slot)` | `sendInstrumentSet(slot, channel0, muted ? 0 : members & enabled)` | 9.1 |
 
 Hooks in existing reducers:

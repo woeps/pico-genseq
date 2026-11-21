@@ -242,6 +242,18 @@ TEST(cursor_stays_on_existing_patterns) {
     state::moveInstrumentCursor(s, 0, -1);
     CHECK_EQ(s.instrumentCursor, 0);
 
+    state::UIState row;                       // 3 patterns, all in the first row
+    row.patternCount = 3;
+    state::moveInstrumentCursor(row, 0, +1);  // Down: no pattern in the next row -> stay
+    CHECK_EQ(row.instrumentCursor, 0);
+    row.instrumentCursor = 2;
+    state::moveInstrumentCursor(row, 0, -1);  // Up from the top row -> stay
+    CHECK_EQ(row.instrumentCursor, 2);
+    state::moveInstrumentCursor(row, +1, 0);  // Right of the last pattern -> stay
+    CHECK_EQ(row.instrumentCursor, 2);
+    state::moveInstrumentCursor(row, -9, 0);
+    CHECK_EQ(row.instrumentCursor, 0);
+
     state::UIState one;                       // a single pattern: the cursor never moves
     state::moveInstrumentCursor(one, +1, 0);
     state::moveInstrumentCursor(one, 0, +1);

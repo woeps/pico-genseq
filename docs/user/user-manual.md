@@ -177,7 +177,7 @@ picture: the strip turns red when an action is refused; it clears at your next k
 
 | Key | Action |
 |---|---|
-| Arrow keys | Move the cursor over the existing patterns (a move onto an empty cell goes to the last pattern, or does nothing) |
+| Arrow keys | Move the cursor over the existing patterns. Up/Down only move to a row that has patterns; below a short last row the cursor lands on its last pattern. |
 | Ctrl+Left / Ctrl+Right | Select the previous / next Instrument |
 | Enter | Add the pattern under the cursor to the Instrument, or remove it |
 | M | Mute or unmute the Instrument |
