@@ -166,6 +166,7 @@ void test_remove_releases() {
     h.setGate({true, true});
     // Add a second pattern so removal of index 0 is allowed (size > 1).
     h.seq.processCommand(cmd(commands::Command::PATTERN_ADD));
+    h.seq.applyInstrument(0, 0, 0b11);
     h.play();
     h.tick(1);  // pattern 0 NoteOn(60) held
     h.out.clear();

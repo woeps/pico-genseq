@@ -70,6 +70,7 @@ struct Harness {
     // Two patterns, both gate {on,off}, pitch 60, then Play.
     void setupTwoPatterns() {
         send(commands::Command::PATTERN_ADD);
+        seq.applyInstrument(0, 0, 0b11);  // both patterns sound on channel 1
         for (uint8_t p = 0; p < 2; ++p) { gate(p, {true, false}); pitch(p, 60); }
         base = clock.nowMicros();
         send(commands::Command::PLAY);

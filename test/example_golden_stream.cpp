@@ -75,6 +75,7 @@ int main(int argc, char** argv) {
     Harness h;
     h.seq.processCommand(cmd(commands::Command::PATTERN_ADD));
     h.seq.processCommand(cmd(commands::Command::PATTERN_ADD));
+    h.seq.applyInstrument(0, 0, 0b111);  // one Instrument on channel 1 plays all three patterns
 
     h.gate(0, {true, false, true, false, true, true, false, false});
     h.pitch(0, {60, 64, 67, 72}, PlayingOrder::FORWARDS);

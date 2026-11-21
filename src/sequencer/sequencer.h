@@ -12,6 +12,7 @@
 #include "TransportTimeline.h"
 #include "hardware/uart.h"
 #include "../commands/command.h"
+#include "../common/InstrumentRouting.h"
 #include "../common/pattern.h"
 #include "../common/PatternId.h"
 
@@ -52,6 +53,13 @@ public:
     // processCommand(msg); set commands apply from the snapshot's fixed buffers.
     void processCommand(const commands::CommandMessage& msg,
                         const sequencer::PatternSnapshot& snapshot);
+
+    // Replace one Instrument route slot (INSTRUMENT_SET application point, public so host tests
+    // can route patterns directly). `protocolChannel` is 0..15; `mask` is the EFFECTIVE set of
+    // patterns that sound on that slot (members AND enabled AND NOT muted, folded by core0).
+    // Voices of patterns that leave the mask, and every voice of the slot when its channel
+    // changes, are released first, with the Note Off on the channel recorded at Note On.
+    void applyInstrument(uint8_t slot, uint8_t protocolChannel, uint16_t mask);
 
     const PerformanceMetrics& performanceMetrics() const { return metrics; }
     void resetPerformanceMetrics();
@@ -100,6 +108,8 @@ private:
     // releases ownership, optionally emits Stop, and prohibits auto-restart; an
     // explicit Play acknowledges and restarts (Req 10.1-10.7).
     PerformanceFault fault;
+    // Instrument routing (core1's copy): which channels each pattern sounds on.
+    common::RouteTable routeTable;
 
     void play();
     void stop();
@@ -154,9 +164,17 @@ private:
     // tasks 4/5 — by a probability roll). A SUPPRESSED step emits no note-on and
     // strands no prior note; the caller advances stream positions exactly as the
     // unsuppressed case so phrase length and determinism are unchanged.
+    //
+    // The lens only DECIDES: it consumes the generation random draws exactly once per onset
+    // and returns the note and velocity. The caller fans an EMITTED step out to every Instrument
+    // route of the pattern, so seeded output never depends on how many routes a pattern has.
     enum class EmitResult { EMITTED, SUPPRESSED };
-    EmitResult emitStep(size_t patternIndex, common::PatternId id,
-                        common::MidiChannel channel);
+    struct EmitDecision {
+        EmitResult result = EmitResult::SUPPRESSED;
+        uint8_t note = 0;
+        uint8_t velocity = 0;
+    };
+    EmitDecision emitStep(size_t patternIndex);
 
     // Re-establish each Pattern's generation random state at a defined musical
     // boundary (Req 4.2/4.5): a Pattern with a Deterministic Seed resets its

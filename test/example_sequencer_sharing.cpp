@@ -199,6 +199,7 @@ std::vector<uint8_t> runStream(bool shared, common::PlayingOrder order) {
     Rig rig;
     UIState s = makeState(shared, order);
     restoreSequencerFromState(s);  // seed core1 exactly as boot does
+    rig.seq.applyInstrument(0, 0, 0b111);
     rig.base = rig.clock.nowMicros();
     setPlaying(s, true);
     for (uint64_t n = 1; n <= 192; ++n) rig.tick(n);
@@ -258,6 +259,7 @@ struct EditRig {
         commitGateSetEdit(s);
         s.patternRefs[1] = s.patternRefs[0];  // patterns 0 and 1 share every slot-0 set
         restoreSequencerFromState(s);
+        rig.seq.applyInstrument(0, 0, 0b11);
         rig.base = rig.clock.nowMicros();
         setPlaying(s, true);
         rig.out.clear();

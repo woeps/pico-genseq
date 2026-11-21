@@ -250,7 +250,20 @@ void Sequencer::serviceTick(bool reconcileOnly) {
                 // step strands no note; stream positions still advance on the
                 // FALLING edge exactly as an emitted step, so phrase length and
                 // determinism are unchanged (Req 2.2).
-                emitStep(i, id, pattern.getCanonicalChannel());
+                const EmitDecision decision = emitStep(i);
+                if (decision.result == EmitResult::EMITTED) {
+                    // One note, sent on every Instrument route of this pattern in ascending
+                    // slot order (deterministic wire order). A pattern without a route still
+                    // drew its random numbers above and advances below, so enabling a route
+                    // resumes in phase.
+                    const uint16_t routeMask = i < common::MAX_ROUTE_PATTERNS ? routeTable.routes[i] : 0;
+                    for (uint16_t m = routeMask; m != 0; m &= static_cast<uint16_t>(m - 1)) {
+                        const uint8_t slot = static_cast<uint8_t>(__builtin_ctz(m));
+                        noteLifecycle.noteOn(id, slot,
+                                             common::MidiChannel(routeTable.channel[slot]),
+                                             decision.note, decision.velocity);
+                    }
+                }
             }
         } else if (flank == common::FALLING) {
             // Release the captured onset via its recorded identity, NOT the
@@ -266,8 +279,7 @@ void Sequencer::serviceTick(bool reconcileOnly) {
     }
 }
 
-Sequencer::EmitResult Sequencer::emitStep(size_t patternIndex, common::PatternId id,
-                                          common::MidiChannel channel) {
+Sequencer::EmitDecision Sequencer::emitStep(size_t patternIndex) {
     common::Pattern& pattern = patterns[patternIndex];
     common::PitchSet& pitchSet = pattern.getPitchSet();
     common::VelocitySet& velocitySet = pattern.getVelocitySet();
@@ -278,8 +290,7 @@ Sequencer::EmitResult Sequencer::emitStep(size_t patternIndex, common::PatternId
     // pre-milestone note-on — same pitch, same velocity, same ownership record —
     // with no lens cost. This is what keeps property2/property5 byte-identical.
     if (gp.isDefault()) {
-        noteLifecycle.noteOn(id, channel, pitchSet.getPitch(), velocitySet.getVelocity());
-        return EmitResult::EMITTED;
+        return EmitDecision{EmitResult::EMITTED, pitchSet.getPitch(), velocitySet.getVelocity()};
     }
 
     PatternRng& rng = patternRng[patternIndex];
@@ -305,7 +316,7 @@ Sequencer::EmitResult Sequencer::emitStep(size_t patternIndex, common::PatternId
         }
     }
     if (p < 100 && rng.rollPercent() >= p) {
-        return EmitResult::SUPPRESSED;  // probability suppressed this step
+        return EmitDecision{};  // probability suppressed this step
     }
 
     // Scale constraint (Req 1). SKIP on an out-of-scale pitch suppresses the step
@@ -315,7 +326,7 @@ Sequencer::EmitResult Sequencer::emitStep(size_t patternIndex, common::PatternId
         const uint16_t mask = common::scale::membershipMask(gp.scale, gp.scaleRoot);
         uint8_t resolved = note;
         if (!common::scale::quantize(mask, gp.quantize, note, resolved)) {
-            return EmitResult::SUPPRESSED;  // SKIP mode, out of scale
+            return EmitDecision{};  // SKIP mode, out of scale
         }
         note = resolved;
     }
@@ -350,8 +361,7 @@ Sequencer::EmitResult Sequencer::emitStep(size_t patternIndex, common::PatternId
         vel = static_cast<uint8_t>(v);
     }
 
-    noteLifecycle.noteOn(id, channel, note, vel);
-    return EmitResult::EMITTED;
+    return EmitDecision{EmitResult::EMITTED, note, vel};
 }
 
 namespace {
@@ -792,6 +802,22 @@ void Sequencer::removePattern(size_t index) {
     patterns.erase(patterns.begin() + index);
     patternIds.erase(patternIds.begin() + index);
     patternRng.erase(patternRng.begin() + index);  // keep RNG parallel
+    // Shift the route masks the same way the UI shifts its Instrument masks.
+    routeTable.removePattern(static_cast<uint8_t>(index));
+}
+
+void Sequencer::applyInstrument(uint8_t slot, uint8_t protocolChannel, uint16_t mask) {
+    if (slot >= common::MAX_INSTRUMENTS || protocolChannel > 15) return;
+    mask &= common::ROUTE_PATTERN_MASK;
+    const uint16_t old = routeTable.patterns[slot];
+    const bool channelChanged = routeTable.channel[slot] != protocolChannel;
+    // Patterns that leave the slot (and, on a channel change, every pattern on it) lose their
+    // voice here; NoteLifecycle emits the Note Off on the channel recorded at Note On.
+    const uint16_t release = channelChanged ? old : static_cast<uint16_t>(old & ~mask);
+    for (uint8_t p = 0; p < patterns.size() && p < common::MAX_ROUTE_PATTERNS; ++p) {
+        if ((release >> p) & 1u) noteLifecycle.releaseRoute(patternIds[p], slot);
+    }
+    routeTable.set(slot, protocolChannel, mask);
 }
 
 void Sequencer::activatePattern(size_t index) {

@@ -38,21 +38,21 @@ line endings keep CRLF after editing.
     releaseRoute, releasePattern, channel change and `releaseAll`; the wire balance is zero for
     every (channel, note) after a final `releaseAll`.
 
-- [ ] 4. Remove the per-pattern channel from the engine
-  - [ ] 4.1 Remove `midiChannel`, its accessors, `getCanonicalChannel` and the constructor
+- [x] 4. Remove the per-pattern channel from the engine
+  - [x] 4.1 Remove `midiChannel`, its accessors, `getCanonicalChannel` and the constructor
     parameter from `src/common/pattern.h/.cpp`. [R2.6]
-  - [ ] 4.2 Add `common::RouteTable routeTable` to `Sequencer`; initialise with `reset()` in
+  - [x] 4.2 Add `common::RouteTable routeTable` to `Sequencer`; initialise with `reset()` in
     `init()`; compact it in `removePattern`. [Design 7.2]
-  - [ ] 4.3 Split `emitStep` into the generation step (returns result, note, velocity, consumes
+  - [x] 4.3 Split `emitStep` into the generation step (returns result, note, velocity, consumes
     the same random draws as today) and the wire step; in `serviceTick` call the generation step
     for every active pattern with non-empty material, then fan the note out over
     `routeTable.routes[i]` in ascending slot order. A pattern without a route still draws and
     advances. [R3.4, R3.5, R9.7, Design 7.3]
-  - [ ] 4.4 Update the existing host tests that set a channel on a pattern
+  - [x] 4.4 Update the existing host tests that set a channel on a pattern
     (`example_canonical_channel`, `example_sequencer_integration`, `property2`, `property5`,
     `example_pattern_snapshot_apply`, `smoke_host_compilation` and the others found in 1.2) so
     they drive channels through the route table. [Testing 8]
-  - [ ]* 4.5 Golden stream check: the default single route must give the unchanged hash.
+  - [x]* 4.5 Golden stream check: the default single route must give the unchanged hash.
     [R9.6]
 
 - [ ] 5. `INSTRUMENT_SET` command and core1 application

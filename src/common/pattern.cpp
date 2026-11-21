@@ -4,11 +4,10 @@
 namespace common {
 
     // Pattern implementation
-    Pattern::Pattern(const PitchSet& pitchSet, const VelocitySet& velocitySet, const GateSet& gateSet, int midiChannel) :
+    Pattern::Pattern(const PitchSet& pitchSet, const VelocitySet& velocitySet, const GateSet& gateSet) :
         pitchSet(pitchSet),
         velocitySet(velocitySet),
         gateSet(gateSet),
-        midiChannel(midiChannel),
         active(false)
     {
     }
@@ -26,12 +25,11 @@ namespace common {
             }),
             active(true),
             velocitySet({ 100, 20 }),
-            gateSet(),
+            gateSet() {
             // gateSet(GateSet({ true, false, false, false, false, false, false, false,
             //                   false, false, false, false, false, false, false, false,
             //                   false, false, false, false, false, false, false, false
             //                 })),
-            midiChannel(1) {
         // Create a C major scale
         // std::vector<uint8_t> cMajorScale = {
         //     60, // C4
@@ -84,18 +82,6 @@ namespace common {
     }
 
 
-
-    int Pattern::getMidiChannel() const {
-        return midiChannel;
-    }
-
-    void Pattern::setMidiChannel(int midiChannel) {
-        this->midiChannel = midiChannel;
-    }
-
-    MidiChannel Pattern::getCanonicalChannel() const {
-        return midi_channel::fromUserChannel(midiChannel);
-    }
 
     bool Pattern::isActive() const {
         return active;

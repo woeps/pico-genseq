@@ -159,6 +159,10 @@ RunResult randomRun(unsigned seed) {
                     break;
             }
             seq.processCommand(m);
+            // One Instrument on channel 1 plays every pattern (the pre-Instrument behaviour).
+            if (m.cmd == commands::Command::PATTERN_ADD) {
+                seq.applyInstrument(0, 0, static_cast<uint16_t>((1u << n) - 1u));
+            }
         }
         clock.setMicros(base + (t * 60ULL * 1000000ULL) / (120ULL * 24ULL));
         seq.update();
@@ -201,6 +205,7 @@ void test_unison_patterns_alternate_on_off() {
     CheckingOut out;
     sequencer::Sequencer seq{out, clock};
     seq.processCommand(cmd(commands::Command::PATTERN_ADD));
+    seq.applyInstrument(0, 0, 0b11);
     commands::CommandMessage g = cmd(commands::Command::PATTERN_GATE_SET_MULTI);
     g.patternMask = 0b11;
     g.gates = {true, true, false, false, false, false};

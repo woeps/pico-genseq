@@ -115,6 +115,7 @@ struct Core1 {
     void addPatterns(uint8_t n) {
         for (uint8_t i = 1; i < n; ++i) commands::sendCommand(commands::Command::PATTERN_ADD);
         drain();
+        seq.applyInstrument(0, 0, static_cast<uint16_t>((1u << n) - 1u));  // all on channel 1
     }
     void play() {
         base = clock.nowMicros();

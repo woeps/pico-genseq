@@ -7,13 +7,13 @@
 //   - the OLD channel 0/1 alias is gone: user channel 1 maps to protocol 0 and NOTHING else
 //     maps to protocol 0, so every one of the 16 user channels has a distinct protocol
 //     channel and a distinct status-byte nibble;
-//   - common::Pattern exposes the canonical channel derived from its stored 1..16 value.
+//   - the per-Instrument route table stores canonical protocol channels.
 //
 // Standalone example (its own main(), no RapidCheck), so it builds and runs host-side
 // unconditionally — it must be excluded from the property-test glob.
 
 #include "common/MidiChannel.h"
-#include "common/pattern.h"
+#include "common/InstrumentRouting.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -76,16 +76,15 @@ void test_no_zero_one_alias() {
     check(!mc::isValidProtocolChannel(-1), "protocol channel -1 is invalid");
 }
 
-// Pattern exposes a canonical channel derived from its stored 1..16 user channel.
-void test_pattern_canonical_channel() {
-    common::Pattern pattern;  // default midiChannel == 1
-    check(pattern.getMidiChannel() == 1, "default pattern user channel is 1");
-    check(pattern.getCanonicalChannel().value == 0, "default pattern canonical channel is 0");
-
+// The channel no longer lives on the Pattern (instruments task 4.1): it comes from the
+// Instrument route table, and every route slot's protocol channel is a valid 0..15 value.
+void test_route_table_channels() {
+    common::RouteTable table;
     for (int user = mc::USER_MIN; user <= mc::USER_MAX; ++user) {
-        pattern.setMidiChannel(user);
-        check(pattern.getCanonicalChannel() == mc::fromUserChannel(user),
-              "pattern canonical channel tracks its user channel");
+        const uint8_t slot = static_cast<uint8_t>(user - 1);
+        table.set(slot, mc::fromUserChannel(user).value, 0x0001);
+        check(table.channel[slot] == slot, "route slot stores the protocol channel of its user channel");
+        check(mc::isValidProtocolChannel(table.channel[slot]), "route channel in 0..15");
     }
 }
 
@@ -94,7 +93,7 @@ void test_pattern_canonical_channel() {
 int main() {
     test_all_sixteen_channels_distinct_and_roundtrip();
     test_no_zero_one_alias();
-    test_pattern_canonical_channel();
+    test_route_table_channels();
 
     if (failures == 0) {
         std::printf("example_canonical_channel: all checks passed\n");

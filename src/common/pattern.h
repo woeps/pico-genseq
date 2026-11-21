@@ -3,7 +3,6 @@
 #include "pitch_set.h"
 #include "velocity_set.h"
 #include "gate_set.h"
-#include "MidiChannel.h"
 #include "GenerationParameters.h"
 
 namespace common {
@@ -11,7 +10,7 @@ namespace common {
     // Class to represent a pattern (combination of pitch, velocity and rhythm)
     class Pattern {
     public:
-        Pattern(const PitchSet& pitchSet, const VelocitySet& velocitySet, const GateSet& gateSet, int midiChannel = 1);
+        Pattern(const PitchSet& pitchSet, const VelocitySet& velocitySet, const GateSet& gateSet);
         Pattern();
 
         PitchSet& getPitchSet();
@@ -22,14 +21,6 @@ namespace common {
 
         GateSet& getGateSet();
         void setGateSet(const GateSet& gateSet);
-
-        int getMidiChannel() const;
-        void setMidiChannel(int midiChannel);
-
-        // Canonical protocol channel (0..15) derived from the stored 1..16 user
-        // channel. Use this on the MIDI emission / note-ownership path so the
-        // channel is never aliased. See common/MidiChannel.h.
-        MidiChannel getCanonicalChannel() const;
 
         bool isActive() const;
         void setActive(bool active);
@@ -45,7 +36,6 @@ namespace common {
         PitchSet pitchSet;
         VelocitySet velocitySet;
         GateSet gateSet;
-        int midiChannel;
         bool active;
         GenerationParameters generationParameters;
     };
