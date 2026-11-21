@@ -236,7 +236,7 @@ This map assigns known differences between the approved product direction and th
 | Quantized operations | No established immediate/beat/bar application policy | Milestones 2 and 4 |
 | Keep, Undo, and Revert model | Draft editing supports limited commit/undo behavior; the approved cross-pattern model is not implemented | Milestones 3–4 |
 | Prepared projects | One saved configuration is supported; musician-facing project organization is absent | Milestone 5 |
-| Per-pattern MIDI channels | Reserved by persistence and represented in the sequencer, but runtime/UI configuration is incomplete | Milestone 6 |
+| MIDI channels per Instrument | Delivered: an Instrument layer above patterns holds one MIDI channel and the patterns that play on it; a pattern may play in several Instruments, with Instrument mute and per-Instrument pattern switches. A channel per individual pattern is not stored any more | Delivered (Instruments feature) |
 | Dedicated physical controls | USB keyboard prototype only | Milestone 7 |
 | Matrix-only product UI | Matrix is active, but obsolete LCD/encoder code and documentation assumptions remain | Milestones 4 and 7 |
 | Note-focused engine with future CC extension | Note output exists; a general event extension path has not been designed | Milestones 2, 3, and 6 |

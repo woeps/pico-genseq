@@ -70,12 +70,12 @@ With the keyboard connected, confirm each of the following:
 
 1. `USB host initialized - waiting for a keyboard`, then
    `Keyboard mounted (addr 1 idx 0)` on plug-in.
-2. `F1` and `F2` switch views — the matrix shows the number on `INIT` and the
-   `SET` label on `SETTINGS`.
+2. `F1`, `F2` and `F3` switch views — the matrix shows the BPM on `SETTINGS`
+   (F1), the channel label `c01` on `INSTRUMENTS` (F2) and `PTN` on `PATTERNS` (F3).
 3. `space` toggles play/stop: the LED starts blinking, and
    `Sending command: 1` / `Sending command: 2` appear in the trace.
-4. Tapping `up`/`down` moves the number by 1; holding for about half a second
-   starts a smooth ramp.
+4. In `SETTINGS` (F1), tapping `up`/`down` moves the BPM by 1; holding for about half
+   a second starts a smooth ramp.
 5. Holding `up` and then pressing `shift` mid-hold switches the ramp to steps
    of 10.
 6. The number stops at 99 and at 0.

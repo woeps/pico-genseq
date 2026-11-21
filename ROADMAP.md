@@ -122,7 +122,7 @@ The first iteration includes:
 - One serial DIN MIDI output.
 - Correct and configurable behavior appropriate to that output.
 - Reliable transport and synchronization where needed.
-- Enough channel configuration to address the intended external instrument setup.
+- Enough channel configuration to address the intended external instrument setup. (Delivered through Instruments: one MIDI channel per Instrument, patterns shared between Instruments.)
 
 The following are explicitly out of scope:
 

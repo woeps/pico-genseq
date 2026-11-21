@@ -169,20 +169,21 @@ line endings keep CRLF after editing.
     `D:ins=` dump and a MIDI capture before and after. [R8.2, R4, R3.11]
   - [ ] 11.3 Fan-out stress: several patterns on several Instruments while editing masks, channels
     and mutes; capture MIDI and check for unbalanced Note On/Off, and read the fault and lateness
-    counters over host control. Record where the MIDI bandwidth limit shows up. [R9.4]
+    counters over host control. Record where the MIDI bandwidth limit shows up, and add the measured limit to the
+    "MIDI bandwidth" paragraph of section 4a of the manual. [R9.4]
   - [ ] 11.4 Run the performance-safe-foundation timing gates (scheduler lateness, MIDI output
     bounds, save pause, fault latency) with one Instrument at 40, 120 and 255 BPM using the
     BitScope skill; compare with the baseline in `docs/development/baseline/README.md`. [R9.5]
   - [ ] 11.5 Read the core1 stack-guard margin on the board. [Risks]
 
-- [ ] 12. Documentation
-  - [ ] 12.1 Generate the LED screens for the Instruments view (each cell state, muted tint,
+- [x] 12. Documentation
+  - [x] 12.1 Generate the LED screens for the Instruments view (each cell state, muted tint,
     strip) and the changed Patterns view using the `genseq-led-matrix-doc-screenshots` skill.
     [R10.3]
-  - [ ] 12.2 Update `docs/user/user-manual.md`: Instruments, channel setting, mute, sharing a
+  - [x] 12.2 Update `docs/user/user-manual.md`: Instruments, channel setting, mute, sharing a
     pattern, the three switches and how they combine, the F1-F6 map, the removal of the test
     view, the v4 save and the bandwidth note from 11.3. [R10.1, R10.2]
-  - [ ] 12.3 Update the charter gap table: per-pattern MIDI channels delivered through
+  - [x] 12.3 Update the charter gap table: per-pattern MIDI channels delivered through
     Instruments. Update `ROADMAP.md` and `TODO.md` where they mention per-pattern channels or the
     test view. [R10.4]
 

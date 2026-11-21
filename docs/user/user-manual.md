@@ -8,6 +8,13 @@ kind. Several patterns can use the same set, for example three patterns playing
 the same melody in three different rhythms. Editing a set changes it for every
 pattern that uses it.
 
+Patterns reach the MIDI output through **Instruments**. An Instrument has one
+MIDI channel and a selection of patterns that play on it, so "bass on channel 2"
+and "drums on channel 10" are two Instruments. A pattern can belong to several
+Instruments and then plays the same notes on each of their channels. You can
+switch a pattern off in one Instrument only, mute a whole Instrument, or stop a
+pattern everywhere (section 4a).
+
 On top of that, the sets carry **generation parameters** that shape the material
 while it plays: step probability (gate set), a scale constraint (pitch set),
 velocity humanization, a deterministic seed and stream coupling (velocity set).
@@ -20,12 +27,13 @@ shared sets.
 | Connection | Purpose |
 |---|---|
 | USB keyboard | The control surface. Every action is a key press. Holding a key repeats it. |
-| MIDI OUT (5-pin DIN) | Notes plus MIDI Clock, Start and Stop for your synth or drum machine. All patterns play on MIDI channel 1. |
+| MIDI OUT (5-pin DIN) | Notes plus MIDI Clock, Start and Stop for your synth or drum machine. Each Instrument sends on its own MIDI channel (1-16). |
 | Power (USB) | Powers the device. Your setup is kept across power cycles once you save it. |
 
-GenSeq starts in the TEST view (label `tst`) with your last saved setup; press
-**F3** to go to PATTERNS. On the very first boot (nothing saved yet) it starts
-with one default pattern at 120 BPM.
+GenSeq starts in the INSTRUMENTS view (label `cNN`, your channel) with your last
+saved setup; press **F3** to go to PATTERNS. On the very first boot (nothing saved
+yet) it starts with one Instrument on channel 1 playing one default pattern at
+120 BPM.
 
 ## 2. The display
 
@@ -88,16 +96,26 @@ These work in every view.
 |---|---|
 | Space | Play / Stop. Play always starts every pattern from its first step. Stop releases every sounding note. |
 | Ctrl+S | Save the whole setup (patterns, sets, BPM, all parameters) to memory. Playback keeps running. |
-| F1 | TEST view |
-| F2 | SETTINGS view (tempo) |
+| F1 | SETTINGS view (tempo) |
+| F2 | INSTRUMENTS view (channels, mute, which patterns each Instrument plays) |
 | F3 | PATTERNS view |
+| F4 | GATE editor of the selected pattern's gate set |
+| F5 | PITCH editor of the selected pattern's note set |
+| F6 | VELOCITY editor of the selected pattern's velocity set |
+
+The keys follow the structure of the instrument: settings, Instruments, patterns,
+then the sets of a pattern. F4 to F6 do nothing when no pattern is selected (the
+add slot) or when that editor is already open. F7 to F12 are not used yet.
 
 ## 4. PATTERNS view (F3), label `PTN`
 
 The overview of all patterns. Each pattern is a small square in a grid of 5
 columns by 3 rows (pattern 1 top-left, reading order).
 
-- **Red square:** a pattern. All patterns play.
+- **Red square:** a pattern that belongs to the Instrument selected in the
+  INSTRUMENTS view. A pattern that does not belong to it shows only its top-left
+  pixel. A **magenta pixel** in the top-right corner marks a pattern that belongs to
+  no Instrument at all: it is silent.
 - **Yellow line:** the empty "add" slot after the last pattern.
 - **White pixel:** the selection. Its corner inside the selected square says which
   stream you will open: top-left = GATE, top-right = PITCH, bottom-left = VELOCITY.
@@ -122,9 +140,85 @@ With the add slot selected, the white pixel sits in the slot's lower-right corne
 | Enter | Open the editor on the set this pattern uses for the selected stream. On the add slot: add a new pattern. |
 | Delete | Delete the selected pattern. Its sets stay in the libraries. |
 
+![The same setup with Instrument 1 and Instrument 2 selected](img/patterns-instruments.svg)
+
+Six patterns: with Instrument 1 selected (left), patterns 1 to 4 are full squares and
+pattern 5 shows only its top-left pixel. With Instrument 2 selected (right) only
+patterns 1 and 5 are full squares. Pattern 6 belongs to no Instrument, so it has
+the magenta pixel in both pictures.
+
 A **new pattern** starts on the lowest-numbered existing set of each kind, so at
 first it shares those sets with other patterns. To give it its own material, see
 "Giving a pattern its own set" in section 5.
+
+## 4a. INSTRUMENTS view (F2), label `cNN`
+
+The label shows the MIDI channel of the selected Instrument, for example `c01` for
+channel 1 (red while the Instrument is muted). Below it is the same 5-by-3 grid of
+patterns as in the PATTERNS view, and the bottom row is the **Instrument strip**:
+one pixel per Instrument slot (dark = free, dim blue = Instrument, dim red = muted
+Instrument, white = the selected one).
+
+A pattern square says how that pattern relates to the selected Instrument:
+
+| Square | Meaning |
+|---|---|
+| Green | Assigned, route on, pattern active: it sounds on this channel. |
+| Blue | Assigned, route on, but the pattern itself is stopped. |
+| Top row red, bottom row dark | Assigned, but its **route is off**: it stays in the Instrument and is silent here only. |
+| Faint grey | Not in this Instrument. |
+| (dark) | No such pattern. |
+
+Two white pixels under a square are the cursor. A muted Instrument is drawn at half
+brightness.
+
+![INSTRUMENTS view: Instrument 1, Instrument 2, Instrument 2 muted, a refused action](img/instruments.svg)
+
+Five patterns and two Instruments. Instrument 1 (channel 1) plays patterns 1 to 4:
+pattern 3 is stopped (blue) and the route of pattern 4 is off (cursor under it).
+Instrument 2 (channel 2) plays patterns 1 and 5, so pattern 1 sounds on both
+channels. Third picture: Instrument 2 muted. Fourth picture: the strip turns red
+when an action is refused; it clears at your next key.
+
+| Key | Action |
+|---|---|
+| Arrow keys | Move the cursor over the patterns |
+| Ctrl+Left / Ctrl+Right | Select the previous / next Instrument |
+| Enter | Add the pattern under the cursor to the Instrument, or remove it |
+| E | Switch the route of that pattern in this Instrument on or off |
+| M | Mute or unmute the Instrument |
+| Shift+Left / Shift+Right | Change the Instrument's MIDI channel (channels used by another Instrument are skipped; no wrap-around) |
+| Ctrl+N | New Instrument on the lowest free channel (16 at most) |
+| Delete | Delete the selected Instrument (not the last one). Its patterns stay and are silent if no other Instrument plays them. |
+
+**Three switches decide whether a note sounds.** It sounds on a channel only if all
+three allow it:
+
+1. the **pattern** is active (a pattern is active from the moment it is created;
+   this version has no key to stop one, so use the route switch or the mute),
+2. the pattern's **route** in that Instrument is on (key E),
+3. the **Instrument** is not muted (key M).
+
+Changing one switch never changes the others. Unmuting an Instrument brings back
+exactly the routes that were on.
+
+**What a shared pattern does.** A pattern plays one note per step, and every
+Instrument that plays it sends that same note, with the same velocity and length, on
+its own channel. The pattern has one position, not one per Instrument, and a pattern
+with random elements draws the same random numbers whether it plays on one
+channel, several or none, so a seeded pattern repeats exactly in all cases.
+Switching a route on again resumes the pattern where it is, in step with the rest.
+
+**Changing things while playing.** Muting, switching a route off, removing a
+pattern from an Instrument, changing a channel and deleting an Instrument all
+release the sounding notes of the affected channel at once (the Note Off goes to
+the channel the note was started on), so nothing is left hanging.
+
+**MIDI bandwidth.** The DIN MIDI cable carries about 3,100 bytes a second, which is
+about 1,000 three-byte messages. Every note on N channels sends N Note On and
+N Note Off messages, so a pattern shared by many Instruments uses N times the
+bandwidth. If the load is too high for the cable, GenSeq stops playing and
+releases all notes instead of playing late; press Space to start again.
 
 ## 5. Sets and sharing
 
@@ -302,24 +396,18 @@ With 4 pitches and 3 velocities, `Ind` lets the accents drift across the melody
 (a 12-step cycle), while `Lck` ties velocity to the pitch position so the first
 pitch is always accented the same way.
 
-## 10. SETTINGS view (F2), label `bPM`
+## 10. SETTINGS view (F1), label `bPM`
 
 Up/Down changes the tempo by 1 BPM, Shift+Up/Down by 10. Range 40–255. The change
 applies immediately and is included in the next save.
 
-![SETTINGS and TEST views](img/settings-test.svg)
+![SETTINGS view](img/settings-test.svg)
 
-## 11. TEST view (F1), label `tst`
-
-A simple value (0–99) adjusted with Up/Down (Shift = ×10). It has no musical
-effect; it exists to check the keyboard and display. This is the view GenSeq
-starts in.
-
-## 12. Saving and loading
+## 11. Saving and loading
 
 - **Ctrl+S** stores the complete setup: patterns, all sets (also the ones no
-  pattern uses), which sets each pattern uses, all generation parameters and the
-  tempo. Patterns that shared a set before saving still share it after loading.
+  pattern uses), which sets each pattern uses, all generation parameters, the
+  Instruments (channel, mute, which patterns, which routes are on) and the tempo. Patterns that shared a set before saving still share it after loading.
   Only committed values are saved, so press Enter in an open editor first.
 - Saving does not interrupt playback.
 - At power-up GenSeq loads the last save automatically. If nothing was saved it
@@ -331,11 +419,18 @@ starts in.
   The next Ctrl+S writes the new format. Firmware from before shared sets cannot
   read that format and starts with defaults, so keep the old firmware file if you
   might go back.
+- **Saves from firmware before Instruments** also load normally: they stored a MIDI
+  channel per pattern, so GenSeq creates one Instrument per channel in use (lowest
+  channel first), puts the patterns that used it into it with every route on and
+  nothing muted, and the output sounds exactly as before. Firmware from before
+  Instruments cannot read a save written by this version.
+- A saved setup that is inconsistent (for example two Instruments on one channel) is
+  treated like an unreadable save: the yellow banner appears and defaults are used.
 
-## 13. Quick start
+## 12. Quick start
 
-1. Connect MIDI OUT to a synth on channel 1, press **F3** (PATTERNS) and then
-   **Space**. You hear the
+1. Connect MIDI OUT to a synth on channel 1 (the default Instrument), press **F3**
+   (PATTERNS) and then **Space**. You hear the
    default pattern: four notes (C4 G4 A4 C5) on a 4-of-16 Euclidean rhythm.
 2. **Enter** opens the gate editor: Right twice to `PLS`, Up to add hits.
 3. Right to `Prb`, Down to 70: the rhythm starts to breathe. Press Enter.
@@ -351,10 +446,13 @@ starts in.
    to the copy (section 5). Both patterns still share the pitch set, so every note you
    change is heard in both rhythms.
 
-## 14. Not in this version
+## 13. Not in this version
 
-- Muting a single pattern from the keyboard. All patterns play; Delete removes one.
-- Per-pattern MIDI channels. All patterns send on channel 1.
+- A key to stop a single pattern everywhere (the pattern's own active switch). Use the
+  route switch (E) in one Instrument, or mute the Instrument. Delete removes a pattern.
+- Names for Instruments. Instruments are known by their MIDI channel.
+- Two Instruments on one MIDI channel. To play two parts on one channel, put both
+  patterns into one Instrument.
 - Rhythm generators other than Euclidean.
 - Names for sets. Sets are known by their number (0–15) in the set rows.
 

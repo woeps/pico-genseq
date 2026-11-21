@@ -4,6 +4,8 @@
 #include "ui/state/UIState.h"
 #include "ui/state/SetLibrary.h"
 #include "ui/views/PatternsView.h"
+#include "ui/views/InstrumentsView.h"
+#include "ui/state/Instruments.h"
 #include "ui/views/GateSetView.h"
 #include "ui/views/PitchSetView.h"
 #include "ui/views/VelocitySetView.h"
@@ -24,6 +26,7 @@ struct Frame {
 static hardware::Led led{0};
 static hardware::LedMatrix matrix{0};
 static PatternsView patterns{matrix};
+static InstrumentsView instruments{matrix};
 static GateSetView gate{matrix};
 static PitchSetView pitch{matrix};
 static VelocitySetView velocity{matrix};
@@ -55,6 +58,7 @@ static UIState base() {
     s.velocityLib.occupied = 0x0001;
     s.patternRefs[2].gate = 1;
     s.gateLib.slots[0].steps = 16; s.gateLib.slots[0].pulses = 5;
+    s.instruments[0].members = s.instruments[0].enabled = 0x7;  // one Instrument plays all three
     return s;
 }
 static void gateEdit(UIState& s, state::GateSetProperty p) {
@@ -221,7 +225,49 @@ int main(int argc, char** argv) {
         velEdit(s, state::VELOCITY_SET_FIELD_VELOCITY_BASE); b.push_back(grab("v0", velocity, s));
         writeSvg(d, "velocity-fields-1", a); writeSvg(d, "velocity-fields-2", b);
     }
-    // --- Sections 10, 11 ---
+    // --- Instruments (section 5a) ---
+    {
+        // Five patterns. Instrument 1 (channel 1): patterns 1-4 assigned, pattern 3 stopped
+        // (inactive), pattern 4's route switched off. Instrument 2 (channel 2): patterns 1 and 5.
+        // Pattern 1 is therefore shared between both Instruments.
+        UIState s = base();
+        s.currentView = state::ViewId::INSTRUMENTS;
+        s.patternCount = 5;
+        s.activePatterns = 0b11011;
+        s.instruments[0].members = 0b01111; s.instruments[0].enabled = 0b00111;
+        uint8_t slot = 0;
+        state::createInstrumentSlot(s, slot);
+        s.instruments[1].members = s.instruments[1].enabled = 0b10001;
+        s.selectedInstrument = 0;
+        s.instrumentCursor = 3;
+        matrix.clear();  // as InstrumentsView::onEnter does on the device
+        Frame a = grab("Instrument 1, cursor on pattern 4", instruments, s);
+        s.selectedInstrument = 1;
+        s.instrumentCursor = 4;
+        Frame b = grab("Instrument 2", instruments, s);
+        s.instruments[1].muted = true;
+        Frame c = grab("Instrument 2 muted", instruments, s);
+        s.instruments[1].muted = false;
+        s.instrumentNotice = state::InstrumentNotice::NOT_MEMBER;
+        s.instrumentCursor = 2;
+        Frame n = grab("Refused action", instruments, s);
+        writeSvg(d, "instruments", {a, b, c, n});
+        // The same setup in the PATTERNS view: pattern 1 is in both Instruments, patterns 2-4
+        // only in Instrument 1, pattern 5 only in Instrument 2; one more pattern is in neither.
+        UIState p = s;
+        p.instrumentNotice = state::InstrumentNotice::NONE;
+        p.currentView = state::ViewId::PATTERNS;
+        p.patternCount = 6;
+        p.activePatterns = 0b111111;
+        p.selectedInstrument = 0;
+        p.selectedPattern = 1;
+        matrix.clear();  // as PatternsView::onEnter does on the device
+        Frame pa = grab("Selected Instrument 1", patterns, p);
+        p.selectedInstrument = 1;
+        Frame pb = grab("Selected Instrument 2", patterns, p);
+        writeSvg(d, "patterns-instruments", {pa, pb});
+    }
+    // --- Section 10 ---
     {
         UIState s = base(); s.bpm = 120; s.currentView = state::ViewId::SETTINGS;
         Frame a = grab("SETTINGS (F1)", settings, s);
