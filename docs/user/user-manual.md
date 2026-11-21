@@ -42,6 +42,10 @@ Numbers always show three digits (`050` = 50). Notes show the letter on the
 left, the octave on the right, and a single dot at the right edge for a sharp
 (`C#4` = letter C, dot, digit 4).
 
+![Editor layout on the LED matrix](img/layout.svg)
+
+The picture shows the pitch editor on field `p0` (note C4) with a scale active. All screenshots in this manual are rendered from the firmware's own display code.
+
 **Status pixels** (top row, right side):
 
 | Pixel | Meaning |
@@ -49,6 +53,8 @@ left, the octave on the right, and a single dot at the right edge for a sharp
 | (15,0) red | You have an uncommitted change in this editor. Enter keeps it, Esc undoes it. |
 | (14,0) green / red | Pitch editor only, when a scale is active: the shown pitch is in / out of the scale. |
 | (13,0) green / dim red | Gate grid only: the selected step's gate is on / off. |
+
+![Status pixels](img/status-pixels.svg)
 
 **Set rows** (the two bottom rows, in the GATE, PITCH and VELOCITY editors):
 
@@ -60,6 +66,10 @@ left, the octave on the right, and a single dot at the right edge for a sharp
 A short word in the value area answers a set action that was refused (see
 section 5). It disappears at your next key press.
 
+![Set rows with a shared set](img/set-rows.svg)
+
+In this example gate set 0 is used by patterns 1 and 2 (two red pixels), and three gate sets exist (set 0 is white).
+
 **Save banners** fill the whole matrix for 1.5 seconds:
 
 | Colour | Meaning | Onboard LED |
@@ -67,6 +77,8 @@ section 5). It disappears at your next key press.
 | Green | Save succeeded | on |
 | Red | Save failed. Your setup is still active, just not stored. | fast blink |
 | Yellow | At boot: a saved setup was found but could not be loaded. GenSeq started with defaults. | slow blink |
+
+![Save banners](img/banners.svg)
 
 ## 3. Global keys
 
@@ -92,6 +104,14 @@ columns by 3 rows (pattern 1 top-left, reading order).
 - **Bottom three rows:** which sets the selected pattern uses. Row 13 is the gate
   library, row 14 the pitch library and row 15 the velocity library, set 0 at the
   left. Dim green = the set exists, white = the set this pattern uses.
+
+![PATTERNS view with three patterns, pattern 2 selected](img/patterns.svg)
+
+Here pattern 2 is selected. The white pixel moves inside its square to show the stream: top-left GATE, top-right PITCH, bottom-left VELOCITY. In row 13 (gate library) set 1 exists but pattern 2 uses set 0 (white); the pitch and velocity libraries each hold only set 0.
+
+![Add slot selected](img/patterns-add.svg)
+
+With the add slot selected, the white pixel sits in the slot's lower-right corner and Enter adds a pattern.
 
 | Key | Action |
 |---|---|
@@ -135,6 +155,10 @@ and deleting a set never changes which sets the patterns use.
 | `ful` | The library already holds 16 sets. Delete an unused one first. |
 | `use` | The set cannot be deleted because a pattern uses it. Switch those patterns to another set first. Every library keeps at least one set, because there is always at least one pattern using it. |
 | `unu` | Ctrl+G: no pattern uses this set. |
+
+![Refusal words and the go-to picker](img/notices.svg)
+
+The last picture is the Ctrl+G picker (`gto`) with patterns 1 and 2 as candidates (pattern 1 dim purple, the highlighted pattern 2 white); the number shows the highlighted pattern.
 
 **Editing a shared set.** Two or more red pixels in row 14 mean the set is
 shared, so every change you make is heard on all of those patterns at once. The
@@ -212,6 +236,14 @@ Left/Right walks the steps; Left from `s0` goes back to `Prb`.
 Changing `StP`, `PLS` or `rot` regenerates the gate pattern, but keeps every
 per-step probability you set.
 
+![GATE fields Alg, StP, PLS, rot](img/gate-fields-1.svg)
+
+![GATE fields nLn, LEn, Prb](img/gate-fields-2.svg)
+
+The per-step grid for three steps (the green pixel at top right is the gate indicator, dark red = gate off):
+
+![GATE per-step grid](img/gate-grid.svg)
+
 ## 8. PITCH editor
 
 Opens on `Cnt`. The scale fields are to the left of it, the pitches to the right.
@@ -229,6 +261,12 @@ The scale constraint changes what is **played**, never what is **stored**: your
 pitch set stays as you entered it, and turning the scale back to `cro` restores
 it exactly. While a scale is active, the pixel at (14,0) shows whether the pitch
 you are looking at is in the scale (green) or will be changed (red).
+
+![PITCH fields Scl, rut, qnt](img/pitch-fields-1.svg)
+
+![PITCH fields Cnt, Ord, p0, p1](img/pitch-fields-2.svg)
+
+The examples show a C# major scale constraint (`Scl`, `rut`), then plain pitches C4 and F#4 (sharp dot at the top right).
 
 ## 9. VELOCITY editor
 
@@ -255,6 +293,10 @@ Opens on `Cnt`. The generation fields for humanize, seed and coupling are to the
 - The seed belongs to the velocity set, so patterns that share a velocity set use
   the same seed number. Each pattern still runs its own copy of the generator.
 
+![VELOCITY fields Hmn, Sed, Cpl](img/velocity-fields-1.svg)
+
+![VELOCITY fields Cnt, Ord, v0](img/velocity-fields-2.svg)
+
 **Coupling** matters when the pitch and velocity sets have different lengths.
 With 4 pitches and 3 velocities, `Ind` lets the accents drift across the melody
 (a 12-step cycle), while `Lck` ties velocity to the pitch position so the first
@@ -264,6 +306,8 @@ pitch is always accented the same way.
 
 Up/Down changes the tempo by 1 BPM, Shift+Up/Down by 10. Range 40–255. The change
 applies immediately and is included in the next save.
+
+![SETTINGS and TEST views](img/settings-test.svg)
 
 ## 11. TEST view (F1), label `tst`
 
@@ -313,3 +357,7 @@ starts in.
 - Per-pattern MIDI channels. All patterns send on channel 1.
 - Rhythm generators other than Euclidean.
 - Names for sets. Sets are known by their number (0–15) in the set rows.
+
+## Regenerating the screenshots
+
+The pictures in `docs/user/img/` are generated from the firmware's view code by `tools/manual_screens/build.sh`. Re-run it after changing a view.
