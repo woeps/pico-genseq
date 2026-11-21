@@ -76,6 +76,7 @@ struct Model {
         Owned& o = owned[p];
         if (o.sounding) releaseOwned(o);        // monophonic replacement
         o.sounding = true; o.channel = ch; o.note = note;
+        if (aggregate[ch][note] > 0) emitOff(ch, note);  // key already on the wire: Off first
         ++aggregate[ch][note];
         emitOn(ch, note, vel);                  // every Note On emitted (5.3)
     }
@@ -165,6 +166,23 @@ bool runProperty3() {
             RC_ASSERT(out.record() == model.wire);
             RC_ASSERT(nl.ownershipEmpty());
             RC_ASSERT(model.empty());
+
+            // Wire-level invariant, independent of the model: per (channel, note) the stream
+            // strictly alternates Note On / Note Off, starting with On and ending Off. So every
+            // receiver, including one that starts a voice per Note On, ends with nothing held.
+            bool keyOn[16][128] = {{false}};
+            const std::vector<uint8_t>& w = out.record();
+            for (std::size_t i = 0; i + 2 < w.size(); i += 3) {
+                const uint8_t status = w[i] & 0xF0, ch = w[i] & 0x0F, note = w[i + 1] & 0x7F;
+                if (status == midi::ChannelVoiceMessage::NOTE_ON) {
+                    RC_ASSERT(!keyOn[ch][note]);  // never two Note Ons in a row for one key
+                    keyOn[ch][note] = true;
+                } else {
+                    RC_ASSERT(keyOn[ch][note]);   // never a Note Off for a key that is off
+                    keyOn[ch][note] = false;
+                }
+            }
+            for (auto& row : keyOn) for (bool on : row) RC_ASSERT(!on);
         });
 
     return ok;

@@ -20,9 +20,12 @@
 
 namespace {
 
-// Fingerprint of the stream produced by the pre-refactor firmware logic.
-constexpr uint64_t kGoldenHash = 0xe10306b07cf2b0ddULL;
-constexpr uint32_t kGoldenLength = 1298;
+// Fingerprint of the stream produced by the pre-refactor firmware logic, updated once on
+// 2026-11-21 for the hanging-note fix: the only difference is two Note Offs (for key 72)
+// inserted before a second pattern's Note On while another pattern still sounded that key.
+// The 1298-byte stream before the fix was 0xe10306b07cf2b0dd.
+constexpr uint64_t kGoldenHash = 0x6e772345f8af0f79ULL;
+constexpr uint32_t kGoldenLength = 1304;
 
 commands::CommandMessage cmd(commands::Command c, uint8_t p1 = 0) {
     commands::CommandMessage m;
