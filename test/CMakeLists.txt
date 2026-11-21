@@ -500,6 +500,13 @@ target_include_directories(genseq_example_pattern_id PRIVATE ${EMISSION_INCLUDE_
 target_link_libraries(genseq_example_pattern_id PRIVATE genseq_emission)
 add_test(NAME genseq_example_pattern_id COMMAND genseq_example_pattern_id)
 
+# Instrument routing model (instruments task 2.2): RouteTable and removePatternBit.
+set(EXAMPLE_ROUTE_TABLE_SRC "${TEST_DIR}/example_route_table.cpp")
+add_executable(genseq_example_route_table "${EXAMPLE_ROUTE_TABLE_SRC}")
+target_include_directories(genseq_example_route_table PRIVATE ${EMISSION_INCLUDE_DIRS})
+target_link_libraries(genseq_example_route_table PRIVATE genseq_emission)
+add_test(NAME genseq_example_route_table COMMAND genseq_example_route_table)
+
 # ---------------------------------------------------------------------------
 # Example test: GenerationParameters value object (generative-engine-expansion
 # task 1.2).
@@ -985,6 +992,7 @@ if(RAPIDCHECK_AVAILABLE)
     # The pattern-id example (task 2.2) is its own dedicated target with its own
     # main(); exclude it from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_PATTERN_ID_SRC}")
+    list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_ROUTE_TABLE_SRC}")
     # The GenerationParameters example (generative-engine-expansion task 1.2) is
     # its own dedicated target with its own main(); exclude it from the shared runner.
     list(REMOVE_ITEM TEST_SOURCES "${EXAMPLE_GENERATION_PARAMETERS_SRC}")

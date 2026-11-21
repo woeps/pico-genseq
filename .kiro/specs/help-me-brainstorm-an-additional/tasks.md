@@ -5,25 +5,25 @@ after each numbered task. Requirement and design references are in brackets. Tas
 are tests. Steps that need the board are marked HW and stop for the user. Files that use CRLF
 line endings keep CRLF after editing.
 
-- [ ] 1. Baseline and call-site audit
-  - [ ] 1.1 Confirm the golden MIDI stream test (hash `0x6e772345f8af0f79`, 1304 bytes) passes
+- [x] 1. Baseline and call-site audit
+  - [x] 1.1 Confirm the golden MIDI stream test (hash `0x6e772345f8af0f79`, 1304 bytes) passes
     on the current master and note the command that runs it in this file's commit message.
     [R9.6]
-  - [ ] 1.2 List every use of `Pattern::midiChannel`, `getMidiChannel`, `setMidiChannel`,
+  - [x] 1.2 List every use of `Pattern::midiChannel`, `getMidiChannel`, `setMidiChannel`,
     `getCanonicalChannel`, `PatternConfig::midiChannel`, `ViewId::INIT`, `InitView`,
     `UIState::value`/`setValue` and `H:view` (`grep -rn` over `src`, `test`, `tests`, `tools`,
     `docs`) and record the list in design.md under a new "Call-site audit" heading. [Design 4, 7]
-  - [ ] 1.3 Record the core1 stack-guard margin and the `.bss` size from the current release
+  - [x] 1.3 Record the core1 stack-guard margin and the `.bss` size from the current release
     link map in design.md (used by 7.5). [Design 8]
 
-- [ ] 2. Shared routing model (SDK-free)
-  - [ ] 2.1 Create `src/common/InstrumentRouting.h` with `MAX_INSTRUMENTS`,
+- [x] 2. Shared routing model (SDK-free)
+  - [x] 2.1 Create `src/common/InstrumentRouting.h` with `MAX_INSTRUMENTS`,
     `MAX_ROUTE_PATTERNS`, `removePatternBit` and `RouteTable` (`reset`, `set`, `removePattern`,
     transposed `routes[]`). [R1.1, Design 1]
-  - [ ]* 2.2 Host tests `test/example_route_table.cpp`: `reset` default, `set` keeps `routes[]`
+  - [x]* 2.2 Host tests `test/example_route_table.cpp`: `reset` default, `set` keeps `routes[]`
     consistent with `patterns[]`, `removePatternBit` against a brute-force reference for every
     mask and index, `removePattern` equals `removePatternBit` on every slot.
-  - [ ] 2.3 Register the test in `test/CMakeLists.txt`.
+  - [x] 2.3 Register the test in `test/CMakeLists.txt`.
 
 - [ ] 3. NoteLifecycle voices per (pattern, route)
   - [ ] 3.1 Change ownership to `owned_[PATTERN_CAPACITY][MAX_INSTRUMENTS]`; add
