@@ -133,8 +133,7 @@ and deleting a set never changes which sets the patterns use.
 | Word | Meaning |
 |---|---|
 | `ful` | The library already holds 16 sets. Delete an unused one first. |
-| `use` | The set cannot be deleted because a pattern uses it. Switch those patterns to another set first. |
-| `lst` | The last set of a library cannot be deleted. |
+| `use` | The set cannot be deleted because a pattern uses it. Switch those patterns to another set first. Every library keeps at least one set, because there is always at least one pattern using it. |
 | `unu` | Ctrl+G: no pattern uses this set. |
 
 **Editing a shared set.** Two or more red pixels in row 14 mean the set is
