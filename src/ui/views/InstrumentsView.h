@@ -11,7 +11,7 @@ namespace ui {
 // Matrix layout (16 x 16):
 //   rows 0-4   label "cNN": the selected Instrument's MIDI channel (red while muted)
 //   rows 5-13  pattern grid, 5 x 3 cells of 2 x 2 pixels (same geometry as the Patterns view);
-//              the pixel pair under a cell (gap rows 7, 10, 13) marks the cursor
+//              each cell has one colour; the cursor turns the cell's top-left pixel white
 //   row 15     Instrument strip, one pixel per slot
 //
 // Keys: arrows move the pattern cursor, Ctrl+Left/Right select the previous/next Instrument,
@@ -38,7 +38,7 @@ public:
     static constexpr uint32_t COLOR_LABEL_MUTED    = 0x0000FF00;  // red
     static constexpr uint32_t COLOR_SOUNDING       = 0x00FF0000;  // green: member, route on, pattern active
     static constexpr uint32_t COLOR_PATTERN_OFF    = 0x000000FF;  // blue: member, route on, pattern inactive
-    static constexpr uint32_t COLOR_ROUTE_OFF      = 0x0000FF00;  // red top row: member, route off
+    static constexpr uint32_t COLOR_ROUTE_OFF      = 0x0000FF00;  // red: member, route off
     static constexpr uint32_t COLOR_NOT_MEMBER     = 0x00101010;  // faint grey
     static constexpr uint32_t COLOR_CURSOR         = 0x00FFFFFF;  // white
     static constexpr uint32_t COLOR_STRIP_OCCUPIED = 0x00000040;  // dim blue

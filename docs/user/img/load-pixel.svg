@@ -339,7 +339,7 @@
 <circle cx="447" cy="75" r="4.2" fill="#1c1c20"/>
 <circle cx="461" cy="75" r="4.2" fill="#1c1c20"/>
 <circle cx="475" cy="75" r="5.6" fill="#ff0000"/>
-<circle cx="265" cy="89" r="5.6" fill="#00ff00"/>
+<circle cx="265" cy="89" r="5.6" fill="#ffffff"/>
 <circle cx="279" cy="89" r="5.6" fill="#00ff00"/>
 <circle cx="293" cy="89" r="4.2" fill="#1c1c20"/>
 <circle cx="307" cy="89" r="5.6" fill="#00ff00"/>
@@ -371,8 +371,8 @@
 <circle cx="447" cy="103" r="4.2" fill="#1c1c20"/>
 <circle cx="461" cy="103" r="4.2" fill="#1c1c20"/>
 <circle cx="475" cy="103" r="4.2" fill="#1c1c20"/>
-<circle cx="265" cy="117" r="5.6" fill="#ffffff"/>
-<circle cx="279" cy="117" r="5.6" fill="#ffffff"/>
+<circle cx="265" cy="117" r="4.2" fill="#1c1c20"/>
+<circle cx="279" cy="117" r="4.2" fill="#1c1c20"/>
 <circle cx="293" cy="117" r="4.2" fill="#1c1c20"/>
 <circle cx="307" cy="117" r="4.2" fill="#1c1c20"/>
 <circle cx="321" cy="117" r="4.2" fill="#1c1c20"/>

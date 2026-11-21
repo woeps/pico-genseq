@@ -82,27 +82,27 @@ void InstrumentsView::render(const state::UIState& state)
         const bool routeOn = member && ((in.enabled >> i) & 1u);
         const bool active = ((state.activePatterns >> i) & 1u) != 0;
 
-        uint32_t top = 0, bottom = 0;
+        // One colour per cell, so the state stays readable when the cursor takes a pixel.
+        uint32_t color = 0;
         if (!exists) {
-            top = bottom = 0;
+            color = 0;
         } else if (!member) {
-            top = bottom = COLOR_NOT_MEMBER;
+            color = COLOR_NOT_MEMBER;
         } else if (!routeOn) {
-            top = COLOR_ROUTE_OFF;  // bottom row dark: the route is switched off
+            color = COLOR_ROUTE_OFF;
         } else {
-            top = bottom = active ? COLOR_SOUNDING : COLOR_PATTERN_OFF;
+            color = active ? COLOR_SOUNDING : COLOR_PATTERN_OFF;
         }
-        if (in.muted) { top = dimmed(top); bottom = dimmed(bottom); }
+        if (in.muted) color = dimmed(color);
 
-        ledMatrix.setPixel(x, y, top);
-        ledMatrix.setPixel(x + 1, y, top);
-        ledMatrix.setPixel(x, y + 1, bottom);
-        ledMatrix.setPixel(x + 1, y + 1, bottom);
+        ledMatrix.setPixel(x, y, color);
+        ledMatrix.setPixel(x + 1, y, color);
+        ledMatrix.setPixel(x, y + 1, color);
+        ledMatrix.setPixel(x + 1, y + 1, color);
 
-        // Cursor: two white pixels in the gap row under the cell.
-        const uint32_t cursor = (i == state.instrumentCursor) ? COLOR_CURSOR : 0;
-        ledMatrix.setPixel(x, y + SQUARE_SIZE, cursor);
-        ledMatrix.setPixel(x + 1, y + SQUARE_SIZE, cursor);
+        // Cursor: the top-left pixel of the cell turns white, like the selection pixel of the
+        // PATTERNS view (which also uses the corner to show the stream).
+        if (i == state.instrumentCursor) ledMatrix.setPixel(x, y, COLOR_CURSOR);
     }
 
     // Instrument strip.

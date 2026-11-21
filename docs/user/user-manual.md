@@ -56,7 +56,8 @@ read, and GenSeq started with the defaults (section 14).
 ## 3. Quick start
 
 1. Connect MIDI OUT to a synth listening on channel 1 and switch GenSeq on. The display shows
-   `c01` and one green square: pattern 1, sounding on channel 1.
+   `c01` and one green square with a white corner (the cursor): pattern 1, sounding on
+   channel 1.
 2. Press **Space**. You hear the default pattern: four notes (C4 G4 A4 C5) on a 4-of-16 Euclidean
    rhythm. Press **F1** and Up/Down to change the tempo, then **F2** to come back.
 3. Press **F4** to open the gate editor of pattern 1: Right twice to `PLS`, Up to add hits.
@@ -160,16 +161,18 @@ A pattern square says how that pattern relates to the selected Instrument:
 |---|---|
 | Green | Assigned, route on, pattern active: it sounds on this channel. |
 | Blue | Assigned, route on, but the pattern itself is stopped. |
-| Top row red, bottom row dark | Assigned, but its **route is off**: it stays in the Instrument and is silent here only. |
+| Red | Assigned, but its **route is off**: it stays in the Instrument and is silent here only. |
 | Faint grey | Not in this Instrument. |
 | (dark) | No such pattern. |
 
-Two white pixels under a square are the cursor. A muted Instrument is drawn at half brightness.
+The cursor is the white top-left pixel of a square, like the selection pixel in the PATTERNS
+view; the other three pixels keep showing the pattern's state. A muted Instrument is drawn at
+half brightness.
 
 ![INSTRUMENTS view: Instrument 1, Instrument 2, Instrument 2 muted, a refused action](img/instruments.svg)
 
 Five patterns and two Instruments. Instrument 1 (channel 1) plays patterns 1 to 4: pattern 3 is
-stopped (blue) and the route of pattern 4 is off (cursor under it). Instrument 2 (channel 2) plays
+stopped (blue) and the route of pattern 4 is off (red, with the cursor on it). Instrument 2 (channel 2) plays
 patterns 1 and 5, so pattern 1 sounds on both channels. Third picture: Instrument 2 muted. Fourth
 picture: the strip turns red when an action is refused; it clears at your next key.
 

@@ -50,14 +50,13 @@ TEST(instrumentsview_draws_the_five_pattern_cell_states) {
     hardware::testing::resetMatrix();
     f.view.render(sample());
 
-    // pattern 0: assigned, route on, active -> green 2x2
-    CHECK_EQ(pixelAt(0, 5), InstrumentsView::COLOR_SOUNDING);
+    // pattern 0: assigned, route on, active -> green (top-left is the cursor)
+    CHECK_EQ(pixelAt(1, 5), InstrumentsView::COLOR_SOUNDING);
+    CHECK_EQ(pixelAt(0, 6), InstrumentsView::COLOR_SOUNDING);
     CHECK_EQ(pixelAt(1, 6), InstrumentsView::COLOR_SOUNDING);
-    // pattern 1: assigned, route off -> red top row, dark bottom row
-    CHECK_EQ(pixelAt(3, 5), InstrumentsView::COLOR_ROUTE_OFF);
-    CHECK_EQ(pixelAt(4, 5), InstrumentsView::COLOR_ROUTE_OFF);
-    CHECK_EQ(pixelAt(3, 6), 0);
-    CHECK_EQ(pixelAt(4, 6), 0);
+    // pattern 1: assigned, route off -> red 2x2
+    for (uint8_t y = 5; y <= 6; ++y)
+        for (uint8_t x = 3; x <= 4; ++x) CHECK_EQ(pixelAt(x, y), InstrumentsView::COLOR_ROUTE_OFF);
     // pattern 2: assigned, route on, pattern inactive -> blue
     CHECK_EQ(pixelAt(6, 5), InstrumentsView::COLOR_PATTERN_OFF);
     CHECK_EQ(pixelAt(7, 6), InstrumentsView::COLOR_PATTERN_OFF);
@@ -67,20 +66,22 @@ TEST(instrumentsview_draws_the_five_pattern_cell_states) {
     CHECK_EQ(pixelAt(12, 5), 0);
 }
 
-TEST(instrumentsview_cursor_is_a_white_pixel_pair_under_the_cell) {
+TEST(instrumentsview_cursor_is_the_white_top_left_pixel_of_the_cell) {
     Fixture f;
     hardware::testing::resetMatrix();
     state::UIState s = sample();
-    s.instrumentCursor = 1;
+    s.instrumentCursor = 1;            // pattern 2, route off (red)
     f.view.render(s);
-    CHECK_EQ(pixelAt(3, 7), InstrumentsView::COLOR_CURSOR);
-    CHECK_EQ(pixelAt(4, 7), InstrumentsView::COLOR_CURSOR);
-    CHECK_EQ(pixelAt(0, 7), 0);
+    CHECK_EQ(pixelAt(3, 5), InstrumentsView::COLOR_CURSOR);
+    CHECK_EQ(pixelAt(4, 5), InstrumentsView::COLOR_ROUTE_OFF);   // the state stays visible
+    CHECK_EQ(pixelAt(3, 6), InstrumentsView::COLOR_ROUTE_OFF);
+    CHECK_EQ(pixelAt(0, 5), InstrumentsView::COLOR_SOUNDING);    // pattern 1 without cursor
+    for (uint8_t x = 0; x < 15; ++x) CHECK_EQ(pixelAt(x, 7), 0);  // gap row stays dark
 
-    s.instrumentCursor = 7;  // row 1, column 2: gap row 10, x 6..7
+    s.instrumentCursor = 7;            // row 1, column 2: cell at x 6..7, y 8..9 (no pattern)
     f.view.render(s);
-    CHECK_EQ(pixelAt(3, 7), 0);  // the old cursor is erased
-    CHECK_EQ(pixelAt(6, 10), InstrumentsView::COLOR_CURSOR);
+    CHECK_EQ(pixelAt(3, 5), InstrumentsView::COLOR_ROUTE_OFF);   // the old cursor is erased
+    CHECK_EQ(pixelAt(6, 8), InstrumentsView::COLOR_CURSOR);       // shown on an empty cell too
 }
 
 TEST(instrumentsview_strip_shows_free_occupied_muted_and_selected_slots) {
@@ -103,7 +104,8 @@ TEST(instrumentsview_muted_instrument_is_drawn_at_half_brightness) {
     state::UIState s = sample();
     s.instruments[0].muted = true;
     f.view.render(s);
-    CHECK_EQ(pixelAt(0, 5), 0x007F0000);
+    CHECK_EQ(pixelAt(1, 5), 0x007F0000);
+    CHECK_EQ(pixelAt(0, 5), InstrumentsView::COLOR_CURSOR);  // the cursor is never dimmed
 }
 
 TEST(instrumentsview_notice_turns_the_strip_red) {

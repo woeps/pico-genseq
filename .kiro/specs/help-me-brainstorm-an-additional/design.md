@@ -212,8 +212,8 @@ from the constants `PatternsView` already uses:
 | Not in the Pattern Selection | Dim (same colour as an unoccupied slot in `PatternsView`) |
 | Member, route on, pattern active | Green (sounding) |
 | Member, route on, pattern inactive | Blue |
-| Member, route off | Top row red, bottom row dark |
-| Cursor | Two white pixels in the gap row directly under the cell (rows 7, 10, 13); no blinking, because views render on state change only |
+| Member, route off | Red (whole cell) |
+| Cursor | The cell's top-left pixel turns white, like the PATTERNS selection pixel (changed after review: one cursor style for both views; every state is a single cell colour so it stays readable) |
 
 Muted Instrument: the grid is drawn at half brightness, so a muted part reads as "dormant" even
 though the cell states are still visible.
