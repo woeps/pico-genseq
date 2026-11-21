@@ -27,6 +27,15 @@ constexpr uint32_t kMidiTapCapacity = 4096;
 extern volatile uint32_t g_midiTapArmed;
 extern volatile uint32_t g_midiTapCount;
 extern uint8_t g_midiTap[kMidiTapCapacity];
+
+// Scheduler metrics snapshot (host-control builds only). core1 republishes its private
+// PerformanceMetrics here every update(); core0 reads them for H:dump. core0 asks for a
+// fresh measurement window by setting g_resetMetricsRequest; core1 clears the metrics and
+// the flag on its next update(). Single aligned 32-bit accesses, advisory diagnostics only.
+extern volatile uint32_t g_maxLatenessUs;     // max scheduler lateness since the last reset
+extern volatile uint32_t g_missedTicks;       // logical ticks missed since the last reset
+extern volatile uint32_t g_batchTimeouts;     // command batches abandoned since the last reset
+extern volatile uint32_t g_resetMetricsRequest;
 #endif
 
 }  // namespace sequencer

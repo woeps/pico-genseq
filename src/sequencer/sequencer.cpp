@@ -54,6 +54,10 @@ Sequencer::Sequencer(IMidiOutput& output, IMonotonicClock& clock)
 volatile uint32_t g_midiTapArmed = 0;
 volatile uint32_t g_midiTapCount = 0;
 uint8_t g_midiTap[kMidiTapCapacity];
+volatile uint32_t g_maxLatenessUs = 0;
+volatile uint32_t g_missedTicks = 0;
+volatile uint32_t g_batchTimeouts = 0;
+volatile uint32_t g_resetMetricsRequest = 0;
 #endif
 
 void MeteredMidiOutput::write(uint8_t byte) {
@@ -123,6 +127,17 @@ void Sequencer::update() {
     // freezing at the last played value. Single aligned 32-bit store, read
     // lock-free by core0 (task 12.4 literal stuck-note metric).
     g_soundingNotes = noteLifecycle.soundingCount();
+#if GENSEQ_HOST_CONTROL
+    // Bench measurement window (host-control builds only): honour a reset request from core0,
+    // then republish the scheduler metrics.
+    if (g_resetMetricsRequest) {
+        metrics = PerformanceMetrics{};
+        g_resetMetricsRequest = 0;
+    }
+    g_maxLatenessUs = static_cast<uint32_t>(metrics.maxSchedulerLatenessUs);
+    g_missedTicks = static_cast<uint32_t>(metrics.missedLogicalTicks);
+    g_batchTimeouts = metrics.batchTimeouts;
+#endif
 #if GENSEQ_CORE1_BOOT_TRACE
     { extern volatile uint32_t g_core1Region, g_core1RegionMax;
       g_core1Region = 31; if (31 > g_core1RegionMax) g_core1RegionMax = 31; }  // after soundingCount(), pre !playing return

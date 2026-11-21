@@ -16,6 +16,7 @@
 #include "../state/StateManager.h"
 #include "../state/UIState.h"
 #include "../../sequencer/sequencer_telemetry.h"
+#include "../state/SetLibrary.h"
 #include "../UiTelemetry.h"
 
 namespace hardware {
@@ -76,9 +77,59 @@ const char* viewName(ui::state::ViewId v) {
     }
 }
 
+
+// --- Set-library bench helpers: every action is a synthesized key through the same seam --------
+enum class SetKind { GATE, NOTE, VELOCITY };
+
+bool kindFromName(const char* n, SetKind& k) {
+    if (n == nullptr) return false;
+    if (strcasecmp(n, "gate") == 0) { k = SetKind::GATE; return true; }
+    if (strcasecmp(n, "note") == 0 || strcasecmp(n, "pitch") == 0) { k = SetKind::NOTE; return true; }
+    if (strcasecmp(n, "velocity") == 0) { k = SetKind::VELOCITY; return true; }
+    return false;
+}
+
+const ui::state::UIState& uiState() { return ui::state::getStateManager().getState(); }
+
+// PATTERNS view: highlight pattern `index` with Ctrl+arrows.
+void selectPattern(uint8_t index) {
+    tapKey(KeyId::F3, ui::mod::NONE);
+    for (int i = 0; i < 20; ++i) tapKey(KeyId::LEFT, ui::mod::CTRL);
+    for (uint8_t i = 0; i < index; ++i) tapKey(KeyId::RIGHT, ui::mod::CTRL);
+}
+
+// PATTERNS view: move the set highlight (gate / note / velocity) of the selected pattern.
+void selectSetKind(SetKind k) {
+    tapKey(KeyId::LEFT, ui::mod::NONE);   // PITCH -> GATE
+    tapKey(KeyId::UP, ui::mod::NONE);     // VELOCITY -> GATE
+    if (k == SetKind::NOTE) tapKey(KeyId::RIGHT, ui::mod::NONE);
+    if (k == SetKind::VELOCITY) tapKey(KeyId::DOWN, ui::mod::NONE);
+}
+
+uint8_t refOf(const ui::state::PatternRefs& r, SetKind k) {
+    return k == SetKind::GATE ? r.gate : k == SetKind::NOTE ? r.note : r.velocity;
+}
+
 } // namespace
 
+void HostControl::stepStress() {
+    if (stressLeft_ == 0) return;
+    const uint32_t now = nowMs();
+    if (static_cast<int32_t>(now - stressNextMs_) < 0) return;
+    tapKey(stressUp_ ? KeyId::UP : KeyId::DOWN, ui::mod::NONE);
+    stressUp_ = !stressUp_;
+    stressNextMs_ = now + stressIntervalMs_;
+    if (--stressLeft_ == 0) {
+        // Leave the config untouched: ESC discards the uncommitted draft (re-sending the
+        // committed set to every user), the second ESC returns to the PATTERNS view.
+        tapKey(KeyId::ESCAPE, ui::mod::NONE);
+        tapKey(KeyId::ESCAPE, ui::mod::NONE);
+        printf("H:ok stress done\n");
+    }
+}
+
 void HostControl::poll() {
+    stepStress();
     // Drain only already-buffered input; -1 (PICO_ERROR_TIMEOUT) means nothing
     // pending, so the loop never blocks waiting for a host byte.
     for (;;) {
@@ -207,6 +258,66 @@ void HostControl::dispatchLine(const char* raw) {
         return;
     }
 
+    if (strcasecmp(verb, "addpatterns") == 0) {
+        if (a1 == nullptr) { printf("H:err addpatterns_needs_count\n"); return; }
+        int target = atoi(a1);
+        if (target < 1) target = 1;
+        if (target > ui::state::MAX_PATTERNS) target = ui::state::MAX_PATTERNS;
+        tapKey(KeyId::F3, ui::mod::NONE);
+        int guard = 0;
+        while (uiState().patternCount < target && guard++ < 64) {
+            // Walk the highlight to the "add" slot (index == patternCount), then ENTER.
+            for (int i = 0; i < 20 && uiState().selectedPattern < uiState().patternCount; ++i) {
+                tapKey(KeyId::RIGHT, ui::mod::CTRL);
+            }
+            tapKey(KeyId::ENTER, ui::mod::NONE);
+        }
+        printf("H:ok addpatterns %u\n", static_cast<unsigned>(uiState().patternCount));
+        return;
+    }
+
+    if (strcasecmp(verb, "share") == 0) {
+        SetKind k;
+        if (!kindFromName(a1, k) || a2 == nullptr) { printf("H:err share_args\n"); return; }
+        const int slot = atoi(a2);
+        if (slot < 0 || slot >= ui::state::SET_LIBRARY_SIZE) { printf("H:err share_slot\n"); return; }
+        const uint8_t count = uiState().patternCount;
+        for (uint8_t p = 0; p < count; ++p) {
+            selectPattern(p);
+            selectSetKind(k);
+            // Shift+Right steps to the next occupied slot (wraps), so the loop terminates at
+            // the target as long as it is occupied; guard against a free target slot.
+            int guard = 0;
+            while (refOf(uiState().patternRefs[p], k) != slot && guard++ < ui::state::SET_LIBRARY_SIZE) {
+                tapKey(KeyId::RIGHT, ui::mod::SHIFT);
+            }
+        }
+        tapKey(KeyId::F3, ui::mod::NONE);
+        printf("H:ok share (verify via dump)\n");
+        return;
+    }
+
+    if (strcasecmp(verb, "stress") == 0) {
+        SetKind k;
+        if (!kindFromName(a1, k) || a2 == nullptr) { printf("H:err stress_args\n"); return; }
+        const char* a3 = strtok_r(nullptr, " \t", &save);
+        if (stressLeft_ != 0) { printf("H:err stress_busy\n"); return; }
+        int n = atoi(a2);
+        if (n < 1) n = 1;
+        if (n > 60000) n = 60000;
+        selectPattern(0);
+        selectSetKind(k);
+        tapKey(KeyId::ENTER, ui::mod::NONE);  // open the editor on pattern 0's set
+        tapKey(KeyId::RIGHT, ui::mod::NONE);  // gate: ALGORITHM->STEPS, note/velocity: COUNT->ORDER
+        tapKey(KeyId::RIGHT, ui::mod::NONE);  // gate: ->PULSES,         note/velocity: ->first value
+        stressIntervalMs_ = a3 != nullptr ? static_cast<uint32_t>(atoi(a3)) : 30u;
+        stressUp_ = true;
+        stressNextMs_ = nowMs();
+        stressLeft_ = static_cast<uint16_t>(n);
+        printf("H:ok stress started\n");
+        return;
+    }
+
     if (strcasecmp(verb, "dump") == 0) {
         emitDump();
         return;
@@ -219,6 +330,7 @@ void HostControl::dispatchLine(const char* raw) {
         // timingFault are live state, not reset.)
         ui::g_maxUiGapMicros = 0;
         ui::g_lastSaveMicros = 0;
+        sequencer::g_resetMetricsRequest = 1;  // core1 clears its scheduler metrics next update()
         printf("H:ok resetmetrics\n");
         return;
     }
@@ -323,6 +435,9 @@ void HostControl::emitDump() {
         const auto& g = s.gateSetOf(p);
         const auto& pi = s.pitchSetOf(p);
         const auto& v = s.velocitySetOf(p);
+        printf("D:gateSteps=%u\n", static_cast<unsigned>(g.steps));
+        printf("D:gatePulses=%u\n", static_cast<unsigned>(g.pulses));
+        printf("D:gateNoteLength=%u\n", static_cast<unsigned>(g.noteLength));
         printf("D:genScale=%u\n", static_cast<unsigned>(pi.scale));
         printf("D:genRoot=%u\n", static_cast<unsigned>(pi.scaleRoot));
         printf("D:genQuantize=%u\n", static_cast<unsigned>(pi.quantize));
@@ -354,6 +469,9 @@ void HostControl::emitDump() {
                static_cast<unsigned>(s.patternRefs[i].velocity));
     }
     printf("\n");
+    printf("D:maxLatenessUs=%lu\n", static_cast<unsigned long>(sequencer::g_maxLatenessUs));
+    printf("D:missedTicks=%lu\n", static_cast<unsigned long>(sequencer::g_missedTicks));
+    printf("D:batchTimeouts=%lu\n", static_cast<unsigned long>(sequencer::g_batchTimeouts));
     printf("D:end\n");
 }
 

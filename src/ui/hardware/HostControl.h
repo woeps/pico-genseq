@@ -30,12 +30,19 @@
 //   H:dump                print the current UIState as "D:" key=value lines
 //   H:reset               watchdog self-reboot (autonomous power-cycle)
 //   H:ping                print "H:pong" (liveness probe)
+//   H:addpatterns <n>     grow to n patterns (new patterns share the lowest sets)
+//   H:share gate|note|velocity <slot>   point every pattern at that slot of the library
+//   H:stress gate|note|velocity <count> [ms]   hold UP/DOWN on a set value (default 30 ms
+//                         per key) with the editor open on pattern 0's set; ESC x2 afterwards
+//   H:resetmetrics        also restarts core1's scheduler metrics window
 //
 // All replies are line-framed and prefixed so a host parser can lock onto them:
 //   "H:ok <verb>"      command accepted
 //   "H:err <reason>"   command rejected
 //   "D:..."            a dump line
 // -----------------------------------------------------------------------------
+
+#include <cstdint>
 
 #ifndef GENSEQ_HOST_CONTROL
 #define GENSEQ_HOST_CONTROL 0
@@ -65,6 +72,15 @@ private:
 
     void dispatchLine(const char* line);
     void emitDump();
+
+    // Non-blocking edit stress (H:stress): one synthesized UP/DOWN key per interval, issued
+    // from poll() so the UI loop keeps iterating and H:dump's maxUiGapUs reflects the cost of
+    // one fan-out edit, not of the whole burst.
+    uint16_t stressLeft_ = 0;
+    uint32_t stressIntervalMs_ = 30;  // ~ keyboard auto-repeat
+    uint32_t stressNextMs_ = 0;
+    bool stressUp_ = true;
+    void stepStress();
 #endif
 };
 

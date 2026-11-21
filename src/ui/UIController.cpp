@@ -529,6 +529,9 @@ void UIController::pumpRender()
     const uint64_t nowUs = to_us_since_boot(get_absolute_time());
     if (lastUpdateMicros_ != 0) {
         const uint64_t gap = nowUs - lastUpdateMicros_;
+        // H:resetmetrics zeroes the published value to start a measurement window; follow it
+        // so the running maximum restarts too (it previously wrote the old maximum back).
+        if (g_maxUiGapMicros < maxUiGapMicros_) maxUiGapMicros_ = g_maxUiGapMicros;
         if (gap > maxUiGapMicros_) maxUiGapMicros_ = static_cast<uint32_t>(gap);
         g_maxUiGapMicros = maxUiGapMicros_;
     }
@@ -548,6 +551,9 @@ void UIController::update()
     const uint64_t nowUs = to_us_since_boot(get_absolute_time());
     if (lastUpdateMicros_ != 0) {
         const uint64_t gap = nowUs - lastUpdateMicros_;
+        // H:resetmetrics zeroes the published value to start a measurement window; follow it
+        // so the running maximum restarts too (it previously wrote the old maximum back).
+        if (g_maxUiGapMicros < maxUiGapMicros_) maxUiGapMicros_ = g_maxUiGapMicros;
         if (gap > maxUiGapMicros_) maxUiGapMicros_ = static_cast<uint32_t>(gap);
         g_maxUiGapMicros = maxUiGapMicros_;
     }
