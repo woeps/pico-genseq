@@ -214,15 +214,26 @@ pattern from an Instrument, changing a channel and deleting an Instrument all
 release the sounding notes of the affected channel at once (the Note Off goes to
 the channel the note was started on), so nothing is left hanging.
 
-**MIDI bandwidth.** The DIN MIDI cable carries about 3,100 bytes a second, which is
-about 1,000 three-byte messages. Every note on N channels sends N Note On and
-N Note Off messages, so a pattern shared by many Instruments uses N times the
-bandwidth, and all of those notes leave at the same moment. Measured on the device
-with 6 patterns that each play every sixteenth note at 140 BPM, all of them in every
-Instrument: up to 2 Instruments play on time, 4 Instruments delay the beat by up to
-6.5 ms, and from 6 Instruments on the timing falls behind badly (tens of
-milliseconds, ticks are skipped). Notes are still never left hanging. Lighter
-patterns leave room for more Instruments.
+**MIDI bandwidth and the load pixel.** The DIN MIDI cable carries about 3,100 bytes a
+second, about 1,000 three-byte messages. Every note on N channels sends N Note On and N Note
+Off messages, so a pattern shared by many Instruments uses N times the bandwidth, and those
+notes are all due at the same moment. GenSeq buffers them and sends them one after the other,
+so a burst comes out as a short smear (a few milliseconds per note) instead of breaking the
+rhythm. MIDI Clock bytes are sent ahead of the buffered notes, so a synced device stays in time.
+
+The pixel at the right end of row 4 (column 16) shows the load in every view:
+
+| Pixel | Meaning |
+|---|---|
+| off | Normal. |
+| amber | In the last 2 seconds a note waited 10 ms or more on the cable: big chords or many shared routes are smearing. |
+| red | Overload: the cable could not keep up for a whole beat. GenSeq stopped, released every note and sent MIDI Stop. |
+
+After a red pixel, reduce the load (mute an Instrument, switch routes off) and press **Space**
+to play again; the pixel goes off. Measured with 6 patterns that each play every sixteenth note
+at 140 BPM, all in every Instrument: up to 10 Instruments play without a skipped beat (amber
+from 2 Instruments on), 12 or more stop with the red pixel. Lighter patterns leave room for
+more.
 
 ## 5. Sets and sharing
 
