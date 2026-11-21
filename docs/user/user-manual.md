@@ -217,8 +217,12 @@ the channel the note was started on), so nothing is left hanging.
 **MIDI bandwidth.** The DIN MIDI cable carries about 3,100 bytes a second, which is
 about 1,000 three-byte messages. Every note on N channels sends N Note On and
 N Note Off messages, so a pattern shared by many Instruments uses N times the
-bandwidth. If the load is too high for the cable, GenSeq stops playing and
-releases all notes instead of playing late; press Space to start again.
+bandwidth, and all of those notes leave at the same moment. Measured on the device
+with 6 patterns that each play every sixteenth note at 140 BPM, all of them in every
+Instrument: up to 2 Instruments play on time, 4 Instruments delay the beat by up to
+6.5 ms, and from 6 Instruments on the timing falls behind badly (tens of
+milliseconds, ticks are skipped). Notes are still never left hanging. Lighter
+patterns leave room for more Instruments.
 
 ## 5. Sets and sharing
 

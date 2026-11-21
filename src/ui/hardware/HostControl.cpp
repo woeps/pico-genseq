@@ -45,6 +45,7 @@ KeyId keyFromName(const char* name) {
     static const Entry table[] = {
         {"s", KeyId::S}, {"space", KeyId::SPACE},
         {"n", KeyId::N}, {"d", KeyId::D}, {"g", KeyId::G},  // set-library: new / copy / go to
+        {"e", KeyId::E}, {"m", KeyId::M},  // Instruments view: route on/off, mute
         {"up", KeyId::UP}, {"down", KeyId::DOWN},
         {"left", KeyId::LEFT}, {"right", KeyId::RIGHT},
         {"f1", KeyId::F1}, {"f2", KeyId::F2}, {"f3", KeyId::F3},
