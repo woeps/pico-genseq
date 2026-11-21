@@ -94,8 +94,9 @@ void test_release_uses_recorded_identity() {
     check(nl.ownershipEmpty(), "ownership empty");
 }
 
-// Two patterns sound the SAME key: both note-ons emitted (retrigger), first release emits NO
-// note-off (another owner remains), final release emits the single note-off.
+// Two patterns sound the SAME key: both note-ons emitted (retrigger), the second preceded by a
+// note-off so the wire alternates On/Off per key; the first release emits NO note-off (another
+// owner remains), the final release emits the single note-off.
 void test_overlap_retrigger_and_refcount() {
     RecordingMidiOutput out;
     NoteLifecycle nl(out);
@@ -103,11 +104,15 @@ void test_overlap_retrigger_and_refcount() {
     const MidiChannel ch = common::midi_channel::fromUserChannel(1);  // protocol 0
 
     nl.noteOn(a, ch, 67, 100);
+    check(out.record() == noteOn(0, 67, 100), "first note-on emitted alone");
+    out.clear();
     nl.noteOn(b, ch, 67, 110);  // same key, retrigger
     check(nl.aggregateCount(ch, 67) == 2, "two owners of the key");
-    // Both note-ons present (each retrigger emitted, Req 5.3).
-    check(contains(out.record(), noteOn(0, 67, 100)), "first note-on emitted");
-    check(contains(out.record(), noteOn(0, 67, 110)), "second (retrigger) note-on emitted");
+    // Retrigger = Note Off, then the second Note On (each requested Note On emitted, Req 5.3).
+    std::vector<uint8_t> expected = noteOff(0, 67);
+    const std::vector<uint8_t> on2 = noteOn(0, 67, 110);
+    expected.insert(expected.end(), on2.begin(), on2.end());
+    check(out.record() == expected, "retrigger closes the sounding key before the second note-on");
 
     out.clear();
     nl.releasePattern(a);  // one owner remains -> no note-off yet

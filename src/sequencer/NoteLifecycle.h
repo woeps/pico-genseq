@@ -25,6 +25,15 @@
 //     only when the last owner releases and the count reaches zero (Req 5.4,
 //     5.5).
 //
+//   - The wire stream per (channel, note) strictly ALTERNATES Note On / Note
+//     Off. A Note On for a key that another pattern already sounds is preceded
+//     by a Note Off for that key (retrigger = Off then On). Otherwise the
+//     receiver would get On, On, Off: a synth that starts a voice per Note On
+//     and releases one per Note Off keeps a voice hanging (found when shared
+//     sets made patterns play in unison). The aggregate count still decides
+//     when the FINAL Note Off goes out, so "count > 0" always equals "the key is
+//     on the wire".
+//
 //   - releasePattern() releases exactly one pattern's owned note (used by a
 //     falling gate edge, mute, or remove at its effective boundary, Req 5.6).
 //     releaseAll() / panic() release everything and leave both per-pattern and
@@ -48,7 +57,8 @@ public:
     // released first (a monophonic pattern can only hold one note), so an
     // onset without a matching falling edge can never strand a note. Every
     // Note On is emitted on the wire, including a retrigger of a key another
-    // pattern already sounds (Req 5.3).
+    // pattern already sounds (Req 5.3); such a retrigger is preceded by a Note
+    // Off for that key so the wire alternates On/Off per key.
     void noteOn(common::PatternId pattern, common::MidiChannel channel, uint8_t note,
                 uint8_t velocity) {
         if (!pattern.valid() || pattern.index >= common::PATTERN_CAPACITY) return;
@@ -65,7 +75,11 @@ public:
         owned.channel = channel;
         owned.note = note;
 
-        ++aggregate_[channel.value][note];  // this pattern now sounds the key
+        uint16_t& count = aggregate_[channel.value][note];
+        // The key is already on the wire (another pattern sounds it): close it before the
+        // retrigger so the receiver never sees two Note Ons in a row for one key.
+        if (count > 0) emitNoteOff(channel, note);
+        ++count;  // this pattern now sounds the key
         emitNoteOn(channel, note, velocity);
     }
 
