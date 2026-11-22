@@ -249,7 +249,7 @@ int main(int argc, char** argv) {
         s.instruments[1].muted = true;
         Frame c = grab("Instrument 2 muted", instruments, s);
         s.instruments[1].muted = false;
-        s.instrumentNotice = state::InstrumentNotice::LAST_INSTRUMENT;
+        s.instrumentNotice = state::InstrumentNotice::FULL;  // e.g. Ctrl+N with all 16 in use
         s.instrumentCursor = 2;
         Frame n = grab("Refused action", instruments, s);
         writeSvg(d, "instruments", {a, b, c, n});
@@ -260,6 +260,8 @@ int main(int argc, char** argv) {
         p.currentView = state::ViewId::PATTERNS;
         p.patternCount = 6;
         p.activePatterns = 0b111111;
+        p.instruments[0].members = 0b001111;  // Instrument 1: patterns 1-4
+        p.instruments[1].members = 0b010001;  // Instrument 2: patterns 1 and 5; pattern 6 in none
         p.selectedInstrument = 0;
         p.selectedPattern = 1;
         matrix.clear();  // as PatternsView::onEnter does on the device

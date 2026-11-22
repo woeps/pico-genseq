@@ -170,10 +170,11 @@ half brightness.
 
 ![INSTRUMENTS view: Instrument 1, Instrument 2, Instrument 2 muted, a refused action](img/instruments.svg)
 
-Five patterns and two Instruments. Instrument 1 (channel 1) plays patterns 1 to 4: pattern 3 is
-stopped (blue), and pattern 4 is not assigned (grey, with the cursor on it). Instrument 2
-(channel 2) plays patterns 1 and 5, so pattern 1 sounds on both channels. Third picture: Instrument 2 muted. Fourth
-picture: the strip turns red when an action is refused; it clears at your next key.
+Five patterns and two Instruments. Instrument 1 (channel 1) plays patterns 1 to 3, of which
+pattern 3 is stopped (blue); pattern 4 is not assigned (grey, with the cursor on it). Instrument 2
+(channel 2) plays patterns 1 and 5, so pattern 1 sounds on both channels. Third picture:
+Instrument 2 muted. Fourth picture: the strip turns red when an action is refused (for example
+Ctrl+N when all 16 Instruments are in use); it clears at your next key.
 
 | Key | Action |
 |---|---|
